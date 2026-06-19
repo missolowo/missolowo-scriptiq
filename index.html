@@ -1,1 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Missolowo ScriptIQ — AI Pre-Production Suite for Nollywood</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --gold: #C9A84C;
+  --gold-light: #E8C96A;
+  --gold-dim: #7A6228;
+  --gold-pale: #F5E9C8;
+  --bg: #080806;
+  --bg2: #0F0F0C;
+  --bg3: #161612;
+  --border: #1E1E18;
+  --border2: #2A2A22;
+  --text: #F0EFE6;
+  --text2: #A0A090;
+  --text3: #505045;
+  --green: #4CAF76;
+  --red: #E05C5C;
+  --blue: #5C9BE0;
+  --purple: #9B6EE0;
+  --orange: #E0935C;
+  --teal: #4CBFB0;
+}
 
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  overflow-x: hidden;
+  cursor: none;
+}
+
+/* Custom cursor */
+.cursor {
+  width: 10px; height: 10px;
+  background: var(--gold);
+  border-radius: 50%;
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.15s ease;
+  mix-blend-mode: difference;
+}
+.cursor-ring {
+  width: 36px; height: 36px;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  position: fixed;
+  pointer-events: none;
+  z-index: 9998;
+  transition: all 0.12s ease;
+  opacity: 0.5;
+}
+
+/* Film grain overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 998; opacity: 0.5;
+}
+
+/* NAV */
+nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 20px 48px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid transparent;
+  transition: all 0.3s;
+}
+nav.scrolled {
+  background: rgba(8,8,6,0.92);
+  backdrop-filter: blur(20px);
+  border-bottom-color: var(--border);
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 12px;
+  text-decoration: none;
+}
+.nav-logo-hex {
+  width: 34px; height: 34px;
+  background: var(--gold);
+  clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; color: #000;
+}
+.nav-logo-text {
+  font-weight: 800; font-size: 17px; color: var(--text);
+  letter-spacing: -0.3px;
+}
+.nav-logo-text span { color: var(--gold); }
+.nav-links {
+  display: flex; align-items: center; gap: 36px;
+  list-style: none;
+}
+.nav-links a {
+  font-size: 13px; color: var(--text2); text-decoration: none;
+  letter-spacing: 0.5px; transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--gold); }
+.nav-cta {
+  background: var(--gold); color: #000;
+  padding: 10px 24px; border: none;
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 13px; letter-spacing: 1px;
+  cursor: pointer; transition: all 0.2s;
+  clip-path: polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px);
+}
+.nav-cta:hover { background: var(--gold-light); transform: translateY(-1px); }
+
+/* HERO */
+.hero {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  text-align: center;
+  padding: 120px 24px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(201,168,76,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 20% 80%, rgba(76,175,118,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 80% 20%, rgba(92,155,224,0.04) 0%, transparent 60%);
+}
+
+/* Film strip decoration */
+.film-strip {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 48px;
+  display: flex; flex-direction: column;
+  gap: 0;
+  opacity: 0.06;
+}
+.film-strip.left { left: 0; }
+.film-strip.right { right: 0; }
+.film-hole {
+  width: 24px; height: 16px; margin: 6px auto;
+  border: 2px solid var(--gold);
+  border-radius: 3px; flex-shrink: 0;
+}
+.film-line {
+  height: 40px; background: var(--gold);
+  flex-shrink: 0; opacity: 0.3;
+}
+
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border2);
+  padding: 7px 18px; border-radius: 100px;
+  font-size: 11px; color: var(--text2);
+  letter-spacing: 2px; text-transform: uppercase;
+  margin-bottom: 32px;
+  background: rgba(201,168,76,0.04);
+  animation: fadeUp 0.8s ease both;
+}
+.hero-eyebrow-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+.hero-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(42px, 7vw, 88px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 28px;
+  max-width: 900px;
+  animation: fadeUp 0.8s 0.1s ease both;
+}
+.hero-title em {
+  font-style: italic;
+  color: var(--gold);
+  position: relative;
+}
+.hero-title em::after {
+  content: '';
+  position: absolute;
+  bottom: 4px; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+
+.hero-sub {
+  font-size: 16px; color: var(--text2);
+  max-width: 520px; margin: 0 auto 48px;
+  line-height: 1.8;
+  font-family: 'DM Mono', monospace;
+  font-weight: 300;
+  animation: fadeUp 0.8s 0.2s ease both;
+}
+
+.hero-ctas {
+  display: flex; gap: 16px; justify-content: center;
+  flex-wrap: wrap; margin-bottom: 64px;
+  animation: fadeUp 0.8s 0.3s ease both;
+}
+
+.btn-primary {
+  background: var(--gold); color: #000;
+  padding: 16px 36px; border: none;
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s;
+  clip-path: polygon(10px 0%,100% 0%,100% calc(100% - 10px),calc(100% - 10px) 100%,0% 100%,0% 10px);
+}
+.btn-primary:hover { background: var(--gold-light); transform: translateY(-2px); }
+
+.btn-secondary {
+  background: transparent; color: var(--text);
+  padding: 16px 36px;
+  border: 1px solid var(--border2);
+  font-family: 'Syne', sans-serif; font-weight: 600;
+  font-size: 14px; letter-spacing: 1px;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-secondary:hover { border-color: var(--gold); color: var(--gold); }
+
+.hero-stats {
+  display: flex; gap: 48px; justify-content: center;
+  flex-wrap: wrap;
+  animation: fadeUp 0.8s 0.4s ease both;
+}
+.hero-stat { text-align: center; }
+.hero-stat-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 36px; font-weight: 900;
+  color: var(--gold); line-height: 1;
+  margin-bottom: 6px;
+}
+.hero-stat-label {
+  font-size: 11px; color: var(--text3);
+  letter-spacing: 1.5px; text-transform: uppercase;
+}
+
+/* Scroll indicator */
+.scroll-hint {
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  font-size: 10px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase;
+  animation: fadeUp 1s 0.8s ease both;
+}
+.scroll-line {
+  width: 1px; height: 48px;
+  background: linear-gradient(180deg, var(--gold), transparent);
+  animation: scrollPulse 2s ease-in-out infinite;
+}
+@keyframes scrollPulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+/* SECTION STYLES */
+section {
+  padding: 120px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.section-label {
+  font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.section-label::before {
+  content: '';
+  display: block; width: 32px; height: 1px;
+  background: var(--gold);
+}
+
+.section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 700; line-height: 1.1;
+  letter-spacing: -1px; margin-bottom: 20px;
+}
+.section-title em { font-style: italic; color: var(--gold); }
+
+.section-sub {
+  font-size: 15px; color: var(--text2);
+  line-height: 1.8; max-width: 520px;
+  font-family: 'DM Mono', monospace; font-weight: 300;
+}
+
+/* MARQUEE */
+.marquee-wrap {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 0; overflow: hidden;
+  background: var(--bg2);
+}
+.marquee-track {
+  display: flex; gap: 0;
+  animation: marquee 24s linear infinite;
+  width: max-content;
+}
+.marquee-item {
+  display: flex; align-items: center; gap: 20px;
+  padding: 0 28px; white-space: nowrap;
+  font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text3);
+}
+.marquee-item span { color: var(--gold); font-weight: 700; }
+.marquee-sep { color: var(--gold-dim); font-size: 18px; }
+@keyframes marquee { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+
+/* FEATURES */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-top: 64px;
+}
+.feature-card {
+  background: var(--bg2);
+  padding: 40px 36px;
+  transition: background 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.feature-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  transform: scaleX(0);
+  transition: transform 0.4s ease;
+}
+.feature-card:hover { background: var(--bg3); }
+.feature-card:hover::before { transform: scaleX(1); }
+
+.feature-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 48px; font-weight: 900;
+  color: var(--border2); line-height: 1;
+  margin-bottom: 20px;
+  transition: color 0.3s;
+}
+.feature-card:hover .feature-num { color: var(--gold-dim); }
+.feature-card.active-feature .feature-num { color: var(--gold); }
+.feature-card.active-feature {
+  background: var(--bg3);
+}
+.feature-card.active-feature::before { transform: scaleX(1); }
+
+.feature-icon {
+  width: 44px; height: 44px; margin-bottom: 20px;
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  transition: border-color 0.3s;
+}
+.feature-card:hover .feature-icon { border-color: var(--gold); }
+
+.feature-title {
+  font-size: 18px; font-weight: 700;
+  margin-bottom: 12px; letter-spacing: -0.3px;
+}
+.feature-desc {
+  font-size: 13px; color: var(--text2);
+  line-height: 1.7;
+  font-family: 'DM Mono', monospace; font-weight: 300;
+}
+.feature-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 20px; font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 2px;
+}
+.feature-status.live {
+  background: rgba(76,175,118,0.1); color: var(--green);
+  border: 1px solid rgba(76,175,118,0.3);
+}
+.feature-status.soon {
+  background: rgba(201,168,76,0.08); color: var(--gold-dim);
+  border: 1px solid rgba(201,168,76,0.2);
+}
+.feature-status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* HOW IT WORKS */
+.how-wrap {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  padding: 80px;
+  margin-top: 64px;
+  position: relative;
+  overflow: hidden;
+}
+.how-wrap::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -100px;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201,168,76,0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 48px; margin-top: 56px;
+  position: relative;
+}
+.steps::before {
+  content: '';
+  position: absolute;
+  top: 28px; left: calc(16.66% + 16px); right: calc(16.66% + 16px);
+  height: 1px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-dim), var(--gold));
+  opacity: 0.3;
+}
+.step { text-align: center; position: relative; }
+.step-circle {
+  width: 56px; height: 56px; border-radius: 50%;
+  border: 1px solid var(--gold-dim);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 24px;
+  font-family: 'Playfair Display', serif;
+  font-size: 20px; font-weight: 700; color: var(--gold);
+  background: var(--bg);
+  position: relative; z-index: 1;
+}
+.step-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+.step-desc { font-size: 12px; color: var(--text2); line-height: 1.7; font-family: 'DM Mono', monospace; font-weight: 300; }
+
+/* DEMO PREVIEW */
+.demo-section {
+  background: var(--bg);
+  padding: 120px 24px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.demo-inner {
+  max-width: 1200px; margin: 0 auto;
+}
+.demo-screen {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 56px;
+  box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.1);
+}
+.demo-bar {
+  background: var(--bg3);
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.demo-dots { display: flex; gap: 6px; }
+.demo-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.demo-url {
+  flex: 1; background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 5px 14px; border-radius: 2px;
+  font-size: 11px; color: var(--text3);
+  font-family: 'DM Mono', monospace; max-width: 320px;
+}
+.demo-content {
+  padding: 32px;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.demo-input-side { display: flex; flex-direction: column; gap: 12px; }
+.demo-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); }
+.demo-textarea {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 16px; font-family: 'DM Mono', monospace;
+  font-size: 11px; line-height: 1.8; color: var(--text2);
+  height: 200px; overflow: hidden;
+}
+.demo-run {
+  background: var(--gold); color: #000;
+  padding: 12px; font-weight: 700; font-size: 12px;
+  letter-spacing: 2px; text-align: center; text-transform: uppercase;
+}
+.demo-output { display: flex; flex-direction: column; gap: 12px; }
+.demo-scene-card {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 16px;
+}
+.demo-scene-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; font-weight: 900; color: var(--gold);
+  line-height: 1; margin-bottom: 8px;
+}
+.demo-scene-slug { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.demo-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.demo-tag {
+  font-size: 10px; padding: 2px 8px;
+  border-radius: 2px; font-family: 'DM Mono', monospace;
+}
+
+/* FOUNDER SECTION */
+.founder-section {
+  padding: 120px 24px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+.founder-inner {
+  max-width: 1200px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 80px; align-items: center;
+}
+.founder-quote {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(24px, 3vw, 38px);
+  font-weight: 400; font-style: italic;
+  line-height: 1.4; color: var(--text);
+  margin-bottom: 32px;
+}
+.founder-quote strong {
+  font-style: normal; color: var(--gold);
+}
+.founder-sig {
+  display: flex; align-items: center; gap: 16px;
+}
+.founder-avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid var(--gold);
+  background: var(--bg3);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif;
+  font-size: 20px; font-weight: 700; color: var(--gold);
+}
+.founder-name { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+.founder-role { font-size: 12px; color: var(--text2); font-family: 'DM Mono', monospace; }
+
+.notebook-card {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  padding: 32px;
+  position: relative;
+}
+.notebook-card::before {
+  content: 'ORIGINAL NOTEBOOK · APR 29, 2026';
+  position: absolute; top: -10px; left: 20px;
+  background: var(--bg3); padding: 0 8px;
+  font-size: 9px; letter-spacing: 2px; color: var(--gold);
+}
+.notebook-line {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px; line-height: 2.2;
+  color: var(--text2); border-bottom: 1px solid var(--border);
+  padding-bottom: 4px; margin-bottom: 4px;
+}
+.notebook-line.highlight { color: var(--gold); }
+.notebook-line.circle {
+  border: 1px solid var(--gold-dim);
+  padding: 8px 14px; margin: 12px 0;
+  color: var(--text);
+}
+
+/* ROADMAP */
+.roadmap-section { padding: 120px 24px; }
+.roadmap-inner { max-width: 800px; margin: 0 auto; }
+.roadmap-items { margin-top: 56px; display: flex; flex-direction: column; gap: 0; }
+.roadmap-item {
+  display: flex; gap: 28px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+  opacity: 0.6; transition: opacity 0.3s;
+}
+.roadmap-item.done { opacity: 1; }
+.roadmap-item.next { opacity: 1; }
+.roadmap-item:hover { opacity: 1; }
+.roadmap-dot-col { display: flex; flex-direction: column; align-items: center; gap: 0; padding-top: 4px; }
+.roadmap-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border2);
+}
+.roadmap-dot.done { background: var(--green); border-color: var(--green); }
+.roadmap-dot.next {
+  background: var(--gold); border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(201,168,76,0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{box-shadow:0 0 8px rgba(201,168,76,0.4)} 50%{box-shadow:0 0 20px rgba(201,168,76,0.8)} }
+.roadmap-dot.planned { background: transparent; }
+.roadmap-line { width: 1px; flex: 1; background: var(--border); min-height: 24px; }
+.roadmap-content { flex: 1; }
+.roadmap-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.roadmap-desc { font-size: 12px; color: var(--text2); line-height: 1.7; font-family: 'DM Mono', monospace; font-weight: 300; }
+.roadmap-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9px; padding: 3px 8px; border-radius: 2px;
+  letter-spacing: 1.5px; text-transform: uppercase; margin-top: 10px;
+}
+.badge-done { background: rgba(76,175,118,0.1); color: var(--green); border: 1px solid rgba(76,175,118,0.3); }
+.badge-next { background: rgba(201,168,76,0.1); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+.badge-planned { background: rgba(92,155,224,0.08); color: var(--blue); border: 1px solid rgba(92,155,224,0.2); }
+
+/* CTA SECTION */
+.cta-section {
+  padding: 120px 24px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.cta-inner { max-width: 700px; margin: 0 auto; }
+.cta-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(36px, 6vw, 68px);
+  font-weight: 900; line-height: 1.05;
+  letter-spacing: -2px; margin-bottom: 24px;
+}
+.cta-title em { font-style: italic; color: var(--gold); }
+.cta-sub {
+  font-size: 15px; color: var(--text2); line-height: 1.8;
+  font-family: 'DM Mono', monospace; font-weight: 300;
+  margin-bottom: 48px;
+}
+.waitlist-form {
+  display: flex; gap: 0; max-width: 480px; margin: 0 auto 48px;
+}
+.waitlist-input {
+  flex: 1; background: var(--bg3);
+  border: 1px solid var(--border2); border-right: none;
+  padding: 14px 20px; color: var(--text);
+  font-family: 'DM Mono', monospace; font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.waitlist-input:focus { border-color: var(--gold-dim); }
+.waitlist-input::placeholder { color: var(--text3); }
+.waitlist-btn {
+  background: var(--gold); color: #000;
+  padding: 14px 28px; border: none;
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 13px; letter-spacing: 1px;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.2s;
+}
+.waitlist-btn:hover { background: var(--gold-light); }
+
+.socials {
+  display: flex; justify-content: center; gap: 24px;
+  flex-wrap: wrap;
+}
+.social-link {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text3);
+  text-decoration: none;
+  transition: color 0.2s; letter-spacing: 0.5px;
+}
+.social-link:hover { color: var(--gold); }
+.social-link span { font-weight: 600; }
+
+/* FOOTER */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 28px 48px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg);
+}
+.footer-left { font-size: 11px; color: var(--text3); letter-spacing: 1px; }
+.footer-right { font-size: 11px; color: var(--text3); letter-spacing: 1px; }
+
+/* ANIMATIONS */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reveal {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* MOBILE */
+@media (max-width: 768px) {
+  nav { padding: 16px 20px; }
+  .nav-links { display: none; }
+  .how-wrap { padding: 40px 24px; }
+  .steps { grid-template-columns: 1fr; }
+  .steps::before { display: none; }
+  .demo-content { grid-template-columns: 1fr; }
+  .founder-inner { grid-template-columns: 1fr; gap: 48px; }
+  .waitlist-form { flex-direction: column; }
+  .waitlist-input { border-right: 1px solid var(--border2); }
+  footer { flex-direction: column; gap: 12px; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cursor"></div>
+<div class="cursor-ring" id="cursorRing"></div>
+
+<!-- NAV -->
+<nav id="navbar">
+  <a href="#" class="nav-logo">
+    <div class="nav-logo-hex">M</div>
+    <span class="nav-logo-text">Missolowo <span>ScriptIQ</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#founder">Founder</a></li>
+  </ul>
+  <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="text-decoration:none;">
+    <button class="nav-cta">Join Waitlist</button>
+  </a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+
+  <!-- Film strips -->
+  <div class="film-strip left">
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+  </div>
+  <div class="film-strip right">
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+    <div class="film-hole"></div><div class="film-line"></div>
+  </div>
+
+  <div class="hero-eyebrow">
+    <div class="hero-eyebrow-dot"></div>
+    Now building · Nollywood Edition
+  </div>
+
+  <h1 class="hero-title">
+    The AI pre-production<br>suite <em>built for Nollywood</em>
+  </h1>
+
+  <p class="hero-sub">
+    I'm Missolowo — the creator of Missolowo ScriptIQ.<br>
+    Automating the painful hours of film pre-production<br>so African filmmakers can focus on the story.
+  </p>
+
+  <div class="hero-ctas">
+    <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="text-decoration:none;">
+      <button class="btn-primary">Join the Waitlist</button>
+    </a>
+    <button class="btn-secondary" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See Features ↓</button>
+  </div>
+
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="hero-stat-num">2,500+</div>
+      <div class="hero-stat-label">Nollywood films/yr</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">70%</div>
+      <div class="hero-stat-label">Filmmakers AI-ready</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">0</div>
+      <div class="hero-stat-label">Local AI competitors</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">5</div>
+      <div class="hero-stat-label">AI tools planned</div>
+    </div>
+  </div>
+
+  <div class="scroll-hint">
+    <div class="scroll-line"></div>
+    Scroll
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee-track">
+    <div class="marquee-item"><span>AI Script Breakdown</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Call Sheet<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Script Summarizer<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Location Breakdown<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Scene Numbering<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Script Generator<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>Built for Nollywood</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">Ready for the World<div class="marquee-sep">✦</div></div>
+    <!-- Duplicate for seamless loop -->
+    <div class="marquee-item"><span>AI Script Breakdown</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Call Sheet<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Script Summarizer<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Location Breakdown<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Scene Numbering<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Script Generator<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>Built for Nollywood</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">Ready for the World<div class="marquee-sep">✦</div></div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-label reveal">Features</div>
+  <h2 class="section-title reveal">Everything pre-production<br><em>needs</em></h2>
+  <p class="section-sub reveal">Five AI-powered tools that replace hours of manual prep work — built specifically for how African productions actually operate.</p>
+
+  <div class="features-grid reveal">
+    <div class="feature-card active-feature">
+      <div class="feature-num">01</div>
+      <div class="feature-icon">📋</div>
+      <div class="feature-title">AI Script Breakdown</div>
+      <div class="feature-desc">Paste any screenplay. Instantly extract cast, props, locations, wardrobe, SFX, vehicles and extras — scene by scene. Export to CSV or JSON for your team.</div>
+      <div class="feature-status live"><div class="feature-status-dot"></div>Live Now</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">02</div>
+      <div class="feature-icon">📄</div>
+      <div class="feature-title">AI Call Sheet Generator</div>
+      <div class="feature-desc">Auto-generate professional call sheets from your script breakdown. Cast, crew, locations and timing — all formatted and ready to share with your team.</div>
+      <div class="feature-status soon"><div class="feature-status-dot"></div>Coming Soon</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">03</div>
+      <div class="feature-icon">📝</div>
+      <div class="feature-title">AI Script Summarizer</div>
+      <div class="feature-desc">One-click summaries for producers, investors, and distributors. Loglines, character arcs, and scene-by-scene breakdowns generated instantly.</div>
+      <div class="feature-status soon"><div class="feature-status-dot"></div>Coming Soon</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">04</div>
+      <div class="feature-icon">📍</div>
+      <div class="feature-title">AI Location Breakdown</div>
+      <div class="feature-desc">Group every scene by location automatically. See shooting days per location, required cast, and optimize your entire shooting schedule intelligently.</div>
+      <div class="feature-status soon"><div class="feature-status-dot"></div>Coming Soon</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">05</div>
+      <div class="feature-icon">🔢</div>
+      <div class="feature-title">AI Scene Numbering</div>
+      <div class="feature-desc">Automatically number every scene in your script using industry-standard formatting. Saves hours of tedious manual work on long-form productions.</div>
+      <div class="feature-status soon"><div class="feature-status-dot"></div>Coming Soon</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">06</div>
+      <div class="feature-icon">🎬</div>
+      <div class="feature-title">AI Script Generator</div>
+      <div class="feature-desc">Generate full Nollywood-style scripts from a simple premise. Built for content creators who need fast, culturally-relevant African screenplays.</div>
+      <div class="feature-status soon"><div class="feature-status-dot"></div>Future</div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<div id="how" style="background: var(--bg2); border-top: 1px solid var(--border);">
+<section>
+  <div class="section-label reveal">How it works</div>
+  <h2 class="section-title reveal">From script to breakdown<br><em>in seconds</em></h2>
+
+  <div class="how-wrap reveal">
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-title">Paste your script</div>
+        <div class="step-desc">Copy and paste your screenplay — a single scene or a full script. Any format works.</div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-title">AI does the work</div>
+        <div class="step-desc">Our AI reads every line and extracts all production elements scene by scene in seconds.</div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-title">Export and shoot</div>
+        <div class="step-desc">Download your breakdown as CSV or JSON and share it with your entire production team.</div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- DEMO PREVIEW -->
+<div class="demo-section">
+  <div class="demo-inner">
+    <div class="section-label reveal">Live Demo</div>
+    <h2 class="section-title reveal">See it <em>in action</em></h2>
+
+    <div class="demo-screen reveal">
+      <div class="demo-bar">
+        <div class="demo-dots">
+          <div class="demo-dot" style="background:#E05C5C"></div>
+          <div class="demo-dot" style="background:#C9A84C"></div>
+          <div class="demo-dot" style="background:#4CAF76"></div>
+        </div>
+        <div class="demo-url">missolowoscriptiq.com/breakdown</div>
+      </div>
+      <div class="demo-content">
+        <div class="demo-input-side">
+          <div class="demo-label">Script Input</div>
+          <div class="demo-textarea">INT. LAGOS MARKET — DAY
+
+CHISOM (30s, fierce eyes) storms through the market clutching a Nokia phone.
+
+CHISOM
+Bring the money to Balogun by noon.
+
+She bumps into ALHAJI MUSA (60s, white agbada). A black SUV idles at the entrance...</div>
+          <div class="demo-run">⬡ Run AI Breakdown</div>
+        </div>
+        <div class="demo-output">
+          <div class="demo-label">Breakdown Results</div>
+          <div class="demo-scene-card">
+            <div class="demo-scene-num">01</div>
+            <div class="demo-scene-slug">INT. LAGOS MARKET — DAY</div>
+            <div class="demo-tags">
+              <span class="demo-tag" style="background:rgba(76,175,118,0.1);color:#4CAF76;border:1px solid rgba(76,175,118,0.3)">Chisom</span>
+              <span class="demo-tag" style="background:rgba(76,175,118,0.1);color:#4CAF76;border:1px solid rgba(76,175,118,0.3)">Alhaji Musa</span>
+              <span class="demo-tag" style="background:rgba(201,168,76,0.1);color:#C9A84C;border:1px solid rgba(201,168,76,0.3)">Lagos Market</span>
+              <span class="demo-tag" style="background:rgba(224,147,92,0.1);color:#E0935C;border:1px solid rgba(224,147,92,0.3)">Nokia phone</span>
+              <span class="demo-tag" style="background:rgba(155,110,224,0.1);color:#9B6EE0;border:1px solid rgba(155,110,224,0.3)">Wrapper</span>
+              <span class="demo-tag" style="background:rgba(76,191,176,0.1);color:#4CBFB0;border:1px solid rgba(76,191,176,0.3)">Black SUV</span>
+            </div>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);padding:14px;font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;text-align:center;">
+            ✦ &nbsp; Export to CSV &nbsp; · &nbsp; Export to JSON &nbsp; ✦
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOUNDER -->
+<div class="founder-section" id="founder">
+  <div class="founder-inner">
+    <div class="reveal">
+      <div class="section-label">The Founder</div>
+      <div class="founder-quote">
+        "I wrote this in a notebook on April 29th. <strong>Two weeks later, the first feature was live.</strong> This is what building in public looks like."
+      </div>
+      <div class="founder-sig">
+        <div class="founder-avatar">M</div>
+        <div>
+          <div class="founder-name">Missolowo</div>
+          <div class="founder-role">Creator · Missolowo ScriptIQ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notebook-card reveal">
+      <div class="notebook-line highlight">Product Builder: The New Product Manager</div>
+      <div class="notebook-line">in the Age of AI</div>
+      <div class="notebook-line" style="color:var(--text3)">Before you build you have to think:</div>
+      <div class="notebook-line" style="color:var(--text3)">Users · Jobmakers</div>
+      <div style="border: 1px solid var(--gold-dim); padding: 14px; margin: 12px 0;">
+        <div class="notebook-line">I will build:</div>
+        <div class="notebook-line highlight">AI — Call Sheet</div>
+        <div class="notebook-line highlight">AI — Script Breakdown</div>
+        <div class="notebook-line highlight">AI — Script Summarize</div>
+        <div class="notebook-line highlight">AI — Scene Number for each</div>
+        <div class="notebook-line highlight">AI — Location Breakdown</div>
+      </div>
+      <div class="notebook-line" style="color:var(--text3);font-size:11px;text-align:right">29 / 04 / 2026</div>
+    </div>
+  </div>
+</div>
+
+<!-- ROADMAP -->
+<section id="roadmap" class="roadmap-section">
+  <div class="roadmap-inner">
+    <div class="section-label reveal">Roadmap</div>
+    <h2 class="section-title reveal">Building in <em>public</em></h2>
+    <p class="section-sub reveal">Every feature gets built and documented publicly. Follow the journey across all platforms.</p>
+
+    <div class="roadmap-items">
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">The Idea — Notebook to Vision</div>
+          <div class="roadmap-desc">April 29, 2026 · Wrote the entire product vision by hand. Identified 5 AI tools Nollywood desperately needs.</div>
+          <div class="roadmap-badge badge-done">✓ Done</div>
+        </div>
+      </div>
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Market Research — Validated the Gap</div>
+          <div class="roadmap-desc">Confirmed 2,500+ Nollywood films/yr, 70% AI adoption-ready, zero serious local competition.</div>
+          <div class="roadmap-badge badge-done">✓ Done</div>
+        </div>
+      </div>
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Feature 1 — AI Script Breakdown</div>
+          <div class="roadmap-desc">First working prototype live. Paste a screenplay, get full cast, props, wardrobe, locations, SFX instantly.</div>
+          <div class="roadmap-badge badge-done">✓ Live</div>
+        </div>
+      </div>
+      <div class="roadmap-item next reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot next"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Feature 2 — AI Call Sheet Generator</div>
+          <div class="roadmap-desc">Auto-generate professional call sheets from script breakdowns. Currently building.</div>
+          <div class="roadmap-badge badge-next">⬡ Up Next</div>
+        </div>
+      </div>
+      <div class="roadmap-item reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot planned"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Feature 3 — AI Script Summarizer</div>
+          <div class="roadmap-desc">One-click summaries for producers, investors and distributors.</div>
+          <div class="roadmap-badge badge-planned">Planned</div>
+        </div>
+      </div>
+      <div class="roadmap-item reveal">
+        <div class="roadmap-dot-col">
+          <div class="roadmap-dot planned"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Feature 4 & 5 — Location + Scene Numbering</div>
+          <div class="roadmap-desc">Complete the core pre-production suite for Nollywood productions of any scale.</div>
+          <div class="roadmap-badge badge-planned">Planned</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-section">
+  <div class="cta-inner">
+    <h2 class="cta-title reveal">Ready to revolutionise<br><em>your production?</em></h2>
+    <p class="cta-sub reveal">Join the waitlist. Be the first Nollywood filmmaker to use every feature as it drops.</p>
+
+    <div class="waitlist-form reveal">
+      <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="width:100%; display:block; text-decoration:none;">
+        <button class="waitlist-btn" style="width:100%; font-size:15px; padding:16px;">Join the Waitlist →</button>
+      </a>
+    </div>
+
+    <div class="socials reveal">
+      <a href="https://instagram.com/miss_olowo" class="social-link" target="_blank">
+        📸 <span>@miss_olowo</span> · Instagram
+      </a>
+      <a href="https://tiktok.com/@miss_olowo1" class="social-link" target="_blank">
+        🎵 <span>@miss_olowo1</span> · TikTok
+      </a>
+      <a href="https://x.com/misd_olowo1" class="social-link" target="_blank">
+        ✕ <span>@misd_olowo1</span> · X
+      </a>
+      <a href="https://youtube.com/@missolowo" class="social-link" target="_blank">
+        ▶ <span>@missolowo</span> · YouTube
+      </a>
+      <a href="https://linkedin.com/in/miss-olowo" class="social-link" target="_blank">
+        💼 <span>@miss olowo</span> · LinkedIn
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">© 2026 Missolowo ScriptIQ · Built for Nollywood · Ready for the World</div>
+  <div class="footer-right">Building in Public · Follow the journey</div>
+</footer>
+
+<script>
+// Custom cursor
+const cursor = document.getElementById('cursor');
+const ring = document.getElementById('cursorRing');
+let mx = 0, my = 0, rx = 0, ry = 0;
+document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+function animCursor() {
+  cursor.style.left = mx - 5 + 'px';
+  cursor.style.top = my - 5 + 'px';
+  rx += (mx - rx) * 0.12;
+  ry += (my - ry) * 0.12;
+  ring.style.left = rx - 18 + 'px';
+  ring.style.top = ry - 18 + 'px';
+  requestAnimationFrame(animCursor);
+}
+animCursor();
+document.querySelectorAll('button, a, input').forEach(el => {
+  el.addEventListener('mouseenter', () => cursor.style.transform = 'scale(2.5)');
+  el.addEventListener('mouseleave', () => cursor.style.transform = 'scale(1)');
+});
+
+// Navbar scroll
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll', () => {
+  navbar.classList.toggle('scrolled', window.scrollY > 40);
+});
+
+// Reveal on scroll
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry, i) => {
+    if (entry.isIntersecting) {
+      setTimeout(() => entry.target.classList.add('visible'), i * 60);
+    }
+  });
+}, { threshold: 0.1 });
+reveals.forEach(el => observer.observe(el));
+
+// Waitlist
+function handleWaitlist() {
+  const email = document.getElementById('waitlist-email').value.trim();
+  if (!email || !email.includes('@')) {
+    alert('Please enter a valid email address.');
+    return;
+  }
+  alert('You\'re on the list! 🎬\n\nWelcome to Missolowo ScriptIQ. We\'ll be in touch as new features drop.');
+  document.getElementById('waitlist-email').value = '';
+}
+
+// Feature card hover
+document.querySelectorAll('.feature-card').forEach(card => {
+  card.addEventListener('mouseenter', () => {
+    document.querySelectorAll('.feature-card').forEach(c => c.classList.remove('active-feature'));
+    card.classList.add('active-feature');
+  });
+});
+</script>
+</body>
+</html>
