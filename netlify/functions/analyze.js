@@ -75,11 +75,11 @@ IMPORTANT RULES:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-5',
         max_tokens: 8000,
         messages: [{ role: 'user', content: prompt }]
       })
