@@ -75,7 +75,7 @@ IMPORTANT RULES:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
