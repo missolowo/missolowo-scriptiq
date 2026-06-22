@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Missolowo ScriptIQ — AI Pre-Production Workspace for Filmmakers</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G1F83JSDLX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-G1F83JSDLX');
+</script>
+<!-- jsPDF for PDF export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --gold: #D4A017;
+  --gold-bright: #F5C842;
+  --gold-dim: #7A6228;
+  --bg: #080806;
+  --bg2: #0F0F0C;
+  --bg3: #161612;
+  --border: #1E1E18;
+  --border2: #2A2A22;
+  --text: #F0EFE6;
+  --text2: #A0A090;
+  --text3: #505045;
+  --green: #4CAF76;
+  --red: #E05C5C;
+  --blue: #5C9BE0;
+  --purple: #9B6EE0;
+  --orange: #E0935C;
+  --teal: #4CBFB0;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:998;opacity:0.4}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 48px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid transparent;transition:all 0.3s}
+nav.scrolled{background:rgba(8,8,6,0.95);backdrop-filter:blur(20px);border-bottom-color:var(--border)}
+.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.nav-hex{width:32px;height:32px;background:var(--gold);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#000}
+.nav-name{font-weight:800;font-size:16px;color:var(--text)}
+.nav-name span{color:var(--gold)}
+.nav-links{display:flex;align-items:center;gap:32px;list-style:none}
+.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s;letter-spacing:0.5px}
+.nav-links a:hover{color:var(--gold)}
+.nav-cta{background:var(--gold);color:#000;padding:10px 22px;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;letter-spacing:1px;cursor:pointer;transition:all 0.2s;clip-path:polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px)}
+.nav-cta:hover{background:var(--gold-bright);transform:translateY(-1px)}
+
+/* HERO */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:120px 24px 80px;position:relative;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(212,160,23,0.07) 0%,transparent 70%),radial-gradient(ellipse 40% 40% at 20% 80%,rgba(76,175,118,0.04) 0%,transparent 60%)}
+.kente-bar{position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#C0392B 0%,#C0392B 20%,#D4A017 20%,#D4A017 40%,#27AE60 40%,#27AE60 60%,#2980B9 60%,#2980B9 80%,#E67E22 80%,#E67E22 100%)}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border2);padding:7px 18px;border-radius:100px;font-size:11px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px;background:rgba(212,160,23,0.04);animation:fadeUp 0.8s ease both}
+.hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+.hero-title{font-family:'Playfair Display',serif;font-size:clamp(40px,7vw,84px);font-weight:900;line-height:1.05;letter-spacing:-2px;margin-bottom:24px;max-width:900px;animation:fadeUp 0.8s 0.1s ease both}
+.hero-title em{font-style:italic;color:var(--gold)}
+.hero-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 16px;line-height:1.8;font-family:'DM Mono',monospace;font-weight:300;animation:fadeUp 0.8s 0.2s ease both}
+.hero-founder-line{font-size:12px;color:var(--text3);font-style:italic;margin-bottom:40px;animation:fadeUp 0.8s 0.25s ease both}
+.hero-founder-line span{color:var(--gold)}
+.hero-ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:56px;animation:fadeUp 0.8s 0.3s ease both}
+.btn-primary{background:var(--gold);color:#000;padding:15px 34px;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;clip-path:polygon(10px 0%,100% 0%,100% calc(100% - 10px),calc(100% - 10px) 100%,0% 100%,0% 10px)}
+.btn-primary:hover{background:var(--gold-bright);transform:translateY(-2px)}
+.btn-secondary{background:transparent;color:var(--text);padding:15px 34px;border:1px solid var(--border2);font-family:'Syne',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;cursor:pointer;transition:all 0.2s}
+.btn-secondary:hover{border-color:var(--gold);color:var(--gold)}
+.hero-stats{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.8s 0.4s ease both}
+.hero-stat{text-align:center}
+.hero-stat-num{font-family:'Playfair Display',serif;font-size:34px;font-weight:900;color:var(--gold);line-height:1;margin-bottom:6px}
+.hero-stat-label{font-size:10px;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase}
+.scroll-hint{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;font-size:9px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;animation:fadeUp 1s 0.8s ease both}
+.scroll-line{width:1px;height:40px;background:linear-gradient(180deg,var(--gold),transparent);animation:scrollPulse 2s ease-in-out infinite}
+@keyframes scrollPulse{0%,100%{opacity:0.3}50%{opacity:1}}
+
+/* MARQUEE */
+.marquee-wrap{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:16px 0;overflow:hidden;background:var(--bg2)}
+.marquee-track{display:flex;gap:0;animation:marquee 20s linear infinite;width:max-content}
+.marquee-item{display:flex;align-items:center;gap:18px;padding:0 24px;white-space:nowrap;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--text3)}
+.marquee-item span{color:var(--gold);font-weight:700}
+.marquee-sep{color:var(--gold-dim);font-size:16px}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* SECTIONS */
+section{padding:100px 24px;max-width:1200px;margin:0 auto}
+.section-label{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.section-label::before{content:'';display:block;width:28px;height:1px;background:var(--gold)}
+.section-title{font-family:'Playfair Display',serif;font-size:clamp(30px,5vw,52px);font-weight:700;line-height:1.1;letter-spacing:-1px;margin-bottom:18px}
+.section-title em{font-style:italic;color:var(--gold)}
+.section-sub{font-size:14px;color:var(--text2);line-height:1.8;max-width:500px;font-family:'DM Mono',monospace;font-weight:300}
+
+/* ============================================
+   LIVE SCRIPT BREAKDOWN TOOL
+============================================ */
+.tool-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:80px 24px}
+.tool-inner{max-width:1000px;margin:0 auto}
+.tool-header{text-align:center;margin-bottom:48px}
+.tool-panel{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:28px;margin-bottom:24px;position:relative}
+.tool-panel::before{content:attr(data-label);position:absolute;top:-10px;left:18px;background:var(--bg);padding:0 8px;font-size:9px;letter-spacing:2px;color:var(--gold);text-transform:uppercase}
+.lang-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.lang-btn{font-size:10px;padding:5px 12px;border:1px solid var(--border2);border-radius:100px;color:var(--text3);cursor:pointer;transition:all 0.2s;background:transparent;font-family:'DM Mono',monospace}
+.lang-btn:hover,.lang-btn.active{border-color:var(--gold);color:var(--gold);background:rgba(212,160,23,0.08)}
+.upload-zone{border:2px dashed var(--border2);border-radius:4px;padding:28px;text-align:center;margin-bottom:16px;cursor:pointer;transition:border-color 0.2s;position:relative}
+.upload-zone:hover{border-color:var(--gold-dim)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-icon{font-size:28px;margin-bottom:10px}
+.upload-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.upload-sub{font-size:11px;color:var(--text3)}
+.divider-text{display:flex;align-items:center;gap:12px;margin:14px 0;font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase}
+.divider-text::before,.divider-text::after{content:'';flex:1;height:1px;background:var(--border)}
+.script-textarea{width:100%;min-height:180px;background:var(--bg2);border:1px solid var(--border2);color:var(--text);font-family:'DM Mono',monospace;font-size:12px;line-height:1.8;padding:14px;resize:vertical;border-radius:2px;outline:none;transition:border-color 0.2s}
+.script-textarea:focus{border-color:var(--gold-dim)}
+.script-textarea::placeholder{color:var(--text3)}
+.free-badge{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--green);border:1px solid rgba(76,175,118,0.3);padding:4px 10px;border-radius:2px;margin-bottom:14px;background:rgba(76,175,118,0.08)}
+.analyze-btn{width:100%;margin-top:14px;background:var(--gold);color:#000;border:none;padding:15px;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;border-radius:2px;transition:all 0.2s}
+.analyze-btn:hover{background:var(--gold-bright)}
+.analyze-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+/* LOADING */
+.loading-state{display:none;text-align:center;padding:48px;color:var(--text2)}
+.loading-state.active{display:block}
+.loading-spinner{font-size:36px;display:inline-block;animation:spin 2s linear infinite;margin-bottom:14px}
+.loading-text{font-size:11px;letter-spacing:2px;text-transform:uppercase;animation:pulse 1.5s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+/* RESULTS */
+.results-panel{display:none}
+.results-panel.active{display:block}
+.results-header-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.results-title{font-family:'Syne',sans-serif;font-weight:800;font-size:16px;letter-spacing:0.5px}
+.stats-chips{display:flex;gap:8px;flex-wrap:wrap}
+.stat-chip{display:flex;align-items:center;gap:5px;background:var(--bg2);border:1px solid var(--border);padding:4px 10px;border-radius:2px;font-size:11px}
+.stat-dot{width:6px;height:6px;border-radius:50%}
+.scene-cards{display:flex;flex-direction:column;gap:14px;margin-bottom:24px}
+.scene-card{background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden;animation:fadeUp 0.4s ease both}
+.scene-card-header{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s}
+.scene-card-header:hover{background:var(--bg3)}
+.scene-num{font-family:'Playfair Display',serif;font-size:26px;font-weight:900;color:var(--gold);min-width:44px;line-height:1}
+.scene-meta{flex:1}
+.scene-slug{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:2px}
+.scene-desc{font-size:11px;color:var(--text2);font-style:italic;font-family:'Playfair Display',serif}
+.scene-badges{display:flex;gap:5px}
+.time-badge{font-size:9px;padding:2px 7px;border-radius:2px;letter-spacing:1px;text-transform:uppercase;font-weight:700}
+.badge-day{background:rgba(212,160,23,0.15);color:var(--gold);border:1px solid rgba(212,160,23,0.3)}
+.badge-night{background:rgba(92,155,224,0.15);color:var(--blue);border:1px solid rgba(92,155,224,0.3)}
+.badge-int{background:rgba(155,110,224,0.15);color:var(--purple);border:1px solid rgba(155,110,224,0.3)}
+.badge-ext{background:rgba(76,175,118,0.15);color:var(--green);border:1px solid rgba(76,175,118,0.3)}
+.chevron{color:var(--text3);transition:transform 0.2s;font-size:12px}
+.scene-card.open .chevron{transform:rotate(180deg)}
+.scene-body{display:none;padding:18px}
+.scene-card.open .scene-body{display:block}
+.elements-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.element-group{background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:12px}
+.element-group-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.element-color-bar{height:2px;width:14px;border-radius:1px}
+.element-tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:2px;margin:2px;border:1px solid transparent;font-family:'DM Mono',monospace}
+.tag-cast{background:rgba(76,175,118,0.1);color:var(--green);border-color:rgba(76,175,118,0.25)}
+.tag-location{background:rgba(212,160,23,0.1);color:var(--gold);border-color:rgba(212,160,23,0.25)}
+.tag-prop{background:rgba(224,147,92,0.1);color:var(--orange);border-color:rgba(224,147,92,0.25)}
+.tag-wardrobe{background:rgba(155,110,224,0.1);color:var(--purple);border-color:rgba(155,110,224,0.25)}
+.tag-sfx{background:rgba(224,92,92,0.1);color:var(--red);border-color:rgba(224,92,92,0.25)}
+.tag-vehicle{background:rgba(76,191,176,0.1);color:var(--teal);border-color:rgba(76,191,176,0.25)}
+.tag-extra{background:rgba(92,155,224,0.1);color:var(--blue);border-color:rgba(92,155,224,0.25)}
+.tag-note{background:rgba(200,200,200,0.06);color:var(--text2);border-color:var(--border)}
+.empty-tag{font-size:10px;color:var(--text3);font-style:italic}
+.export-bar{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-bottom:24px}
+.export-btn{background:none;border:1px solid var(--border);color:var(--text2);padding:9px 18px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;border-radius:2px;transition:all 0.2s;text-transform:uppercase}
+.export-btn:hover{border-color:var(--gold);color:var(--gold)}
+.export-btn.primary-export{background:var(--gold);color:#000;border-color:var(--gold);font-weight:700}
+.export-btn.primary-export:hover{background:var(--gold-bright)}
+
+/* FEEDBACK */
+.feedback-panel{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:24px;margin-top:8px}
+.feedback-title{font-size:13px;font-weight:700;margin-bottom:16px;text-align:center}
+.stars-row{display:flex;justify-content:center;gap:8px;margin-bottom:16px}
+.star-btn{font-size:28px;cursor:pointer;transition:transform 0.2s;background:none;border:none;color:var(--text3)}
+.star-btn:hover,.star-btn.active{color:var(--gold);transform:scale(1.2)}
+.feedback-textarea{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);font-family:'DM Mono',monospace;font-size:12px;padding:12px;border-radius:2px;resize:none;outline:none;min-height:80px;margin-bottom:12px}
+.feedback-textarea::placeholder{color:var(--text3)}
+.feedback-submit{width:100%;background:var(--bg2);color:var(--text2);border:1px solid var(--border2);padding:11px;font-family:'Syne',sans-serif;font-weight:600;font-size:12px;letter-spacing:1px;cursor:pointer;border-radius:2px;transition:all 0.2s;text-transform:uppercase}
+.feedback-submit:hover{border-color:var(--gold);color:var(--gold)}
+.feedback-thanks{display:none;text-align:center;padding:20px;color:var(--green);font-size:13px}
+
+/* ERROR */
+.error-msg{display:none;background:rgba(224,92,92,0.08);border:1px solid rgba(224,92,92,0.3);color:var(--red);padding:14px 18px;border-radius:4px;font-size:12px;margin-top:12px}
+.error-msg.active{display:block}
+
+/* FEATURES */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-top:56px}
+.feature-card{background:var(--bg2);padding:36px 32px;transition:background 0.3s;position:relative;overflow:hidden}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);transform:scaleX(0);transition:transform 0.4s ease}
+.feature-card:hover{background:var(--bg3)}
+.feature-card:hover::before{transform:scaleX(1)}
+.feature-num{font-family:'Playfair Display',serif;font-size:44px;font-weight:900;color:var(--border2);line-height:1;margin-bottom:16px;transition:color 0.3s}
+.feature-card:hover .feature-num{color:var(--gold-dim)}
+.feature-icon{font-size:24px;margin-bottom:16px}
+.feature-title{font-size:16px;font-weight:700;margin-bottom:10px}
+.feature-desc{font-size:12px;color:var(--text2);line-height:1.7;font-family:'DM Mono',monospace;font-weight:300}
+.feature-status{display:inline-flex;align-items:center;gap:5px;margin-top:16px;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;padding:3px 8px;border-radius:2px}
+.status-live{background:rgba(76,175,118,0.1);color:var(--green);border:1px solid rgba(76,175,118,0.3)}
+.status-soon{background:rgba(212,160,23,0.08);color:var(--gold-dim);border:1px solid rgba(212,160,23,0.2)}
+.status-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+
+/* TESTIMONIAL */
+.testimonial-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:80px 24px}
+.testimonial-inner{max-width:800px;margin:0 auto;text-align:center}
+.testimonial-quote{font-family:'Playfair Display',serif;font-size:clamp(18px,3vw,26px);font-weight:400;font-style:italic;line-height:1.6;color:var(--text);margin-bottom:28px;position:relative}
+.testimonial-quote::before{content:'"';font-size:80px;color:var(--gold);opacity:0.2;position:absolute;top:-20px;left:-10px;font-family:'Playfair Display',serif;line-height:1}
+.testimonial-author{display:flex;align-items:center;justify-content:center;gap:14px}
+.testimonial-avatar{width:48px;height:48px;border-radius:50%;background:var(--bg3);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:var(--gold);font-family:'Playfair Display',serif}
+.testimonial-name{font-size:14px;font-weight:700;margin-bottom:2px}
+.testimonial-role{font-size:11px;color:var(--text2);font-family:'DM Mono',monospace}
+
+/* FOUNDER */
+.founder-section{background:var(--bg2);border-top:1px solid var(--border);padding:100px 24px}
+.founder-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:center}
+.founder-quote{font-family:'Playfair Display',serif;font-size:clamp(22px,3vw,34px);font-weight:400;font-style:italic;line-height:1.4;color:var(--text);margin-bottom:28px}
+.founder-quote strong{font-style:normal;color:var(--gold)}
+.founder-sig{display:flex;align-items:center;gap:14px}
+.founder-photo{width:60px;height:60px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;background:var(--bg3)}
+.founder-photo-placeholder{width:60px;height:60px;border-radius:50%;border:2px solid var(--gold);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--gold)}
+.founder-name{font-size:15px;font-weight:700;margin-bottom:2px}
+.founder-role{font-size:11px;color:var(--text2);font-family:'DM Mono',monospace}
+.founder-bio-card{background:var(--bg3);border:1px solid var(--border2);padding:28px;position:relative}
+.founder-bio-card::before{content:'FOUNDER';position:absolute;top:-10px;left:18px;background:var(--bg3);padding:0 8px;font-size:9px;letter-spacing:2px;color:var(--gold)}
+.founder-bio-name{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;margin-bottom:4px}
+.founder-bio-title{font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;font-family:'DM Mono',monospace}
+.founder-bio-text{font-size:12px;color:var(--text2);line-height:1.8;font-family:'DM Mono',monospace;font-weight:300;margin-bottom:16px}
+.productions-label{font-size:9px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:10px}
+.productions-list{display:flex;flex-wrap:wrap;gap:5px}
+.production-tag{font-size:9px;padding:2px 7px;background:rgba(212,160,23,0.08);border:1px solid rgba(212,160,23,0.2);color:var(--gold-dim);border-radius:2px;font-family:'DM Mono',monospace}
+
+/* ROADMAP */
+.roadmap-inner{max-width:720px;margin:0 auto}
+.roadmap-items{margin-top:48px}
+.roadmap-item{display:flex;gap:24px;padding:24px 0;border-bottom:1px solid var(--border);opacity:0.6;transition:opacity 0.3s}
+.roadmap-item.done,.roadmap-item.next{opacity:1}
+.roadmap-item:hover{opacity:1}
+.roadmap-dot-col{display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.roadmap-dot{width:12px;height:12px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0}
+.rdot-done{background:var(--green);border-color:var(--green)}
+.rdot-next{background:var(--gold);border-color:var(--gold);box-shadow:0 0 10px rgba(212,160,23,0.5);animation:rpulse 2s ease-in-out infinite}
+@keyframes rpulse{0%,100%{box-shadow:0 0 8px rgba(212,160,23,0.4)}50%{box-shadow:0 0 18px rgba(212,160,23,0.8)}}
+.roadmap-line{width:1px;flex:1;background:var(--border);min-height:20px}
+.roadmap-content{flex:1}
+.roadmap-title{font-size:15px;font-weight:700;margin-bottom:5px}
+.roadmap-desc{font-size:11px;color:var(--text2);line-height:1.7;font-family:'DM Mono',monospace;font-weight:300}
+.roadmap-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;padding:2px 7px;border-radius:2px;letter-spacing:1.5px;text-transform:uppercase;margin-top:8px}
+.rbadge-done{background:rgba(76,175,118,0.1);color:var(--green);border:1px solid rgba(76,175,118,0.3)}
+.rbadge-next{background:rgba(212,160,23,0.1);color:var(--gold);border:1px solid rgba(212,160,23,0.3)}
+.rbadge-planned{background:rgba(92,155,224,0.08);color:var(--blue);border:1px solid rgba(92,155,224,0.2)}
+
+/* CTA */
+.cta-section{padding:100px 24px;background:var(--bg2);border-top:1px solid var(--border);text-align:center}
+.cta-inner{max-width:640px;margin:0 auto}
+.cta-title{font-family:'Playfair Display',serif;font-size:clamp(34px,6vw,64px);font-weight:900;line-height:1.05;letter-spacing:-2px;margin-bottom:20px}
+.cta-title em{font-style:italic;color:var(--gold)}
+.cta-sub{font-size:14px;color:var(--text2);line-height:1.8;font-family:'DM Mono',monospace;font-weight:300;margin-bottom:40px}
+.socials{display:flex;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:36px}
+.social-link{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text3);text-decoration:none;transition:color 0.2s;letter-spacing:0.5px}
+.social-link:hover{color:var(--gold)}
+.social-link span{font-weight:600}
+
+/* FOOTER */
+footer{border-top:1px solid var(--border);padding:24px 48px;display:flex;align-items:center;justify-content:space-between;background:var(--bg);flex-wrap:wrap;gap:12px}
+.footer-left,.footer-right{font-size:10px;color:var(--text3);letter-spacing:1px}
+
+/* ANIMATIONS */
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.reveal{opacity:0;transform:translateY(20px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  nav{padding:14px 18px}
+  .nav-links{display:none}
+  .founder-inner{grid-template-columns:1fr;gap:40px}
+  footer{flex-direction:column;text-align:center}
+  .hero-stats{gap:28px}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="navbar">
+  <a href="#" class="nav-logo">
+    <div class="nav-hex">M</div>
+    <span class="nav-name">Missolowo <span>ScriptIQ</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#breakdown">Breakdown</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#founder">Founder</a></li>
+  </ul>
+  <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="text-decoration:none">
+    <button class="nav-cta">Join Waitlist</button>
+  </a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="kente-bar"></div>
+  <div class="hero-bg"></div>
+  <div class="hero-badge"><div class="hero-badge-dot"></div>Now Live · Nollywood Edition</div>
+  <h1 class="hero-title">The AI Pre-Production<br>Workspace <em>Built for Filmmakers</em></h1>
+  <p class="hero-sub">Automate script breakdowns, scene numbering, location planning and call sheets — so you can focus on the story.</p>
+  <p class="hero-founder-line"><span>Built by a Filmmaker. For Filmmakers.</span></p>
+  <div class="hero-ctas">
+    <button class="btn-primary" onclick="document.getElementById('breakdown').scrollIntoView({behavior:'smooth'})">Try Script Breakdown Free</button>
+    <button class="btn-secondary" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See Features ↓</button>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-num">100+</div><div class="hero-stat-label">Filmmakers on waitlist</div></div>
+    <div class="hero-stat"><div class="hero-stat-num">2,500+</div><div class="hero-stat-label">Nollywood films/yr</div></div>
+    <div class="hero-stat"><div class="hero-stat-num">5</div><div class="hero-stat-label">Languages supported</div></div>
+    <div class="hero-stat"><div class="hero-stat-num">0</div><div class="hero-stat-label">Local AI competitors</div></div>
+  </div>
+  <div class="scroll-hint"><div class="scroll-line"></div>Scroll</div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee-track">
+    <div class="marquee-item"><span>AI Script Breakdown</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Scene Numbering<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Location Breakdown<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Shooting Schedule<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Call Sheet<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>PDF Export</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">English · Yorùbá · Igbo · Hausa · Français<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>Built for Nollywood</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">Ready for the World<div class="marquee-sep">✦</div></div>
+    <!-- duplicate for loop -->
+    <div class="marquee-item"><span>AI Script Breakdown</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Scene Numbering<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Location Breakdown<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Shooting Schedule<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">AI Call Sheet<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>PDF Export</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">English · Yorùbá · Igbo · Hausa · Français<div class="marquee-sep">✦</div></div>
+    <div class="marquee-item"><span>Built for Nollywood</span><div class="marquee-sep">✦</div></div>
+    <div class="marquee-item">Ready for the World<div class="marquee-sep">✦</div></div>
+  </div>
+</div>
+
+<!-- LIVE SCRIPT BREAKDOWN TOOL -->
+<div class="tool-section" id="breakdown">
+  <div class="tool-inner">
+    <div class="tool-header reveal">
+      <div class="section-label" style="justify-content:center">Live Tool</div>
+      <h2 class="section-title" style="text-align:center">AI Script <em>Breakdown</em></h2>
+      <p class="section-sub" style="margin:0 auto;text-align:center">Paste your screenplay below. Our AI extracts cast, props, locations, wardrobe, SFX and more — instantly. Supports full scripts with unlimited scenes.</p>
+    </div>
+
+    <div class="tool-panel reveal" data-label="Script Input">
+      <div class="free-badge" id="accessBadge">
+        <span>✦</span> 3 FREE breakdowns · No sign-up needed · Unlimited scenes
+      </div>
+      <!-- Admin/Beta quick access -->
+      <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="email" id="adminEmailInput" placeholder="Enter email for unlimited access..." style="flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--border2);color:var(--text);font-family:'DM Mono',monospace;font-size:11px;padding:8px 12px;border-radius:2px;outline:none" onkeydown="if(event.key==='Enter')checkAdminAccess()"/>
+        <button onclick="checkAdminAccess()" style="background:var(--bg2);color:var(--text2);border:1px solid var(--border2);padding:8px 14px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;border-radius:2px;white-space:nowrap;text-transform:uppercase">Unlock Access</button>
+      </div>
+
+      <!-- Language selector -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Script Language (Auto-detected or select)</div>
+        <div class="lang-row" id="langRow">
+          <button class="lang-btn active" onclick="selectLang(this,'auto')">🔍 Auto-detect</button>
+          <button class="lang-btn" onclick="selectLang(this,'English')">🇬🇧 English</button>
+          <button class="lang-btn" onclick="selectLang(this,'Yoruba')">🇳🇬 Yorùbá</button>
+          <button class="lang-btn" onclick="selectLang(this,'Igbo')">🇳🇬 Igbo</button>
+          <button class="lang-btn" onclick="selectLang(this,'Hausa')">🇳🇬 Hausa</button>
+          <button class="lang-btn" onclick="selectLang(this,'French')">🇫🇷 Français</button>
+        </div>
+      </div>
+
+      <!-- File upload -->
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept=".pdf,.txt,.docx,.doc" onchange="handleFileUpload(event)"/>
+        <div class="upload-icon">📄</div>
+        <div class="upload-title">Upload Script File</div>
+        <div class="upload-sub">PDF, DOCX, or TXT · Click or drag & drop</div>
+      </div>
+      <div id="fileNameDisplay" style="display:none;font-size:11px;color:var(--green);margin-bottom:8px;font-family:'DM Mono',monospace"></div>
+
+      <div class="divider-text">or paste screenplay</div>
+
+      <textarea class="script-textarea" id="scriptInput" placeholder="INT. LAGOS MARKET — DAY&#10;&#10;CHISOM (30s, fierce eyes, wrapper tied tight) storms through the crowded market...&#10;&#10;Paste your full screenplay here. Any language. Unlimited scenes."></textarea>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <button class="analyze-btn" id="analyzeBtn" onclick="runBreakdown()">
+        ⬡ &nbsp; Run AI Breakdown
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading-state" id="loadingState">
+      <div class="loading-spinner">⬡</div>
+      <div class="loading-text">Analysing your screenplay...</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">This may take a moment for long scripts</div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-panel" id="resultsPanel">
+      <div class="results-header-bar">
+        <div class="results-title">BREAKDOWN REPORT</div>
+        <div class="stats-chips" id="statsChips"></div>
+      </div>
+
+      <!-- Legend -->
+      <div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--green);border-radius:1px"></div>Cast</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--gold);border-radius:1px"></div>Location</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--orange);border-radius:1px"></div>Props</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--purple);border-radius:1px"></div>Wardrobe</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--red);border-radius:1px"></div>SFX</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--teal);border-radius:1px"></div>Vehicles</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><div style="width:8px;height:8px;background:var(--blue);border-radius:1px"></div>Extras</div>
+      </div>
+
+      <div class="scene-cards" id="sceneCards"></div>
+
+      <!-- Export bar -->
+      <div class="export-bar">
+        <button class="export-btn primary-export" onclick="exportPDF()">↓ Export PDF</button>
+        <button class="export-btn" onclick="exportCSV()">↓ Export CSV</button>
+        <button class="export-btn" onclick="exportJSON()">↓ Export JSON</button>
+      </div>
+
+      <!-- Feedback -->
+      <div class="feedback-panel" id="feedbackPanel">
+        <div class="feedback-title">How was your breakdown? Rate your experience ⭐</div>
+        <div class="stars-row" id="starsRow">
+          <button class="star-btn" onclick="rateStar(1)">★</button>
+          <button class="star-btn" onclick="rateStar(2)">★</button>
+          <button class="star-btn" onclick="rateStar(3)">★</button>
+          <button class="star-btn" onclick="rateStar(4)">★</button>
+          <button class="star-btn" onclick="rateStar(5)">★</button>
+        </div>
+        <textarea class="feedback-textarea" id="feedbackText" placeholder="Tell us how we can improve the breakdown quality..."></textarea>
+        <button class="feedback-submit" onclick="submitFeedback()">Submit Feedback</button>
+        <div class="feedback-thanks" id="feedbackThanks">✓ Thank you! Your feedback helps us improve Missolowo ScriptIQ 🎬</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-label reveal">Features</div>
+  <h2 class="section-title reveal">Everything pre-production <em>needs</em></h2>
+  <p class="section-sub reveal">AI-powered tools that replace hours of manual work — built by a filmmaker with 15+ years in film and media and 6 years of production management experience.</p>
+  <div class="features-grid reveal">
+    <div class="feature-card active-feature">
+      <div class="feature-num">01</div>
+      <div class="feature-icon">📋</div>
+      <div class="feature-title">AI Script Breakdown</div>
+      <div class="feature-desc">Upload any screenplay and instantly generate cast breakdown, props breakdown, costume breakdown, location breakdown, equipment requirements and production notes — scene by scene. Includes scene number, INT/EXT and DAY/NIGHT for every scene. Unlimited scenes. Export to PDF, CSV or JSON.</div>
+      <div class="feature-status status-live"><div class="status-dot"></div>Live Now</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">02</div>
+      <div class="feature-icon">📅</div>
+      <div class="feature-title">AI Shooting Schedule Generator</div>
+      <div class="feature-desc">After your script breakdown is complete, ScriptIQ generates an intelligent shooting schedule. Scenes organised by location, cast requirements, shoot days and production efficiency — the natural next step in every production workflow.</div>
+      <div class="feature-status status-soon"><div class="status-dot"></div>Up Next</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">03</div>
+      <div class="feature-icon">📄</div>
+      <div class="feature-title">AI Call Sheet Generator</div>
+      <div class="feature-desc">Generate professional production call sheets directly from your breakdown and schedule data. Cast, crew, locations and timing — formatted and ready to share with your entire team instantly.</div>
+      <div class="feature-status status-soon"><div class="status-dot"></div>Planned</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">04</div>
+      <div class="feature-icon">💰</div>
+      <div class="feature-title">AI Budget Estimator</div>
+      <div class="feature-desc">Once breakdown and scheduling data are available, ScriptIQ estimates your production budget. Get instant cost projections for cast, locations, equipment and crew — before production begins.</div>
+      <div class="feature-status status-soon"><div class="status-dot"></div>Planned</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">05</div>
+      <div class="feature-icon">👥</div>
+      <div class="feature-title">Crew & Production Management</div>
+      <div class="feature-desc">A complete production workflow system for managing crew, departments, production tracking and team coordination — all connected to your script breakdown data.</div>
+      <div class="feature-status status-soon"><div class="status-dot"></div>Future</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">✦</div>
+      <div class="feature-icon">🌍</div>
+      <div class="feature-title">5 Language Support</div>
+      <div class="feature-desc">Full support for English, Yorùbá, Igbo, Hausa and Français across all features. AI auto-detects script language. The only film production AI tool built for African filmmakers in African languages.</div>
+      <div class="feature-status status-live"><div class="status-dot"></div>Live Now</div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY SCRIPTIQ EXISTS -->
+<div style="background:var(--bg);border-top:1px solid var(--border);padding:100px 24px">
+  <div style="max-width:900px;margin:0 auto">
+    <div class="section-label reveal" style="justify-content:center">Why ScriptIQ Exists</div>
+    <h2 class="section-title reveal" style="text-align:center;max-width:700px;margin:0 auto 24px">This is not technology<br>built from <em>theory</em></h2>
+    <div style="max-width:760px;margin:0 auto;text-align:center" class="reveal">
+      <p style="font-size:15px;color:var(--text2);line-height:1.9;font-family:'DM Mono',monospace;font-weight:300;margin-bottom:24px">
+        Elizabeth Olalere has spent 15+ years working across film and media productions — and 6 years as a Production Manager — managing schedules, coordinating departments, breaking down scripts by hand, line by line, scene by scene.
+      </p>
+      <p style="font-size:15px;color:var(--text2);line-height:1.9;font-family:'DM Mono',monospace;font-weight:300;margin-bottom:24px">
+        She worked on Netflix productions, cinema releases, and independent films. She experienced firsthand the hours wasted on manual pre-production workflows that should take minutes.
+      </p>
+      <p style="font-size:15px;color:var(--text2);line-height:1.9;font-family:'DM Mono',monospace;font-weight:300;margin-bottom:40px">
+        Missolowo ScriptIQ was created to help filmmakers save time, reduce production stress, and automate pre-production workflows using AI.
+      </p>
+      <div style="display:inline-block;border:1px solid var(--gold-dim);padding:20px 40px;position:relative">
+        <div style="position:absolute;top:-1px;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent)"></div>
+        <p style="font-family:'Playfair Display',serif;font-size:clamp(18px,3vw,26px);font-weight:700;font-style:italic;color:var(--gold);margin:0">
+          "Built by a Filmmaker. For Filmmakers."
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TESTIMONIAL -->
+<div class="testimonial-section">
+  <div class="testimonial-inner reveal">
+    <div class="section-label" style="justify-content:center;margin-bottom:32px">Industry Validation</div>
+    <div class="testimonial-quote">
+      This is exactly where AI can be such an incredibly useful integration into TV/Film. Streamlining production workflows and acting as a conduit for producers to more effectively track and survey information while maintaining creative integrity. This looks awesome!
+    </div>
+    <div class="testimonial-author">
+      <div class="testimonial-avatar">BH</div>
+      <div>
+        <div class="testimonial-name">Brian Hanford</div>
+        <div class="testimonial-role">Director & Writer (NBC, ABC, Fox) · Founder, Hanford Media</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOUNDER -->
+<div class="founder-section" id="founder">
+  <div class="founder-inner">
+    <div class="reveal">
+      <div class="section-label">The Founder</div>
+      <div class="founder-quote">
+        "I spent 6 years breaking down scripts by hand as a Production Manager. <strong>I built the tool I always needed.</strong> Now every filmmaker can have it."
+      </div>
+      <div class="founder-sig">
+        <img src="https://placehold.co/600x400/1A1500/D4A017?text=Production+Photo" alt="Elizabeth Olalere" class="founder-photo" onerror="this.style.display='none'"/>
+        <div class="founder-photo-placeholder" id="founderPlaceholder" style="display:none">E</div>
+        <div>
+          <div class="founder-name">Elizabeth Olalere</div>
+          <div class="founder-role">Film Producer · Production Manager · FilmTech Founder</div>
+        </div>
+      </div>
+    </div>
+    <div class="founder-bio-card reveal">
+      <div class="founder-bio-name">Elizabeth Olalere</div>
+      <div class="founder-bio-title">Film Producer · Production Manager · FilmTech Founder</div>
+      <div class="founder-bio-text">Elizabeth Olalere is a Film Producer, Production Manager, and FilmTech Founder with 15+ years in film and media, including 6 years of production management experience. She has worked across multiple production roles including Producer, Production Manager, Production Coordinator, Assistant Director, Welfare Coordinator, Script Writer, and more. Having lived the real challenges of manual pre-production workflows across Netflix productions, cinema releases, YouTube productions, and independent films, she built Missolowo ScriptIQ to help filmmakers save time, reduce production stress, and automate pre-production using AI.</div>
+      <div class="productions-label">Notable Productions</div>
+      <div class="productions-list">
+        <span class="production-tag">Anikulapo 2</span>
+        <span class="production-tag">Lisabi 1&2 (Netflix)</span>
+        <span class="production-tag">Jagunjagun</span>
+        <span class="production-tag">Ijogbon (Netflix)</span>
+        <span class="production-tag">7 Doors (Netflix)</span>
+        <span class="production-tag">Her Excellency</span>
+        <span class="production-tag">Ageshinkole 2</span>
+        <span class="production-tag">Efunroye</span>
+        <span class="production-tag">When Love Finds You</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROADMAP -->
+<section id="roadmap">
+  <div class="roadmap-inner">
+    <div class="section-label reveal">Roadmap</div>
+    <h2 class="section-title reveal">Building in <em>public</em></h2>
+    <p class="section-sub reveal">Every feature gets built and documented publicly. Follow the journey.</p>
+    <div class="roadmap-items">
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot rdot-done"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">The Idea — Notebook to Vision</div>
+          <div class="roadmap-desc">April 29, 2026 · Wrote the entire product vision by hand. Identified AI tools Nollywood desperately needs.</div>
+          <div class="roadmap-badge rbadge-done">✓ Done</div>
+        </div>
+      </div>
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot rdot-done"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Market Research & Validation</div>
+          <div class="roadmap-desc">Confirmed 2,500+ Nollywood films/yr, 100+ filmmakers on waitlist, zero serious local AI competition.</div>
+          <div class="roadmap-badge rbadge-done">✓ Done</div>
+        </div>
+      </div>
+      <div class="roadmap-item done reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot rdot-done"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">Live Website + AI Script Breakdown</div>
+          <div class="roadmap-desc">Full website live. AI Script Breakdown working with PDF export, 5 languages, unlimited scenes.</div>
+          <div class="roadmap-badge rbadge-done">✓ Live</div>
+        </div>
+      </div>
+      <div class="roadmap-item next reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot rdot-next"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">AI Shooting Schedule Generator</div>
+          <div class="roadmap-desc">Generate complete production schedules from script breakdown data — scenes, locations, cast requirements and logistics. The natural next step after every breakdown. Currently building.</div>
+          <div class="roadmap-badge rbadge-next">⬡ Up Next</div>
+        </div>
+      </div>
+      <div class="roadmap-item reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">AI Call Sheet Generator</div>
+          <div class="roadmap-desc">Auto-generate professional call sheets from script breakdown data. Cast, crew, locations and timing — formatted and ready to share.</div>
+          <div class="roadmap-badge rbadge-planned">Planned</div>
+        </div>
+      </div>
+      <div class="roadmap-item reveal">
+        <div class="roadmap-dot-col"><div class="roadmap-dot"></div><div class="roadmap-line"></div></div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">AI Budget Estimator + Crew Management</div>
+          <div class="roadmap-desc">Estimate production budgets from breakdown data and manage crew coordination in one platform.</div>
+          <div class="roadmap-badge rbadge-planned">Planned</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-section">
+  <div class="cta-inner reveal">
+    <h2 class="cta-title">Stop breaking down<br>scripts <em>manually</em></h2>
+    <p class="cta-sub">Join 100+ filmmakers, producers, ADs, and screenwriters already on the waitlist. Be the first to access every feature as it drops.</p>
+    <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="text-decoration:none">
+      <button class="btn-primary" style="font-size:14px;padding:16px 40px">Join the Waitlist →</button>
+    </a>
+    <div class="socials">
+      <a href="https://instagram.com/miss_olowo" class="social-link" target="_blank">📸 <span>@miss_olowo</span> · Instagram</a>
+      <a href="https://tiktok.com/@miss_olowo1" class="social-link" target="_blank">🎵 <span>@miss_olowo1</span> · TikTok</a>
+      <a href="https://x.com/misd_olowo1" class="social-link" target="_blank">✕ <span>@misd_olowo1</span> · X</a>
+      <a href="https://youtube.com/@missolowo" class="social-link" target="_blank">▶ <span>@missolowo</span> · YouTube</a>
+      <a href="https://linkedin.com/in/miss-olowo-0ab998363" class="social-link" target="_blank">💼 <span>@miss olowo</span> · LinkedIn</a>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">© 2026 Missolowo ScriptIQ · Built by Elizabeth Olalere · Lagos, Nigeria 🇳🇬</div>
+  <div class="footer-right">Building in Public · missolowoai@gmail.com</div>
+</footer>
+
+<script>
+// ============================================
+// GLOBAL STATE
+// ============================================
+let selectedLang = 'auto';
+let breakdownData = null;
+let selectedRating = 0;
+// ============================================
+// ADMIN WHITELIST — UNLIMITED ACCESS
+// ============================================
+const ADMIN_EMAILS = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+let currentUserEmail = localStorage.getItem('userEmail') || '';
+let isAdmin = ADMIN_EMAILS.includes(currentUserEmail);
+let isBetaTester = localStorage.getItem('betaTester') === 'true';
+let hasUnlimitedAccess = isAdmin || isBetaTester;
+let breakdownCount = parseInt(localStorage.getItem('breakdownCount') || '0');
+
+// ============================================
+// ADMIN ACCESS CHECK
+// ============================================
+function checkAdminAccess() {
+  const email = document.getElementById('adminEmailInput').value.trim().toLowerCase();
+  if (!email) return;
+  
+  currentUserEmail = email;
+  localStorage.setItem('userEmail', email);
+  isAdmin = ADMIN_EMAILS.includes(email);
+  hasUnlimitedAccess = isAdmin || isBetaTester;
+  
+  const badge = document.getElementById('accessBadge');
+  if (isAdmin) {
+    badge.style.background = 'rgba(212,160,23,0.1)';
+    badge.style.borderColor = 'rgba(212,160,23,0.4)';
+    badge.style.color = '#D4A017';
+    badge.innerHTML = '⬡ Admin Access · Unlimited Breakdowns · All Features Unlocked';
+    document.getElementById('adminEmailInput').value = '';
+    document.getElementById('adminEmailInput').placeholder = '✓ Unlimited access activated!';
+    gtag('event', 'admin_login', { email: email });
+  } else {
+    badge.innerHTML = '✦ 3 FREE breakdowns · No sign-up needed · Unlimited scenes';
+    badge.style.background = '';
+    badge.style.borderColor = '';
+    badge.style.color = '';
+    alert('Email not recognized. Please try again or join the waitlist.');
+  }
+}
+
+// Check if admin was previously logged in
+window.addEventListener('load', () => {
+  const savedEmail = localStorage.getItem('userEmail');
+  if (savedEmail && ADMIN_EMAILS.includes(savedEmail)) {
+    isAdmin = true;
+    hasUnlimitedAccess = true;
+    const badge = document.getElementById('accessBadge');
+    if (badge) {
+      badge.style.background = 'rgba(212,160,23,0.1)';
+      badge.style.borderColor = 'rgba(212,160,23,0.4)';
+      badge.style.color = '#D4A017';
+      badge.innerHTML = '⬡ Admin Access · Unlimited Breakdowns · All Features Unlocked';
+    }
+  }
+});
+window.addEventListener('scroll', () => {
+  document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+
+// ============================================
+// REVEAL ON SCROLL
+// ============================================
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry, i) => {
+    if (entry.isIntersecting) setTimeout(() => entry.target.classList.add('visible'), i * 60);
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ============================================
+// LANGUAGE SELECTION
+// ============================================
+function selectLang(btn, lang) {
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedLang = lang;
+}
+
+// ============================================
+// FILE UPLOAD
+// ============================================
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const display = document.getElementById('fileNameDisplay');
+  display.style.display = 'block';
+  display.textContent = '✓ File loaded: ' + file.name;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('scriptInput').value = e.target.result;
+  };
+  reader.readAsText(file);
+  
+  // GA event
+  gtag('event', 'file_upload', { file_type: file.name.split('.').pop() });
+}
+
+// ============================================
+// MAIN BREAKDOWN FUNCTION
+// ============================================
+async function runBreakdown() {
+  const script = document.getElementById('scriptInput').value.trim();
+  if (!script) {
+    showError('Please paste your screenplay or upload a file first.');
+    return;
+  }
+
+  if (script.length < 50) {
+    showError('Script seems too short. Please paste a full screenplay.');
+    return;
+  }
+
+  // Check free limit
+  if (breakdownCount >= 3 && !hasUnlimitedAccess) {
+    showError('You have used your 3 free breakdowns. Join the waitlist to get early access to the full platform!');
+    document.getElementById('errorMsg').innerHTML = 'You have used your 3 free breakdowns. <a href="https://forms.gle/quEFFxcHFkHc8C7h6" target="_blank" style="color:var(--gold)">Join the waitlist</a> to get early access to the full platform!';
+    document.getElementById('errorMsg').classList.add('active');
+    return;
+  }
+
+  const btn = document.getElementById('analyzeBtn');
+  const loading = document.getElementById('loadingState');
+  const results = document.getElementById('resultsPanel');
+  const errorMsg = document.getElementById('errorMsg');
+
+  btn.disabled = true;
+  loading.classList.add('active');
+  results.classList.remove('active');
+  errorMsg.classList.remove('active');
+  document.getElementById('feedbackThanks').style.display = 'none';
+
+  // GA event
+  gtag('event', 'breakdown_started', { language: selectedLang, script_length: script.length });
+
+  try {
+    const response = await fetch('/.netlify/functions/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script: script,
+        language: selectedLang
+      })
+    });
+
+    const raw = await response.json();
+    if (!response.ok) throw new Error(raw.error || 'API error');
+    breakdownData = raw;
+
+    // Increment count
+    if (!hasUnlimitedAccess) {
+      breakdownCount++;
+      localStorage.setItem('breakdownCount', breakdownCount.toString());
+    }
+
+    renderResults(breakdownData);
+
+    // GA event
+    gtag('event', 'breakdown_completed', {
+      scenes_count: breakdownData.total_scenes,
+      language: breakdownData.language_detected
+    });
+
+  } catch (err) {
+    showError("Could not analyze the script. Please check your input and try again.");
+    gtag('event', 'breakdown_error');
+  } finally {
+    btn.disabled = false;
+    loading.classList.remove('active');
+  }
+}
+
+// ============================================
+// RENDER RESULTS
+// ============================================
+function renderResults(data) {
+  const results = document.getElementById('resultsPanel');
+  const chips = document.getElementById('statsChips');
+  const cards = document.getElementById('sceneCards');
+  const scenes = data.scenes || [];
+  const charBreakdown = data.character_breakdown || [];
+  const outlineSchedule = data.outline_schedule || [];
+  const prodElements = data.production_elements || {};
+
+  // Stats chips
+  chips.innerHTML = [
+    [scenes.length + ' Scene' + (scenes.length !== 1 ? 's' : ''), '#C9A84C'],
+    [charBreakdown.length + ' Characters', '#4CAF76'],
+    [outlineSchedule.length + ' Location' + (outlineSchedule.length !== 1 ? 's' : ''), '#C9A84C'],
+    [data.language_detected || 'English', '#5C9BE0'],
+  ].map(([label, color]) => `
+    <div class="stat-chip">
+      <div class="stat-dot" style="background:${color}"></div>
+      ${label}
+    </div>
+  `).join('');
+
+  // Build all 4 reports
+  cards.innerHTML = `
+
+  <!-- REPORT 1: SCENE BREAKDOWN -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <span style="display:block;width:28px;height:1px;background:var(--gold)"></span>
+      Report 1 — Scene Breakdown
+    </div>
+    ${scenes.map((scene, i) => {
+      const intExt = (scene.int_ext || 'INT').toUpperCase();
+      const tod = (scene.time_of_day || 'DAY').toUpperCase();
+      const intBadgeClass = intExt === 'INT' ? 'badge-int' : 'badge-ext';
+      const todBadgeClass = tod === 'NIGHT' ? 'badge-night' : 'badge-day';
+      return `
+      <div class="scene-card" id="scard-${i}" style="animation-delay:${i * 0.04}s">
+        <div class="scene-card-header" onclick="toggleScene(${i})">
+          <div class="scene-num">${String(scene.scene_number || i+1).padStart(2,'0')}</div>
+          <div class="scene-meta">
+            <div class="scene-slug">${intExt}. ${scene.location || 'LOCATION'} — ${tod}</div>
+            <div class="scene-desc">${scene.description || ''}</div>
+          </div>
+          <div class="scene-badges">
+            <span class="time-badge ${intBadgeClass}">${intExt}</span>
+            <span class="time-badge ${todBadgeClass}">${tod}</span>
+          </div>
+          <div class="chevron">▾</div>
+        </div>
+        <div class="scene-body">
+          <div class="elements-grid">
+            ${makeGroup('Cast', scene.cast, 'cast', '#4CAF76')}
+            ${makeGroup('Location', scene.location ? [scene.location] : [], 'location', '#C9A84C')}
+            ${makeGroup('Props', scene.props, 'prop', '#E0935C')}
+            ${makeGroup('Costume', scene.costume, 'wardrobe', '#9B6EE0')}
+            ${makeGroup('Equipment', scene.equipment, 'vehicle', '#4CBFB0')}
+            ${scene.production_notes ? makeGroup('Production Notes', [scene.production_notes], 'note', '#888880') : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+
+  <!-- REPORT 2: CHARACTER SCENE BREAKDOWN -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <span style="display:block;width:28px;height:1px;background:var(--gold)"></span>
+      Report 2 — Character Scene Breakdown
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:40px 1fr 1fr 60px;background:var(--bg3);padding:12px 16px;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);border-bottom:1px solid var(--border)">
+        <div>S/N</div><div>Character</div><div>Scene Numbers</div><div style="text-align:right">Total</div>
+      </div>
+      ${charBreakdown.map((char, i) => `
+      <div style="display:grid;grid-template-columns:40px 1fr 1fr 60px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;background:${i%2===0?'var(--bg2)':'var(--bg)'}">
+        <div style="color:var(--text3)">${i+1}</div>
+        <div style="font-weight:700;color:var(--text);text-transform:uppercase">${char.character}</div>
+        <div style="color:var(--text2);font-family:monospace;font-size:11px">${(char.scenes||[]).join(', ')}</div>
+        <div style="text-align:right;font-weight:800;color:var(--gold);font-family:monospace">${char.total}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- REPORT 3: OUTLINE SCHEDULE -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <span style="display:block;width:28px;height:1px;background:var(--gold)"></span>
+      Report 3 — Outline Schedule
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:40px 1fr 1fr 60px;background:var(--bg3);padding:12px 16px;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);border-bottom:1px solid var(--border)">
+        <div>S/N</div><div>Set / Location</div><div>Scene Numbers</div><div style="text-align:right">Total</div>
+      </div>
+      ${outlineSchedule.map((loc, i) => `
+      <div style="display:grid;grid-template-columns:40px 1fr 1fr 60px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;background:${i%2===0?'var(--bg2)':'var(--bg)'}">
+        <div style="color:var(--text3)">${i+1}</div>
+        <div style="font-weight:700;color:var(--text)">${loc.set_location}</div>
+        <div style="color:var(--text2);font-family:monospace;font-size:11px">${(loc.scenes||[]).join(', ')}</div>
+        <div style="text-align:right;font-weight:800;color:var(--gold);font-family:monospace">${loc.total}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- REPORT 4: PRODUCTION ELEMENTS -->
+  <div style="margin-bottom:24px">
+    <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <span style="display:block;width:28px;height:1px;background:var(--gold)"></span>
+      Report 4 — Production Elements
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      ${makeGroup('All Cast', prodElements.all_cast, 'cast', '#4CAF76')}
+      ${makeGroup('All Props', prodElements.all_props, 'prop', '#E0935C')}
+      ${makeGroup('All Costume', prodElements.all_costume, 'wardrobe', '#9B6EE0')}
+      ${makeGroup('All Equipment', prodElements.all_equipment, 'vehicle', '#4CBFB0')}
+      ${prodElements.special_requirements && prodElements.special_requirements.length > 0 ? makeGroup('Special Requirements', prodElements.special_requirements, 'sfx', '#E05C5C') : ''}
+    </div>
+  </div>`;
+
+  results.classList.add('active');
+  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function makeGroup(title, items, tagClass, color) {
+  const arr = Array.isArray(items) ? items : (items ? [items] : []);
+  return `
+  <div class="element-group">
+    <div class="element-group-title">
+      <div class="element-color-bar" style="background:${color}"></div>
+      <span style="color:${color}">${title}</span>
+    </div>
+    ${arr.length > 0
+      ? arr.map(i => `<span class="element-tag tag-${tagClass}">${i}</span>`).join('')
+      : '<span class="empty-tag">none identified</span>'
+    }
+  </div>`;
+}
+
+function toggleScene(i) {
+  document.getElementById('scard-' + i).classList.toggle('open');
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('active');
+}
+
+
+// ============================================
+// PDF EXPORT
+// ============================================
+function exportPDF() {
+  if (!breakdownData) return;
+  gtag('event', 'export_pdf');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const scenes = breakdownData.scenes || [];
+  const charBreakdown = breakdownData.character_breakdown || [];
+  const outlineSchedule = breakdownData.outline_schedule || [];
+  const prodElements = breakdownData.production_elements || {};
+  const title = breakdownData.title || 'Production Breakdown';
+  const today = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'long',year:'numeric'});
+
+  // ── HELPER FUNCTIONS ──
+  const addPageIfNeeded = (needed = 20) => {
+    if (y + needed > 278) { doc.addPage(); addFooter(); y = 22; }
+  };
+
+  const addSectionHeader = (text) => {
+    addPageIfNeeded(20);
+    doc.setFillColor(10, 8, 0);
+    doc.rect(0, y - 6, 210, 14, 'F');
+    doc.setFillColor(212, 160, 23);
+    doc.rect(0, y - 6, 4, 14, 'F');
+    doc.setTextColor(212, 160, 23);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(text.toUpperCase(), 10, y + 3);
+    y += 14;
+  };
+
+  const addTableHeader = (cols) => {
+    addPageIfNeeded(12);
+    doc.setFillColor(26, 21, 0);
+    doc.rect(10, y - 4, 190, 10, 'F');
+    doc.setTextColor(212, 160, 23);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    cols.forEach(([text, x]) => doc.text(text, x, y + 2));
+    y += 10;
+  };
+
+  const addTableRow = (cols, isAlt) => {
+    addPageIfNeeded(10);
+    if (isAlt) { doc.setFillColor(20, 16, 0); doc.rect(10, y - 4, 190, 9, 'F'); }
+    doc.setTextColor(240, 239, 230);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    cols.forEach(([text, x, w, bold, color]) => {
+      if (bold) doc.setFont('helvetica', 'bold');
+      if (color) doc.setTextColor(...color);
+      const lines = doc.splitTextToSize(String(text || ''), w || 50);
+      doc.text(lines[0], x, y + 2);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(240, 239, 230);
+    });
+    y += 9;
+    doc.setDrawColor(30, 25, 0);
+    doc.line(10, y - 1, 200, y - 1);
+  };
+
+  const addFooter = () => {
+    const pg = doc.internal.getCurrentPageInfo().pageNumber;
+    doc.setFillColor(10, 8, 0);
+    doc.rect(0, 285, 210, 12, 'F');
+    doc.setFillColor(212, 160, 23);
+    doc.rect(0, 285, 210, 1, 'F');
+    doc.setTextColor(100, 90, 50);
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.text('MISSOLOWO SCRIPTIQ  ·  Production Breakdown Report  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
+    doc.text(`Page ${pg}`, 195, 291, {align: 'right'});
+  };
+
+  let y = 0;
+
+  // ══════════════════════════════════════════
+  // COVER PAGE
+  // ══════════════════════════════════════════
+  doc.setFillColor(10, 8, 0);
+  doc.rect(0, 0, 210, 297, 'F');
+
+  // Gold accent bar top
+  doc.setFillColor(212, 160, 23);
+  doc.rect(0, 0, 210, 3, 'F');
+
+  // Kente stripe
+  const kColors = [[192,57,43],[212,160,23],[39,174,96],[41,128,185],[230,126,34]];
+  kColors.forEach((c, i) => { doc.setFillColor(...c); doc.rect(i*42, 3, 42, 4, 'F'); });
+
+  // Logo area
+  doc.setFillColor(20, 16, 0);
+  doc.rect(15, 30, 180, 60, 'F');
+  doc.setFillColor(212, 160, 23);
+  doc.rect(15, 30, 4, 60, 'F');
+  doc.setTextColor(212, 160, 23);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('MISSOLOWO SCRIPTIQ', 25, 48);
+  doc.setTextColor(100, 90, 50);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.text('AI-POWERED PRE-PRODUCTION WORKSPACE', 25, 56);
+  doc.setTextColor(240, 239, 230);
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PRODUCTION', 25, 72);
+  doc.setTextColor(212, 160, 23);
+  doc.text('BREAKDOWN', 25, 82);
+
+  // Project info box
+  doc.setFillColor(15, 12, 0);
+  doc.rect(15, 110, 180, 80, 'F');
+  doc.setFillColor(212, 160, 23);
+  doc.rect(15, 110, 180, 1, 'F');
+  doc.rect(15, 189, 180, 1, 'F');
+
+  doc.setTextColor(100, 90, 50);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PROJECT TITLE', 25, 124);
+  doc.setTextColor(240, 239, 230);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  const titleLines = doc.splitTextToSize(title, 160);
+  doc.text(titleLines, 25, 136);
+
+  doc.setTextColor(100, 90, 50);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text('EXPORT DATE', 25, 158);
+  doc.setTextColor(212, 160, 23);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(today, 25, 166);
+
+  doc.setTextColor(100, 90, 50);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text('LANGUAGE', 110, 158);
+  doc.setTextColor(212, 160, 23);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(breakdownData.language_detected || 'English', 110, 166);
+
+  // Stats
+  const stats = [
+    [scenes.length, 'TOTAL SCENES'],
+    [charBreakdown.length, 'CHARACTERS'],
+    [outlineSchedule.length, 'LOCATIONS'],
+  ];
+  stats.forEach(([val, label], i) => {
+    const sx = 25 + i * 60;
+    doc.setTextColor(212, 160, 23);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(val), sx, 186);
+    doc.setTextColor(100, 90, 50);
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(label, sx, 192);
+  });
+
+  // Contents
+  doc.setFillColor(10, 8, 0);
+  doc.rect(15, 205, 180, 55, 'F');
+  doc.setTextColor(212, 160, 23);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CONTENTS', 25, 216);
+  const contents = [
+    'Report 1  —  Scene Breakdown',
+    'Report 2  —  Character Scene Breakdown',
+    'Report 3  —  Outline Schedule',
+    'Report 4  —  Production Elements',
+  ];
+  contents.forEach((item, i) => {
+    doc.setTextColor(160, 150, 100);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(item, 25, 226 + i * 9);
+  });
+
+  // Bottom branding
+  doc.setFillColor(212, 160, 23);
+  doc.rect(0, 290, 210, 7, 'F');
+  doc.setTextColor(10, 8, 0);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Built by a Filmmaker. For Filmmakers.  ·  missolowo-scriptiq.netlify.app', 105, 294, {align:'center'});
+
+  // ══════════════════════════════════════════
+  // REPORT 1 — SCENE BREAKDOWN
+  // ══════════════════════════════════════════
+  doc.addPage();
+  addFooter();
+  y = 22;
+
+  addSectionHeader('Report 1 — Scene Breakdown');
+  y += 4;
+
+  scenes.forEach((scene, idx) => {
+    addPageIfNeeded(35);
+
+    // Scene header
+    doc.setFillColor(20, 16, 0);
+    doc.rect(10, y - 4, 190, 12, 'F');
+    doc.setFillColor(212, 160, 23);
+    doc.rect(10, y - 4, 2, 12, 'F');
+    doc.setTextColor(212, 160, 23);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Scene ${String(scene.scene_number || idx+1).padStart(2,'0')}`, 15, y + 3);
+    doc.setTextColor(160, 150, 100);
+    doc.setFontSize(8);
+    const sceneSlug = `${scene.int_ext || 'INT'}. ${scene.location || 'LOCATION'} — ${scene.time_of_day || 'DAY'}`;
+    doc.text(sceneSlug, 45, y + 3);
+
+    // INT/EXT badge
+    const badgeX = 185;
+    doc.setFillColor(scene.int_ext === 'EXT' ? 39 : 74, scene.int_ext === 'EXT' ? 174 : 20, scene.int_ext === 'EXT' ? 96 : 90);
+    doc.rect(badgeX, y - 2, 14, 6, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'bold');
+    doc.text(scene.int_ext || 'INT', badgeX + 7, y + 2, {align:'center'});
+    y += 12;
+
+    // Description
+    if (scene.description) {
+      addPageIfNeeded(10);
+      doc.setTextColor(140, 130, 90);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'italic');
+      const descLines = doc.splitTextToSize(scene.description, 182);
+      doc.text(descLines, 14, y);
+      y += descLines.length * 4 + 3;
+    }
+
+    // Elements
+    const elems = [
+      ['CAST', scene.cast, [76,175,118]],
+      ['PROPS', scene.props, [224,147,92]],
+      ['COSTUME', scene.costume, [155,110,224]],
+      ['EQUIPMENT', scene.equipment, [76,191,176]],
+      ['NOTES', scene.production_notes ? [scene.production_notes] : [], [128,136,128]],
+    ];
+
+    elems.forEach(([label, items, rgb]) => {
+      const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+      if (!arr.length) return;
+      addPageIfNeeded(8);
+      doc.setTextColor(...rgb);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text(label + ':', 14, y);
+      doc.setTextColor(220, 210, 170);
+      doc.setFont('helvetica', 'normal');
+      const itemLines = doc.splitTextToSize(arr.join('  ·  '), 155);
+      doc.text(itemLines, 42, y);
+      y += itemLines.length * 4 + 2;
+    });
+
+    y += 4;
+    doc.setDrawColor(30, 25, 0);
+    doc.line(10, y - 2, 200, y - 2);
+    y += 2;
+  });
+
+  // ══════════════════════════════════════════
+  // REPORT 2 — CHARACTER SCENE BREAKDOWN
+  // ══════════════════════════════════════════
+  doc.addPage();
+  addFooter();
+  y = 22;
+
+  addSectionHeader('Report 2 — Character Scene Breakdown');
+  y += 4;
+
+  addTableHeader([['S/N', 14], ['CHARACTER', 28], ['SCENE NUMBERS', 80], ['TOTAL', 188]]);
+
+  charBreakdown.forEach((char, i) => {
+    addPageIfNeeded(10);
+    const sceneText = (char.scenes || []).join(', ');
+    const sceneLines = doc.splitTextToSize(sceneText, 100);
+    const rowH = Math.max(9, sceneLines.length * 4 + 4);
+
+    if (i % 2 === 0) { doc.setFillColor(18, 14, 0); doc.rect(10, y - 4, 190, rowH, 'F'); }
+
+    doc.setTextColor(100, 90, 50);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(i + 1), 14, y + 2);
+
+    doc.setTextColor(240, 239, 230);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(char.character || '', 28, y + 2);
+
+    doc.setTextColor(180, 170, 120);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(sceneLines, 80, y + 2);
+
+    doc.setTextColor(212, 160, 23);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(String(char.total || 0), 193, y + 3, {align:'right'});
+
+    y += rowH;
+    doc.setDrawColor(30, 25, 0);
+    doc.line(10, y - 1, 200, y - 1);
+  });
+
+  // ══════════════════════════════════════════
+  // REPORT 3 — OUTLINE SCHEDULE
+  // ══════════════════════════════════════════
+  doc.addPage();
+  addFooter();
+  y = 22;
+
+  addSectionHeader('Report 3 — Outline Schedule');
+  y += 4;
+
+  addTableHeader([['S/N', 14], ['SET / LOCATION', 28], ['SCENE NUMBERS', 100], ['TOTAL', 188]]);
+
+  outlineSchedule.forEach((loc, i) => {
+    addPageIfNeeded(10);
+    const sceneText = (loc.scenes || []).join(', ');
+    const sceneLines = doc.splitTextToSize(sceneText, 80);
+    const rowH = Math.max(9, sceneLines.length * 4 + 4);
+
+    if (i % 2 === 0) { doc.setFillColor(18, 14, 0); doc.rect(10, y - 4, 190, rowH, 'F'); }
+
+    doc.setTextColor(100, 90, 50);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(i + 1), 14, y + 2);
+
+    doc.setTextColor(240, 239, 230);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    const locLines = doc.splitTextToSize(loc.set_location || '', 65);
+    doc.text(locLines[0], 28, y + 2);
+
+    doc.setTextColor(180, 170, 120);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(sceneLines, 100, y + 2);
+
+    doc.setTextColor(212, 160, 23);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(String(loc.total || 0), 193, y + 3, {align:'right'});
+
+    y += rowH;
+    doc.setDrawColor(30, 25, 0);
+    doc.line(10, y - 1, 200, y - 1);
+  });
+
+  // ══════════════════════════════════════════
+  // REPORT 4 — PRODUCTION ELEMENTS
+  // ══════════════════════════════════════════
+  doc.addPage();
+  addFooter();
+  y = 22;
+
+  addSectionHeader('Report 4 — Production Elements');
+  y += 4;
+
+  const elementSections = [
+    ['ALL CAST', prodElements.all_cast, [76,175,118]],
+    ['ALL PROPS', prodElements.all_props, [224,147,92]],
+    ['ALL COSTUME', prodElements.all_costume, [155,110,224]],
+    ['ALL EQUIPMENT', prodElements.all_equipment, [76,191,176]],
+    ['SPECIAL REQUIREMENTS', prodElements.special_requirements, [224,92,92]],
+  ];
+
+  elementSections.forEach(([label, items, rgb]) => {
+    const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!arr.length) return;
+
+    addPageIfNeeded(20);
+
+    doc.setFillColor(20, 16, 0);
+    doc.rect(10, y - 4, 190, 10, 'F');
+    doc.setFillColor(...rgb);
+    doc.rect(10, y - 4, 2, 10, 'F');
+    doc.setTextColor(...rgb);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text(label, 15, y + 2);
+    y += 10;
+
+    const itemText = arr.join('  ·  ');
+    const itemLines = doc.splitTextToSize(itemText, 182);
+    addPageIfNeeded(itemLines.length * 5 + 6);
+    doc.setTextColor(220, 210, 170);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(itemLines, 14, y);
+    y += itemLines.length * 5 + 8;
+
+    doc.setDrawColor(30, 25, 0);
+    doc.line(10, y - 4, 200, y - 4);
+  });
+
+  // Add footer to all pages
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    if (i > 1) addFooter();
+  }
+
+  const filename = `${title.replace(/\s+/g,'-').toLowerCase()}-production-breakdown.pdf`;
+  doc.save(filename);
+}
+
+// ============================================
+// CSV & JSON EXPORT
+// ============================================
+function exportCSV() {
+  if (!breakdownData) return;
+  gtag('event', 'export_csv');
+  const scenes = breakdownData.scenes || [];
+  const rows = [['Scene','Slug','INT/EXT','Time','Cast','Location','Props','Wardrobe','SFX','Vehicles','Extras','Notes']];
+  scenes.forEach(s => rows.push([
+    s.scene_number, s.slug, s.int_ext, s.time_of_day,
+    (s.cast||[]).join('; '), s.location,
+    (s.props||[]).join('; '), (s.wardrobe||[]).join('; '),
+    (s.sfx||[]).join('; '), (s.vehicles||[]).join('; '),
+    (s.extras||[]).join('; '), s.production_notes||''
+  ]));
+  const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'script-breakdown.csv';
+  a.click();
+}
+
+function exportJSON() {
+  if (!breakdownData) return;
+  gtag('event', 'export_json');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(breakdownData, null, 2)], {type:'application/json'}));
+  a.download = 'script-breakdown.json';
+  a.click();
+}
+
+// ============================================
+// FEEDBACK & RATING
+// ============================================
+function rateStar(rating) {
+  selectedRating = rating;
+  document.querySelectorAll('.star-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i < rating);
+  });
+  gtag('event', 'feedback_rating', { rating: rating });
+}
+
+function submitFeedback() {
+  const text = document.getElementById('feedbackText').value.trim();
+  gtag('event', 'feedback_submitted', {
+    rating: selectedRating,
+    has_comment: text.length > 0
+  });
+  document.getElementById('feedbackPanel').querySelector('.feedback-title').style.display = 'none';
+  document.getElementById('starsRow').style.display = 'none';
+  document.getElementById('feedbackText').style.display = 'none';
+  document.querySelector('.feedback-submit').style.display = 'none';
+  document.getElementById('feedbackThanks').style.display = 'block';
+}
+</script>
+</body>
+</html>
