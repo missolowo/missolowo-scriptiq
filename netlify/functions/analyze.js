@@ -75,7 +75,7 @@ IMPORTANT RULES:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
