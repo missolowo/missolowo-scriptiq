@@ -71,19 +71,22 @@ IMPORTANT RULES:
 4. If a category is empty use [].
 5. Be thorough and accurate — this is a professional production document.`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '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',
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAQ.Ab8RN6JbwC296gLWs6SVnq98IG_2QataNZp6Uz4a1o1IrnrNZA';
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 8000
+          }
+        })
+      }
+    );
 
     const data = await response.json();
 
@@ -94,7 +97,7 @@ IMPORTANT RULES:
       };
     }
 
-    const text = (data.content || []).map(b => b.text || '').join('');
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
 
