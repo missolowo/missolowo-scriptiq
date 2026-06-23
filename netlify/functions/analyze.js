@@ -71,13 +71,16 @@ IMPORTANT RULES:
 4. If a category is empty use [].
 5. Be thorough and accurate — this is a professional production document.`;
 
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAQ.Ab8RN6JbwC296gLWs6SVnq98IG_2QataNZp6Uz4a1o1IrnrNZA';
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6IOHZ90KU-LB3BKhoBKYjumv4vkZlvuV1R-8yLiOyV_BQ';
     
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
