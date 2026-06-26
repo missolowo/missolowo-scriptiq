@@ -3,6 +3,9 @@
   functions = "netlify/functions"
   command = "npm install"
 
+[functions]
+  node_bundler = "esbuild"
+
 [[headers]]
   for = "/*"
   [headers.values]
@@ -19,6 +22,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-[[plugins]]
-  package = "@netlify/plugin-functions-install-core"
