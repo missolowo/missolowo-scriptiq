@@ -121,6 +121,14 @@ exports.handler = async function(event) {
       };
     }
 
+    // ── Smart trim for long scripts ──
+    // OpenAI gpt-4o-mini handles ~30,000 characters safely
+    // Trim anything beyond that to prevent token limit crashes
+    const MAX_CHARS = 30000;
+    const trimmedScript = script.trim().length > MAX_CHARS
+      ? script.trim().substring(0, MAX_CHARS) + '\n\n[Script trimmed to fit processing limit. Upload in sections for full breakdown.]'
+      : script.trim();
+
     const isAdmin = ADMIN_EMAILS.includes(user_email);
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
@@ -187,7 +195,7 @@ exports.handler = async function(event) {
 ${langInstruction}
 
 SCREENPLAY:
-${script}
+${trimmedScript}
 
 Return ONLY valid JSON in this exact structure:
 {
