@@ -1,0 +1,45 @@
+{
+  "app_name": "ScriptIQ",
+  "tagline": "Ẹ kọ fún Olùṣe Fiimu. Fún Olùṣe Fiimu.",
+  "nav": {
+    "features": "Àwọn Ẹya",
+    "how_it_works": "Bí O Ṣe Ń Ṣiṣẹ",
+    "pricing": "Iye Owó",
+    "sign_in": "Wọlé"
+  },
+  "hero": {
+    "title": "Ìfọ̀rọ̀wérọ̀ Iṣẹ́ Ìṣesọ̀rọ̀ Àkọọlẹ́ ní Ìṣẹ́jú Díẹ̀",
+    "subtitle": "Gbé iṣẹ́ rẹ sókè. Gba ìfọ̀rọ̀wérọ̀ ìṣelọpọ̀ pípé lẹ́sẹ̀kẹsẹ̀.",
+    "cta_primary": "Bẹ̀rẹ̀ Ìfọ̀rọ̀wérọ̀ Ọfẹ́",
+    "cta_secondary": "Wo Bí O Ṣe Ń Ṣiṣẹ"
+  },
+  "breakdown": {
+    "upload_label": "Gbé Iṣẹ́ Ìṣesọ̀rọ̀ Sókè",
+    "paste_label": "Tàbí fi àkọọlẹ́ rẹ síbí",
+    "generate_btn": "Ṣẹ̀dá Ìfọ̀rọ̀wérọ̀",
+    "generating": "Ń ṣàyẹ̀wò iṣẹ́ ìṣesọ̀rọ̀ rẹ...",
+    "success": "Ìfọ̀rọ̀wérọ̀ Pari!",
+    "error": "Nǹkan kan ṣàṣìṣe. Jọwọ gbìyànjú lẹ́ẹ̀kan síi."
+  },
+  "pricing": {
+    "free": {
+      "name": "Ọfẹ́",
+      "price": "₦0",
+      "credits": "Kirẹditi 3",
+      "cta": "Bẹ̀rẹ̀ Ọfẹ́"
+    },
+    "starter": {
+      "name": "Olùbẹ̀rẹ̀",
+      "price": "₦2,500",
+      "credits": "Kirẹditi 80",
+      "cta": "Gba Olùbẹ̀rẹ̀"
+    },
+    "pro": {
+      "name": "Ọjọgbọ́n",
+      "price": "₦8,000",
+      "credits": "Kirẹditi 300",
+      "cta": "Gba Ọjọgbọ́n"
+    }
+  },
+  "powered_by": "Agbára nipasẹ ScriptIQ Intelligence"
+}
