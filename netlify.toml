@@ -6,15 +6,6 @@
 [functions]
   node_bundler = "zisi"
 
-[functions."breakdown"]
-  timeout = 26
-
-[functions."schedule"]
-  timeout = 26
-
-[functions."callsheet"]
-  timeout = 26
-
 [[headers]]
   for = "/*"
   [headers.values]
