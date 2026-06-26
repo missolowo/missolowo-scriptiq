@@ -1206,6 +1206,10 @@ async function handleFileSelection(event) {
     const textarea = document.getElementById(SCRIPT_INPUT_ID);
     const charCount = textarea?.value?.length || 0;
     display.textContent = '✓ File loaded: ' + file.name + ' (' + charCount.toLocaleString() + ' characters)';
+    if (charCount > 30000) {
+      display.textContent += ' ⚠️ Script is long — will be processed in sections automatically.';
+      display.style.color = 'var(--gold)';
+    }
     gtag('event', 'file_upload', { file_type: fileName.split('.').pop(), char_count: charCount });
   } catch (error) {
     console.error("Extraction error:", error);
@@ -1354,7 +1358,8 @@ async function runBreakdown() {
     gtag('event', 'breakdown_completed', { scenes: breakdownData.total_scenes });
 
   } catch (err) {
-    showError('Could not process the script. Please check your input and try again.');
+    console.error('Breakdown error:', err);
+    showError('Could not process the script. Error: ' + err.message);
     gtag('event', 'breakdown_error');
   } finally {
     btn.disabled = false;
