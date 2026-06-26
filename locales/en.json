@@ -1,0 +1,45 @@
+{
+  "app_name": "ScriptIQ",
+  "tagline": "Built by a Filmmaker. For Filmmakers.",
+  "nav": {
+    "features": "Features",
+    "how_it_works": "How It Works",
+    "pricing": "Pricing",
+    "sign_in": "Sign In"
+  },
+  "hero": {
+    "title": "Professional Script Breakdowns in Minutes",
+    "subtitle": "Upload your screenplay. Get a complete production breakdown instantly.",
+    "cta_primary": "Start Free Breakdown",
+    "cta_secondary": "See How It Works"
+  },
+  "breakdown": {
+    "upload_label": "Upload Screenplay",
+    "paste_label": "Or paste your script here",
+    "generate_btn": "Generate Breakdown",
+    "generating": "Analyzing your screenplay...",
+    "success": "Breakdown Complete!",
+    "error": "Something went wrong. Please try again."
+  },
+  "pricing": {
+    "free": {
+      "name": "Free",
+      "price": "₦0",
+      "credits": "3 Credits",
+      "cta": "Start Free"
+    },
+    "starter": {
+      "name": "Starter",
+      "price": "₦2,500",
+      "credits": "80 Credits",
+      "cta": "Get Starter"
+    },
+    "pro": {
+      "name": "Pro",
+      "price": "₦8,000",
+      "credits": "300 Credits",
+      "cta": "Get Pro"
+    }
+  },
+  "powered_by": "Powered by ScriptIQ Intelligence"
+}
