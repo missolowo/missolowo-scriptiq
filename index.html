@@ -1206,10 +1206,6 @@ async function handleFileSelection(event) {
     const textarea = document.getElementById(SCRIPT_INPUT_ID);
     const charCount = textarea?.value?.length || 0;
     display.textContent = '✓ File loaded: ' + file.name + ' (' + charCount.toLocaleString() + ' characters)';
-    if (charCount > 30000) {
-      display.textContent += ' ⚠️ Script is long — will be processed in sections automatically.';
-      display.style.color = 'var(--gold)';
-    }
     gtag('event', 'file_upload', { file_type: fileName.split('.').pop(), char_count: charCount });
   } catch (error) {
     console.error("Extraction error:", error);
@@ -1322,27 +1318,36 @@ async function runBreakdown() {
   gtag('event', 'breakdown_started', { language: selectedScriptLang, script_length: script.length });
 
   try {
-    const response = await fetch('/.netlify/functions/breakdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        script,
-        language: selectedScriptLang,
-        user_email: currentUser?.email,
-        user_id: currentUser?.id
-      })
-    });
+    // ── Split script into chunks on the frontend ──
+    // Each chunk is sent separately so no single call exceeds Netlify's 26s timeout
+    const chunks = splitScriptForProcessing(script, 15000);
+    const totalChunks = chunks.length;
 
-    const raw = await response.json();
+    showLoadingState(true, totalChunks > 1
+      ? `Processing long script in ${totalChunks} sections...`
+      : 'Analyzing your screenplay...');
 
-    if (response.status === 402) {
-      openPayment();
-      return;
+    const chunkResults = [];
+
+    for (let i = 0; i < totalChunks; i++) {
+      // Update loading message per chunk
+      const loadingText = document.querySelector('#loadingState .loading-text');
+      if (loadingText && totalChunks > 1) {
+        loadingText.textContent = `Processing section ${i + 1} of ${totalChunks}...`;
+      }
+
+      const result = await sendChunkToBackend(chunks[i], selectedScriptLang, i, totalChunks);
+
+      // ── HTML safety check (from CISO Apps Script logic) ──
+      if (result.error) {
+        throw new Error(result.message);
+      }
+
+      chunkResults.push(result);
     }
 
-    if (!response.ok) throw new Error(raw.error || 'Processing error');
-
-    breakdownData = raw;
+    // ── Merge all chunk results ──
+    breakdownData = totalChunks === 1 ? chunkResults[0] : mergeBreakdownChunks(chunkResults);
 
     // Update local credit count
     if (!currentUser) {
@@ -1365,6 +1370,129 @@ async function runBreakdown() {
     btn.disabled = false;
     loading.classList.remove('active');
   }
+}
+
+// ============================================
+// FRONTEND CHUNKING — handles any script length
+// ============================================
+
+// Split script on scene boundaries (INT./EXT.)
+function splitScriptForProcessing(script, maxChunkSize) {
+  const text = script.trim();
+  if (text.length <= maxChunkSize) return [text];
+
+  const chunks = [];
+  const scenes = text.split(/\n(?=(?:INT\.|EXT\.|I\/E\.|INT\/EXT\.?))/i);
+  let currentChunk = '';
+
+  for (const scene of scenes) {
+    if ((currentChunk + scene).length > maxChunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = scene;
+    } else {
+      currentChunk += (currentChunk ? '\n' : '') + scene;
+    }
+  }
+  if (currentChunk.trim()) chunks.push(currentChunk.trim());
+  return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+}
+
+// Send one chunk to backend with HTML safety check
+async function sendChunkToBackend(chunkText, language, chunkIndex, totalChunks) {
+  try {
+    const response = await fetch('/.netlify/functions/breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script: chunkText,
+        language,
+        user_email: currentUser?.email,
+        user_id: currentUser?.id,
+        chunk_index: chunkIndex,
+        total_chunks: totalChunks
+      })
+    });
+
+    if (response.status === 402) {
+      openPayment();
+      return { error: true, message: 'No credits remaining' };
+    }
+
+    const rawText = await response.text();
+
+    // ── HTML safety check — backend timeout returns HTML not JSON ──
+    if (rawText.trim().startsWith('<')) {
+      return { error: true, message: 'This section took too long. Please try a shorter script section.' };
+    }
+
+    if (!response.ok) {
+      let errMsg = 'Processing error';
+      try { errMsg = JSON.parse(rawText).error || errMsg; } catch(e) {}
+      return { error: true, message: errMsg };
+    }
+
+    return JSON.parse(rawText);
+
+  } catch (err) {
+    return { error: true, message: err.message };
+  }
+}
+
+// Merge multiple chunk breakdowns into one complete breakdown
+function mergeBreakdownChunks(chunks) {
+  const merged = {
+    title: chunks[0].title || 'Untitled Script',
+    language_detected: chunks[0].language_detected || 'Unknown',
+    total_scenes: 0,
+    scenes: [],
+    character_breakdown: [],
+    outline_schedule: [],
+    production_elements: {
+      all_cast: [], all_props: [], all_costume: [],
+      all_equipment: [], special_requirements: []
+    }
+  };
+
+  let sceneOffset = 0;
+
+  for (const chunk of chunks) {
+    const scenes = chunk.scenes || [];
+    for (const scene of scenes) {
+      merged.scenes.push({ ...scene, scene_number: sceneOffset + (scene.scene_number || 1) });
+    }
+    sceneOffset += scenes.length;
+    merged.total_scenes += scenes.length;
+
+    for (const char of (chunk.character_breakdown || [])) {
+      const existing = merged.character_breakdown.find(c => c.character === char.character);
+      if (existing) {
+        existing.scenes = [...existing.scenes, ...(char.scenes || [])];
+        existing.total += (char.total || 0);
+      } else {
+        merged.character_breakdown.push({ ...char });
+      }
+    }
+
+    for (const loc of (chunk.outline_schedule || [])) {
+      const existing = merged.outline_schedule.find(l => l.set_location === loc.set_location);
+      if (existing) {
+        existing.scenes = [...existing.scenes, ...(loc.scenes || [])];
+        existing.total += (loc.total || 0);
+      } else {
+        merged.outline_schedule.push({ ...loc });
+      }
+    }
+
+    const pe = chunk.production_elements || {};
+    merged.production_elements.all_cast = [...new Set([...merged.production_elements.all_cast, ...(pe.all_cast || [])])];
+    merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
+    merged.production_elements.all_costume = [...new Set([...merged.production_elements.all_costume, ...(pe.all_costume || [])])];
+    merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
+    merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
+  }
+
+  merged.character_breakdown.sort((a, b) => (b.total || 0) - (a.total || 0));
+  return merged;
 }
 
 // ============================================
