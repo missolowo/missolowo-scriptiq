@@ -1,0 +1,9 @@
+{
+  "name": "scriptiq-functions",
+  "version": "1.0.0",
+  "description": "ScriptIQ Netlify serverless functions",
+  "dependencies": {
+    "node-fetch": "2.7.0",
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}
