@@ -484,8 +484,19 @@ footer{border-top:1px solid var(--border);padding:24px 48px;display:flex;align-i
     <!-- Loading -->
     <div class="loading-state" id="loadingState">
       <div class="loading-spinner">⬡</div>
-      <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase">Generating breakdown...</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">Powered by ScriptIQ Intelligence</div>
+      <div id="loadingMainText" style="font-size:11px;letter-spacing:2px;text-transform:uppercase">Generating breakdown...</div>
+
+      <!-- Progress bar -->
+      <div id="progressBarWrap" style="display:none;width:100%;max-width:320px;margin:16px auto 0">
+        <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden">
+          <div id="progressBarFill" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width 0.4s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <span id="progressPercent" style="font-size:11px;color:var(--gold);font-family:'DM Mono',monospace">0%</span>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text3);margin-top:12px;font-family:'DM Mono',monospace">Powered by ScriptIQ Intelligence</div>
     </div>
 
     <!-- Results -->
@@ -1317,59 +1328,186 @@ async function runBreakdown() {
 
   gtag('event', 'breakdown_started', { language: selectedScriptLang, script_length: script.length });
 
+  // ── Progress UI helpers ──
+  const progressWrap = document.getElementById('progressBarWrap');
+  const progressFill = document.getElementById('progressBarFill');
+  const progressPct  = document.getElementById('progressPercent');
+  const mainText     = document.getElementById('loadingMainText');
+
+  function setProgress(percent, message) {
+    if (progressFill) progressFill.style.width = Math.min(100, Math.round(percent)) + '%';
+    if (progressPct)  progressPct.textContent = Math.min(100, Math.round(percent)) + '%';
+    if (mainText && message) mainText.textContent = message;
+  }
+
+  const CHUNK_SIZE = 15000;
+  let completedChunks = [];   // Preserve partial work
+  let partialFailure = null;  // Set if a section fails mid-way
+
+  // ── Generate a Production ID for this attempt (idempotent charging) ──
+  // Reused on retry so the backend never double-charges
+  const productionId = (crypto.randomUUID && crypto.randomUUID()) ||
+    ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+
   try {
-    // ── Split script into chunks on the frontend ──
-    // Each chunk is sent separately so no single call exceeds Netlify's 26s timeout
-    const chunks = splitScriptForProcessing(script, 15000);
+    // ── Dynamic chunking — section count derived from script size ──
+    const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
     const totalChunks = chunks.length;
 
-    showLoadingState(true, totalChunks > 1
-      ? `Processing long script in ${totalChunks} sections...`
-      : 'Analyzing your screenplay...');
-
-    const chunkResults = [];
-
-    for (let i = 0; i < totalChunks; i++) {
-      // Update loading message per chunk
-      const loadingText = document.querySelector('#loadingState .loading-text');
-      if (loadingText && totalChunks > 1) {
-        loadingText.textContent = `Processing section ${i + 1} of ${totalChunks}...`;
+    // ── Oversized single-scene detection (Amendment 4) ──
+    const oversized = chunks.find(c => c.length > CHUNK_SIZE * 1.5);
+    if (oversized && chunks.length >= 1) {
+      // A single scene bigger than 1.5x the chunk target cannot be split safely
+      const isSingleHugeScene = chunks.some(c =>
+        c.length > CHUNK_SIZE * 1.5 &&
+        (c.match(/\n(?=(?:INT\.|EXT\.|I\/E\.))/gi) || []).length === 0
+      );
+      if (isSingleHugeScene) {
+        throw new Error('OVERSIZED_SCENE');
       }
-
-      const result = await sendChunkToBackend(chunks[i], selectedScriptLang, i, totalChunks);
-
-      // ── HTML safety check (from CISO Apps Script logic) ──
-      if (result.error) {
-        throw new Error(result.message);
-      }
-
-      chunkResults.push(result);
     }
 
-    // ── Merge all chunk results ──
-    breakdownData = totalChunks === 1 ? chunkResults[0] : mergeBreakdownChunks(chunkResults);
+    if (progressWrap) progressWrap.style.display = 'block';
+    setProgress(15, 'Reading screenplay...');
 
-    // Update local credit count
-    if (!currentUser) {
-      const localCount = parseInt(localStorage.getItem('breakdownCount') || '0');
-      localStorage.setItem('breakdownCount', (localCount + 1).toString());
-    } else if (currentUser.role === 'free') {
-      currentUser.credits_remaining = Math.max(0, (currentUser.credits_remaining || 3) - 1);
+    // ── PERFORMANCE METRICS (engineering baseline — console only) ──
+    const perfMetrics = {
+      production_id: productionId,
+      script_size_chars: script.length,
+      total_chunks: totalChunks,
+      chunk_durations_ms: [],
+      run_start: Date.now()
+    };
+
+    // ── Process each section sequentially ──
+    for (let i = 0; i < totalChunks; i++) {
+      const sectionStart = Date.now();
+      const baseProgress = 15 + (i / totalChunks) * 70; // 15% → 85%
+
+      setProgress(
+        baseProgress,
+        totalChunks > 1 ? `Processing section ${i + 1} of ${totalChunks}...` : 'Analyzing your screenplay...'
+      );
+
+      const result = await sendChunkToBackend(
+        chunks[i], selectedScriptLang, i, totalChunks, productionId
+      );
+
+      const chunkDuration = Date.now() - sectionStart;
+
+      if (result.error) {
+        // Diagnostics — engineering only, never shown to user
+        console.error('[ScriptIQ Diagnostics]', JSON.stringify({
+          production_id: productionId,
+          section: i + 1,
+          total_sections: totalChunks,
+          script_size_chars: script.length,
+          section_size_chars: chunks[i].length,
+          error_type: result.message,
+          duration_ms: chunkDuration,
+          completed_sections: completedChunks.length
+        }));
+
+        // Record where it stopped — we'll render partial results below
+        partialFailure = { failedSection: i + 1, totalSections: totalChunks };
+        break; // Stop processing, keep what we have
+      }
+
+      perfMetrics.chunk_durations_ms.push(chunkDuration);
+      completedChunks.push(result);
+    }
+
+    // ── If nothing completed at all, it's a hard failure ──
+    if (completedChunks.length === 0) {
+      throw new Error('Could not process the script. Please try again.');
+    }
+
+    setProgress(90, 'Combining production data...');
+
+    // ── Merge whatever completed (full OR partial) ──
+    const mergeStart = Date.now();
+    breakdownData = completedChunks.length === 1
+      ? completedChunks[0]
+      : mergeBreakdownChunks(completedChunks);
+    const mergeDuration = Date.now() - mergeStart;
+
+    setProgress(100, 'Generating report...');
+
+    // ── Emit performance baseline (engineering only) ──
+    const durations = perfMetrics.chunk_durations_ms;
+    if (durations.length > 0) {
+      console.log('[ScriptIQ Performance]', JSON.stringify({
+        production_id: perfMetrics.production_id,
+        script_size_chars: perfMetrics.script_size_chars,
+        chunks_created: perfMetrics.total_chunks,
+        chunks_completed: durations.length,
+        total_processing_ms: Date.now() - perfMetrics.run_start,
+        avg_chunk_ms: Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
+        longest_chunk_ms: Math.max(...durations),
+        shortest_chunk_ms: Math.min(...durations),
+        merge_ms: mergeDuration,
+        scenes_extracted: breakdownData.total_scenes || 0,
+        characters_extracted: (breakdownData.character_breakdown || []).length,
+        memory_mb: (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 'n/a')
+      }));
+    }
+
+    // ── Credit display sync — backend is the source of truth ──
+    // Backend charges once on the last chunk; only a COMPLETE run reaches it.
+    if (currentUser && typeof breakdownData.credits_remaining === 'number') {
+      currentUser.credits_remaining = breakdownData.credits_remaining;
       localStorage.setItem('scriptiq_user', JSON.stringify(currentUser));
       updateNavbar();
+    } else if (!currentUser && !partialFailure) {
+      const localCount = parseInt(localStorage.getItem('breakdownCount') || '0');
+      localStorage.setItem('breakdownCount', (localCount + 1).toString());
     }
 
     renderResults(breakdownData);
-    gtag('event', 'breakdown_completed', { scenes: breakdownData.total_scenes });
+
+    // ── Partial-result banner (Amendment 2) ──
+    if (partialFailure) {
+      showPartialBanner(partialFailure.failedSection, partialFailure.totalSections);
+      gtag('event', 'breakdown_partial', {
+        completed: completedChunks.length,
+        failed_at: partialFailure.failedSection
+      });
+    } else {
+      gtag('event', 'breakdown_completed', {
+        scenes: breakdownData.total_scenes,
+        sections: completedChunks.length
+      });
+    }
 
   } catch (err) {
     console.error('Breakdown error:', err);
-    showError('Could not process the script. Error: ' + err.message);
+    if (err.message === 'OVERSIZED_SCENE') {
+      showError('One scene in this screenplay is unusually large and couldn\u2019t be processed within the current beta limits. Try splitting that scene, or contact support.');
+    } else {
+      showError(err.message || 'Could not process the script. Please try again.');
+    }
     gtag('event', 'breakdown_error');
   } finally {
     btn.disabled = false;
     loading.classList.remove('active');
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (progressFill) progressFill.style.width = '0%';
   }
+}
+
+// ── Partial result banner — shown above results when a section failed ──
+function showPartialBanner(failedSection, totalSections) {
+  const results = document.getElementById('resultsPanel');
+  if (!results) return;
+  let banner = document.getElementById('partialBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'partialBanner';
+    banner.style.cssText = 'background:rgba(212,160,23,0.1);border:1px solid rgba(212,160,23,0.35);border-radius:6px;padding:14px 18px;margin-bottom:16px;font-family:\'DM Mono\',monospace;font-size:12px;color:var(--gold);line-height:1.6';
+    results.insertBefore(banner, results.firstChild);
+  }
+  banner.innerHTML = `\u26A0\uFE0F This production is partially processed. Sections 1\u2013${failedSection - 1} of ${totalSections} completed. Section ${failedSection} did not finish. <strong>You have not been charged.</strong> Please retry to complete the full breakdown.`;
+  banner.style.display = 'block';
 }
 
 // ============================================
@@ -1398,7 +1536,7 @@ function splitScriptForProcessing(script, maxChunkSize) {
 }
 
 // Send one chunk to backend with HTML safety check
-async function sendChunkToBackend(chunkText, language, chunkIndex, totalChunks) {
+async function sendChunkToBackend(chunkText, language, chunkIndex, totalChunks, productionId) {
   try {
     const response = await fetch('/.netlify/functions/breakdown', {
       method: 'POST',
@@ -1409,7 +1547,8 @@ async function sendChunkToBackend(chunkText, language, chunkIndex, totalChunks) 
         user_email: currentUser?.email,
         user_id: currentUser?.id,
         chunk_index: chunkIndex,
-        total_chunks: totalChunks
+        total_chunks: totalChunks,
+        production_id: productionId
       })
     });
 
@@ -1674,6 +1813,7 @@ async function initiatePayment() {
 function exportPDF() {
   if (!breakdownData) return;
   gtag('event', 'export_pdf');
+  const pdfStart = Date.now();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const scenes = breakdownData.scenes || [];
@@ -1826,6 +1966,7 @@ function exportPDF() {
   const pc=doc.internal.getNumberOfPages();
   for(let i=1;i<=pc;i++){doc.setPage(i);if(i>1)addFooter();}
   doc.save(`${title.replace(/\s+/g,'-').toLowerCase()}-production-breakdown.pdf`);
+  console.log('[ScriptIQ Performance] PDF generated in ' + (Date.now() - pdfStart) + 'ms, pages: ' + pc);
 }
 
 // ============================================
