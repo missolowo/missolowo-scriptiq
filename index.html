@@ -1354,17 +1354,15 @@ async function runBreakdown() {
     const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
     const totalChunks = chunks.length;
 
-    // ── Oversized single-scene detection (Amendment 4) ──
-    const oversized = chunks.find(c => c.length > CHUNK_SIZE * 1.5);
-    if (oversized && chunks.length >= 1) {
-      // A single scene bigger than 1.5x the chunk target cannot be split safely
-      const isSingleHugeScene = chunks.some(c =>
-        c.length > CHUNK_SIZE * 1.5 &&
-        (c.match(/\n(?=(?:INT\.|EXT\.|I\/E\.))/gi) || []).length === 0
-      );
-      if (isSingleHugeScene) {
-        throw new Error('OVERSIZED_SCENE');
-      }
+    // ── Oversized detection (Amendment 4) ──
+    // With size-based fallback, any script can now be split. The only
+    // true failure is if a SINGLE chunk after all splitting is still
+    // far larger than the limit AND has no internal break points — which
+    // splitBySize already hard-splits. So a genuine oversize is now
+    // effectively impossible; we keep a guard only as a final safety net.
+    const trulyUnsplittable = chunks.some(c => c.length > CHUNK_SIZE * 2);
+    if (trulyUnsplittable) {
+      throw new Error('OVERSIZED_SCENE');
     }
 
     if (progressWrap) progressWrap.style.display = 'block';
@@ -1514,25 +1512,71 @@ function showPartialBanner(failedSection, totalSections) {
 // FRONTEND CHUNKING — handles any script length
 // ============================================
 
-// Split script on scene boundaries (INT./EXT.)
+// ── Split script at scene boundaries — supports multiple formats ──
+// Recognizes: SCENE 1 / SCENE1 / SC 1 (Nollywood),
+// INT. / EXT. / I/E. / INT/EXT (US/UK standard),
+// INTERIOR/ EXTERIOR/ slash-style sluglines.
+// Falls back to size-based splitting if no headings are found,
+// so a script is NEVER wrongly rejected as one giant scene.
 function splitScriptForProcessing(script, maxChunkSize) {
   const text = script.trim();
   if (text.length <= maxChunkSize) return [text];
 
-  const chunks = [];
-  const scenes = text.split(/\n(?=(?:INT\.|EXT\.|I\/E\.|INT\/EXT\.?))/i);
-  let currentChunk = '';
+  // Primary: split on recognized scene headings
+  const sceneBoundary = /\n(?=(?:SCENE\s*\d+|SC\s*\d+|INT\.|EXT\.|I\/E\.|INT\/EXT|INTERIOR[\/\s]|EXTERIOR[\/\s]))/i;
+  let segments = text.split(sceneBoundary);
 
-  for (const scene of scenes) {
-    if ((currentChunk + scene).length > maxChunkSize && currentChunk.length > 0) {
+  // Fallback: if we found no real boundaries (only 1 segment),
+  // split by paragraph breaks so we never declare one giant scene
+  if (segments.length <= 1) {
+    segments = splitBySize(text, maxChunkSize);
+  }
+
+  // Group segments into chunks under maxChunkSize
+  const chunks = [];
+  let currentChunk = '';
+  for (const seg of segments) {
+    if ((currentChunk + seg).length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
-      currentChunk = scene;
+      currentChunk = seg;
     } else {
-      currentChunk += (currentChunk ? '\n' : '') + scene;
+      currentChunk += (currentChunk ? '\n' : '') + seg;
     }
   }
   if (currentChunk.trim()) chunks.push(currentChunk.trim());
+
   return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+}
+
+// ── Size-based fallback splitter — splits at paragraph/line breaks ──
+// Used when no scene headings are recognized. Guarantees a long script
+// always breaks into processable pieces instead of failing.
+function splitBySize(text, maxChunkSize) {
+  const paragraphs = text.split(/\n\s*\n/); // blank-line paragraph breaks
+  const out = [];
+  let buffer = '';
+  for (const p of paragraphs) {
+    if ((buffer + p).length > maxChunkSize && buffer.length > 0) {
+      out.push(buffer);
+      buffer = p;
+    } else {
+      buffer += (buffer ? '\n\n' : '') + p;
+    }
+  }
+  if (buffer) out.push(buffer);
+
+  // If a single paragraph is still larger than the limit, hard-split it
+  const final = [];
+  for (const piece of out) {
+    if (piece.length <= maxChunkSize) {
+      final.push(piece);
+    } else {
+      for (let i = 0; i < piece.length; i += maxChunkSize) {
+        final.push(piece.substring(i, i + maxChunkSize));
+      }
+    }
+  }
+  return final;
 }
 
 // Send one chunk to backend with HTML safety check
