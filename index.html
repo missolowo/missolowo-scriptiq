@@ -1340,7 +1340,7 @@ async function runBreakdown() {
     if (mainText && message) mainText.textContent = message;
   }
 
-  const CHUNK_SIZE = 15000;
+  const CHUNK_SIZE = 7000; // Tuned from live data: ~15s/section, safe under Netlify's 26s ceiling
   let completedChunks = [];   // Preserve partial work
   let partialFailure = null;  // Set if a section fails mid-way
 
@@ -1348,6 +1348,17 @@ async function runBreakdown() {
   // Reused on retry so the backend never double-charges
   const productionId = (crypto.randomUUID && crypto.randomUUID()) ||
     ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+
+  // ── Retry tracking (operational metric — engineering only) ──
+  // Fingerprint the script so re-running the same one counts as a retry
+  function scriptFingerprint(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return 'fp_' + Math.abs(h) + '_' + s.length;
+  }
+  const fp = scriptFingerprint(script);
+  const retryKey = 'retries_' + fp;
+  const retryCount = parseInt(localStorage.getItem(retryKey) || '0');
 
   try {
     // ── Dynamic chunking — section count derived from script size ──
@@ -1431,24 +1442,39 @@ async function runBreakdown() {
 
     setProgress(100, 'Generating report...');
 
-    // ── Emit performance baseline (engineering only) ──
+    // ── OPERATIONAL METRICS (PM-required, engineering only, anonymous) ──
+    // The 5 PM fields: script length, sections created, total duration,
+    // retries required, final completion status — plus performance detail.
     const durations = perfMetrics.chunk_durations_ms;
-    if (durations.length > 0) {
-      console.log('[ScriptIQ Performance]', JSON.stringify({
-        production_id: perfMetrics.production_id,
-        script_size_chars: perfMetrics.script_size_chars,
-        chunks_created: perfMetrics.total_chunks,
-        chunks_completed: durations.length,
-        total_processing_ms: Date.now() - perfMetrics.run_start,
-        avg_chunk_ms: Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
-        longest_chunk_ms: Math.max(...durations),
-        shortest_chunk_ms: Math.min(...durations),
-        merge_ms: mergeDuration,
-        scenes_extracted: breakdownData.total_scenes || 0,
-        characters_extracted: (breakdownData.character_breakdown || []).length,
-        memory_mb: (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 'n/a')
-      }));
+    const completionStatus = partialFailure ? 'partial' : 'completed';
+
+    // Update retry counter for this script fingerprint
+    if (partialFailure) {
+      // This attempt didn't fully complete — next run of same script is a retry
+      localStorage.setItem(retryKey, String(retryCount + 1));
+    } else {
+      // Fully completed — clear the retry counter for this script
+      localStorage.removeItem(retryKey);
     }
+
+    console.log('[ScriptIQ Metrics]', JSON.stringify({
+      // ── PM-required operational fields ──
+      script_length_chars: perfMetrics.script_size_chars,
+      sections_created: perfMetrics.total_chunks,
+      total_processing_ms: Date.now() - perfMetrics.run_start,
+      retries_required: retryCount,
+      completion_status: completionStatus,
+      // ── Performance detail (baseline benchmarking) ──
+      production_id: perfMetrics.production_id,
+      sections_completed: durations.length,
+      avg_section_ms: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+      longest_section_ms: durations.length ? Math.max(...durations) : 0,
+      shortest_section_ms: durations.length ? Math.min(...durations) : 0,
+      merge_ms: mergeDuration,
+      scenes_extracted: breakdownData.total_scenes || 0,
+      characters_extracted: (breakdownData.character_breakdown || []).length,
+      memory_mb: (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 'n/a')
+    }));
 
     // ── Credit display sync — backend is the source of truth ──
     // Backend charges once on the last chunk; only a COMPLETE run reaches it.
