@@ -1,8 +1,8 @@
 // ============================================
 // SCRIPTIQ — SCRIPT BREAKDOWN FUNCTION
-// CISO Hardened — Processes ONE chunk per call
-// Frontend handles splitting long scripts into
-// chunks so each call stays under 26s timeout
+// CISO Hardened — One chunk per call
+// Charges ONE credit only on the final chunk,
+// idempotently per production_id (Option Y+ bridge)
 // ============================================
 
 const fetch = (() => {
@@ -91,18 +91,23 @@ exports.handler = async function(event) {
   }
 
   try {
-    const { script, language, user_email, user_id, chunk_index, total_chunks } = JSON.parse(event.body);
+    const {
+      script, language, user_email, user_id,
+      chunk_index, total_chunks, production_id
+    } = JSON.parse(event.body);
 
     if (!script || script.trim().length < 10) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No script provided' }) };
     }
 
-    const isAdmin = ADMIN_EMAILS.includes(user_email);
-    const isMultiChunk = (total_chunks || 1) > 1;
-    const isFirstChunk = (chunk_index || 0) === 0;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
+    const isAdmin       = ADMIN_EMAILS.includes(user_email);
+    const totalChunks   = total_chunks || 1;
+    const chunkIndex    = chunk_index || 0;
+    const isFirstChunk  = chunkIndex === 0;
+    const isLastChunk   = chunkIndex === (totalChunks - 1);
+    const supabase      = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── Rate limit — only check on first chunk to avoid blocking multi-chunk jobs ──
+    // ── Rate limit — only on first chunk so multi-chunk jobs aren't self-blocked ──
     if (!isAdmin && isFirstChunk) {
       const clientIP = getClientIP(event);
       const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 5, user_id || null);
@@ -131,7 +136,7 @@ exports.handler = async function(event) {
       }
     }
 
-    // ── Access guard — only on first chunk ──
+    // ── Access guard — only on first chunk (fail fast before any AI cost) ──
     if (user && !isAdmin && isFirstChunk) {
       if (user.is_disabled) {
         return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled.' }) };
@@ -144,13 +149,24 @@ exports.handler = async function(event) {
       }
     }
 
+    // ── Register production on first chunk (idempotent — safe if retried) ──
+    if (isFirstChunk && production_id && user) {
+      await supabase.from('productions')
+        .upsert({
+          production_id,
+          user_id: user.id,
+          status: 'processing',
+          created_at: new Date().toISOString()
+        }, { onConflict: 'production_id', ignoreDuplicates: true });
+    }
+
     // ── Build prompt ──
     const langInstruction = (!language || language === 'auto')
       ? 'Auto-detect the script language.'
       : `The script is in ${language}.`;
 
-    const sectionNote = isMultiChunk
-      ? `This is section ${(chunk_index || 0) + 1} of ${total_chunks} of a longer screenplay. `
+    const sectionNote = totalChunks > 1
+      ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
 
     const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
@@ -226,30 +242,49 @@ RULES:
     const text = aiData.choices?.[0]?.message?.content || '{}';
     const breakdown = JSON.parse(text.trim());
 
-    // ── Deduct credit & save — only on first chunk (one credit per full script) ──
-    if (user && isFirstChunk) {
-      let finalCredits = user.credits_remaining;
-      if (!isAdmin) {
-        finalCredits = user.credits_remaining - 1;
+    // ════════════════════════════════════════════════
+    // CREDIT CHARGE — only on LAST chunk, only after this
+    // chunk's AI succeeded, idempotent per production_id
+    // ════════════════════════════════════════════════
+    if (isLastChunk && user && !isAdmin) {
+      let alreadyCharged = false;
+
+      // Idempotency guard — has this production already been charged?
+      if (production_id) {
+        const { data: prod } = await supabase
+          .from('productions').select('charged_at')
+          .eq('production_id', production_id)
+          .single();
+        if (prod && prod.charged_at) alreadyCharged = true;
+      }
+
+      if (!alreadyCharged) {
+        const finalCredits = Math.max(0, user.credits_remaining - 1);
         await supabase.from('users').update({
           credits_remaining: finalCredits,
           credits_used: (user.credits_used || 0) + 1
         }).eq('id', user.id);
+
+        // Mark production charged + completed (idempotency record)
+        if (production_id) {
+          await supabase.from('productions').upsert({
+            production_id,
+            user_id: user.id,
+            status: 'completed',
+            charged_at: new Date().toISOString()
+          }, { onConflict: 'production_id' });
+        }
+
+        breakdown.credits_remaining = finalCredits;
+      } else {
+        // Already charged on a previous attempt — do NOT charge again
+        breakdown.credits_remaining = user.credits_remaining;
+        breakdown.already_charged = true;
       }
-
-      await supabase.from('breakdowns').insert({
-        user_id: user.id,
-        title: breakdown.title || 'Untitled Script',
-        script_language: breakdown.language_detected || 'Unknown',
-        scenes: breakdown.scenes || [],
-        character_breakdown: breakdown.character_breakdown || [],
-        outline_schedule: breakdown.outline_schedule || [],
-        production_elements: breakdown.production_elements || {},
-        total_scenes: breakdown.total_scenes || 0,
-        credits_used: isAdmin ? 0 : 1
-      });
-
-      breakdown.credits_remaining = finalCredits;
+      breakdown.user_role = user.role;
+    } else if (user) {
+      // Non-charging chunk — report current balance for display only
+      breakdown.credits_remaining = user.credits_remaining;
       breakdown.user_role = user.role;
     }
 
