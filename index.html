@@ -1298,18 +1298,18 @@ async function runBreakdown() {
   if (!script) { showError('Please paste your screenplay or upload a file first.'); return; }
   if (script.length < 50) { showError('Script seems too short. Please paste a full screenplay.'); return; }
 
+  // ── Authentication required — no anonymous breakdowns ──
+  if (!currentUser || !currentUser.access_token) {
+    openAuth();
+    return;
+  }
+
   // ── Validate session before proceeding ──
   const sessionValid = await ensureValidSession();
   if (!sessionValid) return; // Session expired modal already shown
 
-  // Credit check for non-logged-in users
-  if (!currentUser) {
-    const localCount = parseInt(localStorage.getItem('breakdownCount') || '0');
-    if (localCount >= 3) {
-      openPayment();
-      return;
-    }
-  } else {
+  // Credit check (authenticated users only)
+  {
     const isAdmin = currentUser.role === 'admin' || CONFIG.ADMIN_EMAILS.includes(currentUser.email);
     if (!isAdmin && currentUser.role === 'free' && (currentUser.credits_remaining || 0) <= 0) {
       openPayment();
@@ -1482,9 +1482,6 @@ async function runBreakdown() {
       currentUser.credits_remaining = breakdownData.credits_remaining;
       localStorage.setItem('scriptiq_user', JSON.stringify(currentUser));
       updateNavbar();
-    } else if (!currentUser && !partialFailure) {
-      const localCount = parseInt(localStorage.getItem('breakdownCount') || '0');
-      localStorage.setItem('breakdownCount', (localCount + 1).toString());
     }
 
     renderResults(breakdownData);
@@ -1610,17 +1607,23 @@ async function sendChunkToBackend(chunkText, language, chunkIndex, totalChunks, 
   try {
     const response = await fetch('/.netlify/functions/breakdown', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (currentUser?.access_token || '')
+      },
       body: JSON.stringify({
         script: chunkText,
         language,
-        user_email: currentUser?.email,
-        user_id: currentUser?.id,
         chunk_index: chunkIndex,
         total_chunks: totalChunks,
         production_id: productionId
       })
     });
+
+    if (response.status === 401) {
+      handleSessionExpired();
+      return { error: true, message: 'Your session has expired. Please sign in again.' };
+    }
 
     if (response.status === 402) {
       openPayment();
