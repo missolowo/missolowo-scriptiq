@@ -34,32 +34,47 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const { breakdown, schedule_day, shoot_date, general_call, user_email, user_id } = JSON.parse(event.body);
+    const { breakdown, schedule_day, shoot_date, general_call } = JSON.parse(event.body);
 
     if (!breakdown) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
     }
 
-    const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
-
-    // ── STEP 1: Rate limit — Passing user_id to fix the Film Set Wi-Fi shared-IP issue ──
-    if (!isAdminEmail) {
-      const clientIP = getClientIP(event);
-      const rateLimit = await checkRateLimit(clientIP, 'callsheet', 5, SUPABASE_SECRET, user_id || null);
-      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'callsheet');
-    }
-
     // ── STEP 2: Initialize Supabase ──
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── STEP 3: Single-Pass User Verification (Fixes UUID crashes and race conditions) ──
+    // ════════════════════════════════════════════════════════════
+    // AUTHENTICATION GATE — verify Supabase session before anything.
+    // No valid token → 401. Identity comes from the token, not body.
+    // ════════════════════════════════════════════════════════════
+    const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!token) {
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Authentication required. Please sign in.', code: 'UNAUTHENTICATED' }) };
+    }
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData || !authData.user) {
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid or expired session. Please sign in again.', code: 'UNAUTHENTICATED' }) };
+    }
+    const authedUserId = authData.user.id;
+    const authedEmail  = authData.user.email;
+    const isAdminEmail = ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(authedEmail);
+
+    // ── STEP 1: Rate limit — keyed to verified user ──
+    if (!isAdminEmail) {
+      const clientIP = getClientIP(event);
+      const rateLimit = await checkRateLimit(clientIP, 'callsheet', 5, SUPABASE_SECRET, authedUserId);
+      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'callsheet');
+    }
+
+    // ── STEP 3: Load verified user's profile (by token id only) ──
     let user = null;
-    if (user_id || user_email) {
-      const query = user_id
-        ? supabase.from('users').select('*').eq('id', user_id).single()
-        : supabase.from('users').select('*').eq('email', user_email).single();
-      const { data } = await query;
+    {
+      const { data } = await supabase.from('users').select('*').eq('id', authedUserId).single();
       user = data;
+    }
+    if (!user) {
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Account not found. Please sign in again.', code: 'UNAUTHENTICATED' }) };
     }
 
     // ── STEP 3b: Core Access Guard ──
