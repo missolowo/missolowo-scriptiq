@@ -92,7 +92,7 @@ exports.handler = async function(event) {
 
   try {
     const {
-      script, language, user_email, user_id,
+      script, language,
       chunk_index, total_chunks, production_id
     } = JSON.parse(event.body);
 
@@ -100,17 +100,47 @@ exports.handler = async function(event) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No script provided' }) };
     }
 
-    const isAdmin       = ADMIN_EMAILS.includes(user_email);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
+
+    // ════════════════════════════════════════════════════════════
+    // AUTHENTICATION GATE — MUST come before rate limit, user lookup,
+    // and ANY OpenAI call. No valid Supabase session → 401, stop here.
+    // Identity is taken from the verified token, NEVER from the body,
+    // so a caller cannot impersonate another user or forge a user_id.
+    // ════════════════════════════════════════════════════════════
+    const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+    if (!token) {
+      return {
+        statusCode: 401, headers,
+        body: JSON.stringify({ error: 'Authentication required. Please sign in.', code: 'UNAUTHENTICATED' })
+      };
+    }
+
+    // Cryptographically verify the token with Supabase. A forged or
+    // expired token fails here — this is the real gate.
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData || !authData.user) {
+      return {
+        statusCode: 401, headers,
+        body: JSON.stringify({ error: 'Invalid or expired session. Please sign in again.', code: 'UNAUTHENTICATED' })
+      };
+    }
+
+    const authedUserId = authData.user.id;
+    const authedEmail  = authData.user.email;
+    const isAdmin      = ADMIN_EMAILS.includes(authedEmail);
+
     const totalChunks   = total_chunks || 1;
     const chunkIndex    = chunk_index || 0;
     const isFirstChunk  = chunkIndex === 0;
     const isLastChunk   = chunkIndex === (totalChunks - 1);
-    const supabase      = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── Rate limit — only on first chunk so multi-chunk jobs aren't self-blocked ──
+    // ── Rate limit — keyed to the VERIFIED user id ──
     if (!isAdmin && isFirstChunk) {
       const clientIP = getClientIP(event);
-      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 5, user_id || null);
+      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 5, authedUserId);
       if (!rateLimit.allowed) {
         return {
           statusCode: 429, headers,
@@ -119,21 +149,21 @@ exports.handler = async function(event) {
       }
     }
 
-    // ── Get user ──
+    // ── Load the verified user's profile (by token-derived id only) ──
+    // Never creates a user here — the signup trigger owns account creation.
     let user = null;
-    if (user_id) {
-      const { data } = await supabase.from('users').select('*').eq('id', user_id).single();
+    {
+      const { data } = await supabase.from('users').select('*').eq('id', authedUserId).single();
       user = data;
-    } else if (user_email) {
-      const { data } = await supabase.from('users').select('*').eq('email', user_email).single();
-      if (!data) {
-        const { data: newUser } = await supabase
-          .from('users').insert({ email: user_email, role: 'free', credits_remaining: 3 })
-          .select().single();
-        user = newUser;
-      } else {
-        user = data;
-      }
+    }
+
+    // Profile must exist for an authenticated user. If missing, refuse
+    // rather than silently minting one.
+    if (!user) {
+      return {
+        statusCode: 401, headers,
+        body: JSON.stringify({ error: 'Account not found. Please sign in again.', code: 'UNAUTHENTICATED' })
+      };
     }
 
     // ── Access guard — only on first chunk (fail fast before any AI cost) ──
