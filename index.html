@@ -986,7 +986,33 @@ async function handleSignup() {
     });
     const data = await res.json();
     if (data.error) { errEl.textContent = data.error.message; return; }
-    currentUser = { email, name, role: 'free', credits_remaining: 3, id: data.user?.id };
+
+    // ── Correct Supabase pattern ──
+    // If email confirmation is ON, signup returns a user but NO session tokens.
+    // We must NOT create a logged-in currentUser in that case — the user has to
+    // verify their email, then log in (which returns real tokens).
+    if (!data.access_token) {
+      // No session issued → email verification required.
+      closeAuth();
+      showVerifyEmailNotice(email);
+      gtag('event', 'sign_up_pending_verification');
+      return;
+    }
+
+    // If confirmation is OFF, Supabase returns a full session at signup —
+    // store the real tokens exactly like login does.
+    const isAdmin = CONFIG.ADMIN_EMAILS.includes(email);
+    const expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+    currentUser = {
+      email,
+      name,
+      id: data.user?.id,
+      role: isAdmin ? 'admin' : 'free',
+      credits_remaining: isAdmin ? 999 : 3,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: expiresAt
+    };
     localStorage.setItem('scriptiq_user', JSON.stringify(currentUser));
     closeAuth();
     updateNavbar();
@@ -1036,8 +1062,17 @@ function checkStoredUser() {
   const stored = localStorage.getItem('scriptiq_user');
   if (stored) {
     try {
-      currentUser = JSON.parse(stored);
-      // Validate session on load
+      const parsed = JSON.parse(stored);
+      // A stored user with no token is not a real session (e.g. legacy
+      // tokenless signup object). Discard silently — do NOT show the
+      // "session expired" modal, since they were never really logged in.
+      if (!parsed || !parsed.access_token || !parsed.expires_at) {
+        localStorage.removeItem('scriptiq_user');
+        currentUser = null;
+        updateNavbar();
+        return;
+      }
+      currentUser = parsed;
       validateSession();
       updateNavbar();
     } catch(e) {
@@ -1054,7 +1089,9 @@ function checkStoredUser() {
 
 // Check if token is expired or expiring within 5 minutes
 function isTokenExpired(user) {
-  if (!user || !user.expires_at) return false;
+  // A user with no token or no expiry metadata is NOT a valid session —
+  // treat as expired so it can never masquerade as authenticated.
+  if (!user || !user.access_token || !user.expires_at) return true;
   const fiveMinutes = 5 * 60 * 1000;
   return Date.now() >= (user.expires_at - fiveMinutes);
 }
@@ -1839,6 +1876,18 @@ function showError(msg) {
   const el = document.getElementById('errorMsg');
   el.textContent = msg;
   el.classList.add('active');
+}
+
+// Shown after signup when email confirmation is required.
+// Uses the existing session modal shell so no new markup is needed.
+function showVerifyEmailNotice(email) {
+  const modal = document.getElementById('sessionExpiredModal');
+  const msg = document.getElementById('sessionExpiredMsg');
+  if (msg) {
+    msg.textContent = 'Almost there! We sent a verification link to ' + email +
+      '. Please click it to confirm your account, then sign in to start using ScriptIQ.';
+  }
+  if (modal) modal.classList.add('open');
 }
 
 // ============================================
