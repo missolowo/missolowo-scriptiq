@@ -11,6 +11,12 @@
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-G1F83JSDLX');
+ // ── ScriptIQ event tracking (Phase 2) — must NEVER break the app ──
+  function siqTrack(eventName, params) {
+    try {
+      if (typeof gtag === 'function') gtag('event', eventName, params || {});
+    } catch (e) { /* analytics must never interrupt the product */ }
+  } 
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1364,6 +1370,14 @@ async function runBreakdown() {
     // ── Dynamic chunking — section count derived from script size ──
     const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
     const totalChunks = chunks.length;
+    // ── GA4: breakdown started ──
+    siqTrack('breakdown_started', {
+      script_size_chars: script.length,
+      total_sections: totalChunks,
+      retry_count: retryCount,
+      production_id: productionId
+    });
+    
 
     // ── Oversized detection (Amendment 4) ──
     // With size-based fallback, any script can now be split. The only
@@ -1416,6 +1430,21 @@ async function runBreakdown() {
           duration_ms: chunkDuration,
           completed_sections: completedChunks.length
         }));
+        // ── GA4: section failed (mirrors ScriptIQ Diagnostics) ──
+        siqTrack('breakdown_failed', {
+          section_number: i + 1,
+          total_sections: totalChunks,
+          section_size_chars: chunks[i].length,
+          duration_ms: chunkDuration,
+          failure_reason: (result.message && result.message.indexOf('too long') !== -1) ? 'timeout'
+                        : (result.message && result.message.indexOf('credits') !== -1) ? 'credits'
+                        : 'api_error',
+          completed_sections: completedChunks.length,
+          retry_count: retryCount,
+          production_id: productionId
+        });
+        
+        
 
         // Record where it stopped — we'll render partial results below
         partialFailure = { failedSection: i + 1, totalSections: totalChunks };
@@ -1423,6 +1452,14 @@ async function runBreakdown() {
       }
 
       perfMetrics.chunk_durations_ms.push(chunkDuration);
+      // ── GA4: section completed ──
+      siqTrack('section_completed', {
+        section_number: i + 1,
+        total_sections: totalChunks,
+        section_size_chars: chunks[i].length,
+        duration_ms: chunkDuration,
+        production_id: productionId
+      });
       completedChunks.push(result);
     }
 
@@ -1447,6 +1484,18 @@ async function runBreakdown() {
     // retries required, final completion status — plus performance detail.
     const durations = perfMetrics.chunk_durations_ms;
     const completionStatus = partialFailure ? 'partial' : 'completed';
+    // ── GA4: final outcome — completion fires ONLY on full success,
+    //    so Breakdown Completion Rate stays honest ──
+    if (!partialFailure) {
+      siqTrack('breakdown_completed', {
+        total_sections: totalChunks,
+        total_duration_ms: durations.reduce(function(a, b) { return a + b; }, 0),
+        merge_duration_ms: mergeDuration,
+        retry_count: retryCount,
+        production_id: productionId
+      });
+    }
+    
 
     // Update retry counter for this script fingerprint
     if (partialFailure) {
