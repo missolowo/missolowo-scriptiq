@@ -1346,7 +1346,7 @@ async function runBreakdown() {
     if (mainText && message) mainText.textContent = message;
   }
 
-  const CHUNK_SIZE = 7000; // Tuned from live data: ~15s/section, safe under Netlify's 26s ceiling
+  const CHUNK_SIZE = 3000; // Reduced from 7000 (Jul 15): telemetry showed 13-28s/section at 7000, breaching Netlify's ~26s ceiling on variance; ~6-13s/section at 3000
   let completedChunks = [];   // Preserve partial work
   let partialFailure = null;  // Set if a section fails mid-way
 
@@ -1715,6 +1715,8 @@ function mergeBreakdownChunks(chunks) {
 
   for (const chunk of chunks) {
     const scenes = chunk.scenes || [];
+    const chunkOffset = sceneOffset; // scene-number base for this chunk (captured BEFORE offset advances)
+    
     for (const scene of scenes) {
       merged.scenes.push({ ...scene, scene_number: sceneOffset + (scene.scene_number || 1) });
     }
@@ -1724,20 +1726,20 @@ function mergeBreakdownChunks(chunks) {
     for (const char of (chunk.character_breakdown || [])) {
       const existing = merged.character_breakdown.find(c => c.character === char.character);
       if (existing) {
-        existing.scenes = [...existing.scenes, ...(char.scenes || [])];
+       existing.scenes = [...existing.scenes, ...(char.scenes || []).map(n => chunkOffset + n)]; 
         existing.total += (char.total || 0);
       } else {
-        merged.character_breakdown.push({ ...char });
+        merged.character_breakdown.push({ ...char, scenes: (char.scenes || []).map(n => chunkOffset + n) });
       }
     }
 
     for (const loc of (chunk.outline_schedule || [])) {
       const existing = merged.outline_schedule.find(l => l.set_location === loc.set_location);
       if (existing) {
-        existing.scenes = [...existing.scenes, ...(loc.scenes || [])];
+        existing.scenes = [...existing.scenes, ...(loc.scenes || []).map(n => chunkOffset + n)];
         existing.total += (loc.total || 0);
       } else {
-        merged.outline_schedule.push({ ...loc });
+        merged.outline_schedule.push({ ...loc, scenes: (loc.scenes || []).map(n => chunkOffset + n) });
       }
     }
 
