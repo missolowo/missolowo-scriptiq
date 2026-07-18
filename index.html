@@ -971,7 +971,7 @@ document.addEventListener('click', (e) => {
 // ============================================
 // AUTH
 // ============================================
-function openAuth() { document.getElementById('authModal').classList.add('open'); }
+function openAuth() { siqTrack('auth_modal_opened', {}); document.getElementById('authModal').classList.add('open'); }
 function closeAuth() { document.getElementById('authModal').classList.remove('open'); }
 function showSignup() { document.getElementById('loginForm').style.display='none'; document.getElementById('signupForm').style.display='block'; }
 function showLogin() { document.getElementById('signupForm').style.display='none'; document.getElementById('loginForm').style.display='block'; }
@@ -983,6 +983,7 @@ async function handleSignup() {
   const errEl = document.getElementById('signupError');
 
   if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+  siqTrack('signup_attempted', {});
 
   try {
     const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/signup`, {
@@ -991,7 +992,13 @@ async function handleSignup() {
       body: JSON.stringify({ email, password, data: { full_name: name } })
     });
     const data = await res.json();
-    if (data.error) { errEl.textContent = data.error.message; return; }
+    if (!res.ok || data.error || data.error_code || data.msg) {
+      errEl.textContent = data.msg
+        || (data.error && data.error.message)
+        || 'Signup failed. Password must be 8+ characters with uppercase, lowercase, and a number.';
+      siqTrack('signup_failed', { reason: data.error_code || data.code || String(res.status) });
+      return;
+    }
     currentUser = { email, name, role: 'free', credits_remaining: 3, id: data.user?.id };
     localStorage.setItem('scriptiq_user', JSON.stringify(currentUser));
     closeAuth();
@@ -1369,6 +1376,23 @@ async function runBreakdown() {
   try {
     // ── Dynamic chunking — section count derived from script size ──
     const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
+    // ── Absolute oversize policy (Jul 17 fix): never reject — slice. ──
+    // Regression: the old guard used CHUNK_SIZE*2, so Option (b) silently
+    // dropped the max scene size 14000→6000 and rejected valid screenplays.
+    // Any chunk the scene-splitter leaves oversized is hard-sliced here into
+    // timeout-safe pieces so the engine always receives processable input.
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (chunks[ci].length > CHUNK_SIZE * 2) {
+        const oversized = chunks[ci];
+        const pieces = [];
+        for (let p = 0; p < oversized.length; p += CHUNK_SIZE) {
+          pieces.push(oversized.slice(p, p + CHUNK_SIZE));
+        }
+        chunks.splice(ci, 1, ...pieces);
+        ci += pieces.length - 1;
+      }
+    }
+    
     const totalChunks = chunks.length;
     // ── GA4: breakdown started ──
     siqTrack('breakdown_started', {
@@ -1385,10 +1409,8 @@ async function runBreakdown() {
     // far larger than the limit AND has no internal break points — which
     // splitBySize already hard-splits. So a genuine oversize is now
     // effectively impossible; we keep a guard only as a final safety net.
-    const trulyUnsplittable = chunks.some(c => c.length > CHUNK_SIZE * 2);
-    if (trulyUnsplittable) {
-      throw new Error('OVERSIZED_SCENE');
-    }
+   // Oversize rejection retired (Jul 17): oversized chunks are hard-sliced
+    // above instead. The OVERSIZED_SCENE error path no longer fires.
 
     if (progressWrap) progressWrap.style.display = 'block';
     setProgress(15, 'Reading screenplay...');
