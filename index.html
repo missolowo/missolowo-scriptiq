@@ -971,7 +971,16 @@ document.addEventListener('click', (e) => {
 // ============================================
 // AUTH
 // ============================================
-function openAuth() { siqTrack('auth_modal_opened', {}); document.getElementById('authModal').classList.add('open'); }
+function handleLogout() {
+  localStorage.removeItem('scriptiq_user');
+  currentUser = null;
+  breakdownData = null;
+  const results = document.getElementById('resultsPanel');
+  if (results) results.classList.remove('active');
+  updateNavbar();
+  siqTrack('logout', {});
+}
+  function openAuth() { siqTrack('auth_modal_opened', {}); document.getElementById('authModal').classList.add('open'); }
 function closeAuth() { document.getElementById('authModal').classList.remove('open'); }
 function showSignup() { document.getElementById('loginForm').style.display='none'; document.getElementById('signupForm').style.display='block'; }
 function showLogin() { document.getElementById('signupForm').style.display='none'; document.getElementById('loginForm').style.display='block'; }
@@ -1165,6 +1174,7 @@ function updateNavbar() {
 
   if (currentUser) {
     btn.textContent = currentUser.email.split('@')[0];
+    btn.onclick = function() { if (confirm('Log out of ScriptIQ?')) handleLogout(); };
     const isAdmin = currentUser.role === 'admin' || CONFIG.ADMIN_EMAILS.includes(currentUser.email);
     
     if (isAdmin) {
@@ -1179,10 +1189,22 @@ function updateNavbar() {
       credCount.textContent = credits;
       credDisplay.style.display = 'flex';
       credNum.textContent = credits;
-      accessBadge.style.display = 'none';
+     accessBadge.style.display = 'none';
     }
+  } else {
+    btn.textContent = 'Sign In';
+    btn.onclick = openAuth;
+    credBadge.style.display = 'none';
+    credDisplay.style.display = 'none';
+    accessBadge.innerHTML = '✦ 3 free breakdowns · No sign-up needed · Unlimited scenes';
+    accessBadge.style.display = '';
+    accessBadge.style.color = '';
+    accessBadge.style.borderColor = '';
   }
-}
+} 
+    
+  
+
 
 // ============================================
 // SCRIPT LANGUAGE
