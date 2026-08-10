@@ -1,0 +1,104 @@
+  --gutter-desktop: 24px;
+  --margin-mobile: 16px;
+
+  /* ---------- RADIUS ----------
+     LAW: tools are rounded, documents are square. */
+  --r-control: 8px;             /* buttons, inputs, chips */
+  --r-card: 12px;               /* cards, modals */
+  --r-doc: 0px;                 /* anything representing a document */
+
+  /* ---------- ELEVATION ----------
+     Depth = surface step + border; one shadow token, modals only. */
+  --shadow-modal: 0 24px 48px rgba(0,0,0,0.5);
+
+  /* ---------- MOTION (see Motion & Experience Design §3.8) ---------- */
+  --fast: 150ms;                /* hover, toggles, focus — the invisible cut */
+  --base: 250ms;                /* modals, panels, expand/collapse */
+  --slow: 400ms;                /* reserved: the roll & the develop only */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Exits: opacity-only at half duration. Entrances: ≤8px translate.
+     Animate transform & opacity ONLY. No motion libraries. */
+
+  /* ---------- COMPONENT CONSTANTS ---------- */
+  --btn-h: 48px;                /* mobile touch floor; 40px compact desktop */
+  --focus-ring: 2px solid var(--gold);
+  --focus-offset: 2px;
+  --sidebar-w: 240px;
+  --sync-rule-w: 24px;          /* the sync mark: 24×2px gold rule */
+  --sync-rule-h: 2px;
+  --status-dot: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --fast: 0ms; --base: 0ms; --slow: 0ms; }
+  /* Information beats (completion hold, discrete numeral changes)
+     are timing, not motion — preserve them in JS orchestration. */
+}
+/* ============================================================
+   MISSOLOWO SLATE — DESIGN TOKENS v1.0 (FROZEN)
+   Night Shoot design language · Brand v1.0 · July 2026
+   Single source of truth. Do not hardcode values in components.
+   ============================================================ */
+
+:root {
+  /* ---------- COLOR · CHARCOAL (surfaces, dark app) ---------- */
+  --ink-0: #0D0E10;             /* app background */
+  --ink-1: #141519;             /* sidebar, page sections */
+  --ink-2: #1B1D22;             /* cards, modals, inputs */
+  --ink-3: #25282F;             /* hover states, raised elements */
+  --line-1: #2E323A;            /* borders, dividers (1px hairline) */
+  --line-2: #3C414B;            /* focused / active borders */
+
+  /* ---------- COLOR · AWARD GOLD (the brand metal) ----------
+     LAW: gold never carries text < 14px or weight < 600.
+     Gold text only on --ink-0 … --ink-3. Warnings are NEVER gold. */
+  --gold: #D4A64A;              /* primary actions, scene numerals, sync marks */
+  --gold-bright: #E4BC66;       /* hover, active numerals */
+  --gold-deep: #9C7A2F;         /* pressed states; gold on paper/light */
+  --gold-tint: rgba(212,166,74,0.12);  /* selected rows, active nav bg */
+
+  /* ---------- COLOR · WARM WHITE (text) ---------- */
+  --paper: #F4EFE6;             /* primary text on dark; PDF page color */
+  --text-2: #B5AFA3;            /* secondary text */
+  --text-3: #7D786E;            /* placeholder, disabled, timestamps */
+
+  /* ---------- COLOR · FUNCTIONAL (warm-tuned) ---------- */
+  --ok: #7FAE7E;                /* success */
+  --error: #D96A57;             /* errors, destructive */
+  --warn: #C97E3D;              /* warnings — burnt orange, distinct from gold */
+  --info: #8B97A8;              /* neutral notices */
+
+  /* ---------- COLOR · PAPER MODE (documents & PDF) ---------- */
+  --doc-bg: #F4EFE6;
+  --doc-ink: #0D0E10;
+  --doc-line: #C9C2B4;          /* hairline rules on paper (print ≥ 0.75pt) */
+  --doc-gold: #9C7A2F;          /* scene numerals on paper (grayscale-safe) */
+  --doc-chip-bg: #EDE6D8;
+  --doc-chip-line: #D9D1C0;
+  --doc-chip-text: #4A463D;
+
+  /* ---------- TYPOGRAPHY ----------
+     Display: Fraunces (Latin only — see script-matched family below)
+     Text: Inter · Data: IBM Plex Mono
+     Non-Latin display pairing: Noto Serif Devanagari / Noto Naskh Arabic /
+     Noto Serif KR / Noto Serif JP, weight 500, subset per mobile budget. */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-text: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* type scale (mobile-first; step up one notch at ≥768px where noted) */
+  --t-display: 2.44rem;  --t-display-lh: 1.1;    /* Fraunces 600 */
+  --t-h1: 1.95rem;       --t-h1-lh: 1.15;        /* Fraunces 600 */
+  --t-h2: 1.56rem;       --t-h2-lh: 1.2;         /* Fraunces 500 */
+  --t-h3: 1.25rem;       --t-h3-lh: 1.3;         /* Inter 600 */
+  --t-body: 1rem;        --t-body-lh: 1.55;      /* Inter 400 */
+  --t-small: 0.875rem;   --t-small-lh: 1.5;      /* Inter 400 */
+  --t-slug: 0.75rem;     --t-slug-lh: 1.4;       /* Plex Mono 500, uppercase */
+  --t-slug-tracking: 0.08em;
+  --t-eyebrow-tracking: 0.16em;
+  /* numerals: Plex Mono 600, tabular; context-sized via font-variant-numeric */
+
+  /* ---------- SPACING (4px base) ---------- */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px; --s-24: 96px;
+  --layout-max: 1200px;
