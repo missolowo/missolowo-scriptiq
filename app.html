@@ -30,6 +30,19 @@
   }
   .sidebar-logo { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-6) var(--s-8); }
   .sidebar-logo img { height: 28px; width: auto; }
+ .account-strip {
+    padding: 0 var(--s-6) var(--s-6);
+    font-size: var(--t-small);
+  }
+  .account-name { color: var(--paper); font-weight: 600; }
+  .account-credits {
+    color: var(--gold);
+    font-family: var(--font-data);
+    font-size: var(--t-slug);
+    margin-top: 2px;
+  }
+  .account-signin { color: var(--text-2); font-size: var(--t-small); }
+  .account-signin a { color: var(--gold); font-weight: 600; }
   .nav-section-label {
     font-family: var(--font-data);
     font-size: var(--t-slug);
@@ -199,6 +212,10 @@
     <div class="sidebar-logo">
       <img src="slate-mark-gold.svg" alt="Missolowo Slate">
     </div>
+    <div class="account-strip" id="accountStrip">
+      <div class="account-signin">Checking session…</div>
+    </div>
+
     <div class="nav-section-label">Workspace</div>
     <a class="nav-item active" href="#home">
       <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-3v-5H7v5H4a1 1 0 0 1-1-1V9.5Z" stroke-linejoin="round"/></svg>
@@ -327,6 +344,40 @@
         this.classList.add('active');
       });
     });
+  </script>
+
+  <script>
+    (function() {
+      var ADMIN_EMAILS = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+      var strip = document.getElementById('accountStrip');
+      function renderAccount() {
+        var raw = localStorage.getItem('scriptiq_user');
+        if (!raw) {
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="/">Sign In</a></div>';
+          return;
+        }
+        try {
+          var user = JSON.parse(raw);
+          var isAdmin = user.role === 'admin' || ADMIN_EMAILS.indexOf(user.email) !== -1;
+          var credits = isAdmin ? '∞' : (user.credits_remaining != null ? user.credits_remaining : 0);
+          var name = user.name || (user.email ? user.email.split('@')[0] : 'Filmmaker');
+          strip.innerHTML = '<div class="account-name">' + name + '</div><div class="account-credits">' + credits + ' credits</div>';
+        } catch (e) {
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="/">Sign In</a></div>';
+        }
+      }
+      renderAccount();
+      var logoutLink = document.querySelector('a[href="#logout"]');
+      if (logoutLink) {
+        logoutLink.addEventListener('click', function(e) {
+          e.preventDefault();
+          if (confirm('Log out of Missolowo Slate?')) {
+            localStorage.removeItem('scriptiq_user');
+            renderAccount();
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>
