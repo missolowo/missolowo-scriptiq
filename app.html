@@ -17,6 +17,7 @@
     display: flex;
   }
   a { color: inherit; text-decoration: none; }
+
   .sidebar {
     width: var(--sidebar-w);
     min-width: var(--sidebar-w);
@@ -144,6 +145,53 @@
     .sidebar-footer { display: none; }
     .main { padding: var(--s-6) var(--s-4); }
   }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--s-6);
+  }
+  .tool-card {
+    background: var(--ink-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-card);
+    padding: var(--s-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+  .tool-card-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); }
+  .tool-card-desc { color: var(--text-2); font-size: var(--t-small); line-height: var(--t-body-lh); flex: 1; }
+  .status-chip {
+    align-self: flex-start;
+    font-family: var(--font-data);
+    font-size: 0.625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: var(--r-control);
+    padding: 3px 8px;
+    border: 1px solid;
+  }
+  .status-chip.live { color: var(--ok); background: rgba(127,174,126,0.12); border-color: rgba(127,174,126,0.3); }
+  .status-chip.soon { color: var(--gold-deep); background: var(--gold-tint); border-color: rgba(212,166,74,0.25); }
+  .tool-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 var(--s-4);
+    background: var(--gold);
+    color: var(--ink-0);
+    font-weight: 600;
+    font-size: var(--t-small);
+    border-radius: var(--r-control);
+    text-decoration: none;
+    margin-top: var(--s-2);
+  }
+  .tool-card-action:hover { background: var(--gold-bright); }
 </style>
 </head>
 <body>
@@ -160,9 +208,9 @@
       <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M2 6a1 1 0 0 1 1-1h4l1.5 2H17a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6Z" stroke-linejoin="round"/></svg>
       Productions
     </a>
-    <a class="nav-item" href="#toolkit">
+    <a class="nav-item" href="#center">
       <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
-      Production Toolkit
+      Production Center
     </a>
     <a class="nav-item" href="#scripts">
       <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M5 2h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke-linejoin="round"/><path d="M7 9h6M7 12h6M7 6h3" stroke-linecap="round"/></svg>
@@ -196,24 +244,89 @@
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M7.8 8a2.2 2.2 0 1 1 3.1 2c-.7.5-1 .9-1 1.7" stroke-linecap="round"/><circle cx="10" cy="14" r="0.4" fill="currentColor"/></svg>
         Help
       </a>
+      <a class="nav-item" style="padding-left:0" href="#logout">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="4" y="3" width="8" height="14" rx="1"/><path d="M11 10h6M14 7l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Log Out
+      </a>
     </div>
   </nav>
   <main class="main">
-    <div class="sync-mark">
-      <div class="rule"></div>
-      <div class="label">Workspace</div>
-    </div>
-    <h1 class="page-title">Production Workspace</h1>
-    <div class="empty-state">
-      <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="8" y="14" width="40" height="30" rx="2"/>
-        <path d="M8 22h40" />
-        <path d="M18 14v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4" />
-      </svg>
-      <div class="empty-title">No productions yet</div>
-      <div class="empty-body">Upload a screenplay to generate your first production breakdown — scenes, characters, locations, and more, ready in minutes.</div>
-      <button class="btn-primary">Upload Your Script</button>
-    </div>
+    <section class="view active" data-view="home">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Workspace</div>
+      </div>
+      <h1 class="page-title">Production Workspace</h1>
+      <div class="empty-state">
+        <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="8" y="14" width="40" height="30" rx="2"/>
+          <path d="M8 22h40" />
+          <path d="M18 14v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4" />
+        </svg>
+        <div class="empty-title">No productions yet</div>
+        <div class="empty-body">Upload a screenplay to generate your first production breakdown — scenes, characters, locations, and more, ready in minutes.</div>
+        <button class="btn-primary">Upload Your Script</button>
+      </div>
+    </section>
+    <section class="view" data-view="center">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Overview</div>
+      </div>
+      <h1 class="page-title">Production Center</h1>
+      <div class="card-grid">
+        <div class="tool-card">
+          <span class="status-chip live">Live</span>
+          <div class="tool-card-title">Script Breakdown</div>
+          <div class="tool-card-desc">Turn any screenplay into a complete production breakdown — scenes, characters, locations, props and more.</div>
+          <a class="tool-card-action" href="#home">Open</a>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Shooting Schedule Generator</div>
+          <div class="tool-card-desc">Automatically generate a shooting schedule from your breakdown — scene order, days and locations organized for production.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Call Sheet Generator</div>
+          <div class="tool-card-desc">Create daily call sheets straight from your schedule — cast, crew, times and locations in one document.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Budget Estimator</div>
+          <div class="tool-card-desc">Estimate production costs directly from your breakdown data — cast, crew, locations and equipment.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Crew Management</div>
+          <div class="tool-card-desc">Manage crew members, roles, departments and contact information for each production.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Crew Network</div>
+          <div class="tool-card-desc">Discover and connect with filmmakers and crew across the industry.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Script Generator</div>
+          <div class="tool-card-desc">Generate original screenplay drafts and scene ideas with Missolowo's AI writing tools.</div>
+        </div>
+      </div>
+    </section>
   </main>
+  <script>
+    document.querySelectorAll('.nav-item[href^="#"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var target = this.getAttribute('href').slice(1);
+        var view = document.querySelector('[data-view="' + target + '"]');
+        if (!view) return;
+        e.preventDefault();
+        document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
+        view.classList.add('active');
+        document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+        this.classList.add('active');
+      });
+    });
+  </script>
 </body>
 </html>
