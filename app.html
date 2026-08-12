@@ -104,6 +104,10 @@
   .file-meta { font-family: var(--font-data); color: var(--text-3); font-size: var(--t-slug); margin-top: 2px; }
   .file-change { background: none; border: none; color: var(--gold); font-size: var(--t-small); font-weight: 600; cursor: pointer; }
   .file-meta.error { color: var(--error); }
+  .generate-btn { display: none; width: 100%; margin-top: var(--s-6); justify-content: center; }
+  .generate-btn.ready { display: inline-flex; }
+  .credit-warning { display: none; margin-top: var(--s-4); padding: var(--s-4); background: rgba(217,106,87,0.1); border: 1px solid rgba(217,106,87,0.3); border-radius: var(--r-control); color: var(--error); font-size: var(--t-small); text-align: center; }
+  .credit-warning.active { display: block; }
 </style>
 </head>
 <body>
@@ -208,6 +212,8 @@
             </div>
             <button class="file-change" id="fileChangeBtn">Change</button>
           </div>
+          <button class="btn-primary generate-btn" id="generateBtn">Generate Script Breakdown</button>
+          <div class="credit-warning" id="creditWarning">You're out of credits. Please contact support to add more while billing is being finalized.</div>
         </div>
       </div>
       <div class="empty-state" id="authRequiredState" style="display:none">
@@ -501,6 +507,7 @@
     (function() {
       var selectedFile = null;
       var selectedLang = 'auto';
+
       var langRow = document.getElementById('langRow');
       if (langRow) {
         langRow.querySelectorAll('.lang-chip').forEach(function(chip) {
@@ -511,12 +518,15 @@
           });
         });
       }
+
       var dropzone = document.getElementById('dropzone');
       var fileInput = document.getElementById('scriptFileInput');
       var fileSelected = document.getElementById('fileSelected');
       var fileName = document.getElementById('fileName');
       var fileMeta = document.getElementById('fileMeta');
       var fileChangeBtn = document.getElementById('fileChangeBtn');
+      var generateBtn = document.getElementById('generateBtn');
+      var creditWarning = document.getElementById('creditWarning');
 
       function showFile(file) {
         selectedFile = file;
@@ -532,6 +542,8 @@
         fileInput.value = '';
         fileSelected.classList.remove('active');
         dropzone.style.display = '';
+        generateBtn.classList.remove('ready');
+        creditWarning.classList.remove('active');
       }
 
       if (dropzone) {
@@ -617,12 +629,37 @@
           extractedScriptText = text;
           var sizeKb = Math.round(file.size / 1024);
           fileMeta.textContent = sizeKb + ' KB · ' + text.length.toLocaleString() + ' characters — ready';
+          generateBtn.classList.add('ready');
         } catch (err) {
           extractedScriptText = '';
           fileMeta.classList.add('error');
           fileMeta.textContent = err.message || 'Could not read this file. Please try again.';
+          generateBtn.classList.remove('ready');
         }
       }
+
+      function getCurrentUser() {
+        var raw = localStorage.getItem('scriptiq_user');
+        if (!raw) return null;
+        try { return JSON.parse(raw); } catch (e) { return null; }
+      }
+
+      var ADMIN_EMAILS_UPLOAD = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+
+      generateBtn.addEventListener('click', function() {
+        if (!extractedScriptText) return;
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
+        var hasCredits = isAdmin || (user.credits_remaining || 0) > 0;
+        if (!hasCredits) {
+          creditWarning.classList.add('active');
+          return;
+        }
+        creditWarning.classList.remove('active');
+        console.log('[Missolowo Slate] Ready to break down', extractedScriptText.length, 'characters, language:', selectedLang);
+        alert('Credit check passed. Real AI processing wires in next (Phase 3b).');
+      });
     })();
   </script>
 </body>
