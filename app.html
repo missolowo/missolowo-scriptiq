@@ -30,19 +30,13 @@
   }
   .sidebar-logo { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-6) var(--s-8); }
   .sidebar-logo img { height: 28px; width: auto; }
- .account-strip {
-    padding: 0 var(--s-6) var(--s-6);
-    font-size: var(--t-small);
-  }
+
+  .account-strip { padding: 0 var(--s-6) var(--s-6); font-size: var(--t-small); }
   .account-name { color: var(--paper); font-weight: 600; }
-  .account-credits {
-    color: var(--gold);
-    font-family: var(--font-data);
-    font-size: var(--t-slug);
-    margin-top: 2px;
-  }
+  .account-credits { color: var(--gold); font-family: var(--font-data); font-size: var(--t-slug); margin-top: 2px; }
   .account-signin { color: var(--text-2); font-size: var(--t-small); }
   .account-signin a { color: var(--gold); font-weight: 600; }
+
   .nav-section-label {
     font-family: var(--font-data);
     font-size: var(--t-slug);
@@ -64,12 +58,7 @@
     transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
   }
   .nav-item:hover { background: var(--ink-2); color: var(--paper); }
-  .nav-item.active {
-    background: var(--gold-tint);
-    color: var(--gold-bright);
-    border-left: 2px solid var(--gold);
-    font-weight: 600;
-  }
+  .nav-item.active { background: var(--gold-tint); color: var(--gold-bright); border-left: 2px solid var(--gold); font-weight: 600; }
   .nav-item svg { flex-shrink: 0; width: 18px; height: 18px; stroke: currentColor; }
   .nav-item.soon { cursor: default; color: var(--text-3); opacity: 0.85; }
   .nav-item.soon:hover { background: transparent; color: var(--text-3); }
@@ -86,31 +75,16 @@
     padding: 2px 7px;
     white-space: nowrap;
   }
-  .sidebar-footer {
-    margin-top: auto;
-    padding-top: var(--s-6);
-    border-top: 1px solid var(--line-1);
-    margin-left: var(--s-6);
-    margin-right: var(--s-6);
-  }
+
+  .sidebar-footer { margin-top: auto; padding-top: var(--s-6); border-top: 1px solid var(--line-1); margin-left: var(--s-6); margin-right: var(--s-6); }
+
   .main { flex: 1; padding: var(--s-8) var(--s-8); max-width: calc(var(--layout-max) + var(--s-16)); }
   .sync-mark { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); }
   .sync-mark .rule { width: var(--sync-rule-w); height: var(--sync-rule-h); background: var(--gold); }
-  .sync-mark .label {
-    font-family: var(--font-data);
-    font-size: var(--t-slug);
-    letter-spacing: var(--t-eyebrow-tracking);
-    text-transform: uppercase;
-    color: var(--text-2);
-  }
-  .page-title {
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: var(--t-h1);
-    line-height: var(--t-h1-lh);
-    color: var(--paper);
-    margin-bottom: var(--s-8);
-  }
+  .sync-mark .label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); }
+
+  .page-title { font-family: var(--font-display); font-weight: 600; font-size: var(--t-h1); line-height: var(--t-h1-lh); color: var(--paper); margin-bottom: var(--s-8); }
+
   .empty-state {
     background: var(--ink-2);
     border: 1px solid var(--line-1);
@@ -121,15 +95,9 @@
     margin: var(--s-8) auto 0;
   }
   .empty-icon { width: 56px; height: 56px; margin: 0 auto var(--s-6); color: var(--text-3); }
-  .empty-title {
-    font-family: var(--font-display);
-    font-weight: 500;
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    color: var(--paper);
-    margin-bottom: var(--s-3);
-  }
+  .empty-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h2); line-height: var(--t-h2-lh); color: var(--paper); margin-bottom: var(--s-3); }
   .empty-body { color: var(--text-2); font-size: var(--t-small); max-width: 380px; margin: 0 auto var(--s-8); }
+
   .btn-primary {
     display: inline-flex;
     align-items: center;
@@ -148,6 +116,7 @@
   .btn-primary:hover { background: var(--gold-bright); }
   .btn-primary:active { background: var(--gold-deep); }
   .btn-primary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
   @media (max-width: 768px) {
     body { flex-direction: column; }
     .sidebar { width: 100%; min-width: 0; flex-direction: row; overflow-x: auto; padding: var(--s-3); min-height: auto; }
@@ -162,20 +131,8 @@
   .view { display: none; }
   .view.active { display: block; }
 
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: var(--s-6);
-  }
-  .tool-card {
-    background: var(--ink-2);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-card);
-    padding: var(--s-6);
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-3);
-  }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-6); }
+  .tool-card { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-6); display: flex; flex-direction: column; gap: var(--s-3); }
   .tool-card-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); }
   .tool-card-desc { color: var(--text-2); font-size: var(--t-small); line-height: var(--t-body-lh); flex: 1; }
   .status-chip {
@@ -205,9 +162,58 @@
     margin-top: var(--s-2);
   }
   .tool-card-action:hover { background: var(--gold-bright); }
+
+  .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
+  .auth-overlay.open { display: flex; }
+  .auth-modal { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); width: 100%; max-width: 380px; padding: var(--s-8); position: relative; }
+  .auth-close { position: absolute; top: var(--s-4); right: var(--s-4); background: none; border: none; color: var(--text-2); font-size: 20px; cursor: pointer; line-height: 1; }
+  .auth-close:hover { color: var(--paper); }
+  .auth-tabs { display: flex; gap: var(--s-2); margin-bottom: var(--s-6); border-bottom: 1px solid var(--line-1); }
+  .auth-tab {
+    background: none;
+    border: none;
+    color: var(--text-3);
+    font-family: var(--font-text);
+    font-size: var(--t-small);
+    font-weight: 600;
+    padding: var(--s-2) 0 var(--s-3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .auth-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .auth-form { display: none; flex-direction: column; gap: var(--s-4); }
+  .auth-form.active { display: flex; }
+  .auth-field label { display: block; font-size: var(--t-small); color: var(--text-2); margin-bottom: var(--s-2); }
+  .auth-field input {
+    width: 100%;
+    height: 40px;
+    background: var(--ink-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-control);
+    color: var(--paper);
+    font-family: var(--font-text);
+    font-size: var(--t-small);
+    padding: 0 var(--s-4);
+  }
+  .auth-field input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+  .auth-submit {
+    height: var(--btn-h);
+    background: var(--gold);
+    color: var(--ink-0);
+    font-weight: 600;
+    font-size: var(--t-small);
+    border: none;
+    border-radius: var(--r-control);
+    cursor: pointer;
+    margin-top: var(--s-2);
+  }
+  .auth-submit:hover { background: var(--gold-bright); }
+  .auth-note { color: var(--text-3); font-size: var(--t-small); margin-top: var(--s-4); text-align: center; }
 </style>
 </head>
 <body>
+
   <nav class="sidebar">
     <div class="sidebar-logo">
       <img src="slate-mark-gold.svg" alt="Missolowo Slate">
@@ -237,6 +243,7 @@
       <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M10 3v9m0 0-3-3m3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" stroke-linecap="round"/></svg>
       Exports
     </a>
+
     <div class="nav-section-label" style="margin-top: var(--s-4)">Coming Soon</div>
     <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="4" width="14" height="13" rx="1"/><path d="M3 8h14M7 2v4M13 2v4" stroke-linecap="round"/></svg>Scheduling<span class="soon-chip">Soon</span></div>
     <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="1"/><path d="M7 7h6M7 10h6M7 13h3" stroke-linecap="round"/></svg>Call Sheets<span class="soon-chip">Soon</span></div>
@@ -244,6 +251,7 @@
     <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><circle cx="7.5" cy="8" r="2"/><path d="M11 7h3M11 10h3M5 13.5c.5-1.5 2-2 2.5-2s2 .5 2.5 2" stroke-linecap="round"/></svg>Crew Management<span class="soon-chip">Soon</span></div>
     <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="7" cy="7" r="2.2"/><circle cx="14" cy="8" r="1.8"/><path d="M3 16c0-2.5 2-4 4-4s4 1.5 4 4M12 16c.2-1.8 1.6-3 3-3s3 1 3 3" stroke-linecap="round"/></svg>Crew Network<span class="soon-chip">Soon</span></div>
     <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M4 16l1-4 9-9 3 3-9 9-4 1Z" stroke-linejoin="round"/><path d="M12.5 4.5l3 3" /></svg>Script Generator<span class="soon-chip">Soon</span></div>
+
     <div class="sidebar-footer">
       <a class="nav-item" style="padding-left:0" href="#roadmap">
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M3 17V4l4 2 4-2 4 2 2-1v11l-2 1-4-2-4 2-4-2Z" stroke-linejoin="round"/></svg>
@@ -267,6 +275,7 @@
       </a>
     </div>
   </nav>
+
   <main class="main">
     <section class="view active" data-view="home">
       <div class="sync-mark">
@@ -274,7 +283,7 @@
         <div class="label">Workspace</div>
       </div>
       <h1 class="page-title">Production Workspace</h1>
-      <div class="empty-state">
+      <div class="empty-state" id="uploadState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="8" y="14" width="40" height="30" rx="2"/>
           <path d="M8 22h40" />
@@ -284,7 +293,19 @@
         <div class="empty-body">Upload a screenplay to generate your first production breakdown — scenes, characters, locations, and more, ready in minutes.</div>
         <button class="btn-primary">Upload Your Script</button>
       </div>
+
+      <div class="empty-state" id="authRequiredState" style="display:none">
+        <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="16" y="24" width="24" height="20" rx="2"/>
+          <path d="M22 24v-6a6 6 0 0 1 12 0v6" />
+        </svg>
+        <div class="empty-title">Sign in to get started</div>
+        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with 3 free credits.</div>
+        <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
+        <div class="auth-note"><a href="#" onclick="openAuthModal('login'); return false;" style="color:var(--gold); font-weight:600">Already have an account? Sign in</a></div>
+      </div>
     </section>
+
     <section class="view" data-view="center">
       <div class="sync-mark">
         <div class="rule"></div>
@@ -292,45 +313,92 @@
       </div>
       <h1 class="page-title">Production Center</h1>
       <div class="card-grid">
+
         <div class="tool-card">
           <span class="status-chip live">Live</span>
           <div class="tool-card-title">Script Breakdown</div>
           <div class="tool-card-desc">Turn any screenplay into a complete production breakdown — scenes, characters, locations, props and more.</div>
           <a class="tool-card-action" href="#home">Open</a>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Shooting Schedule Generator</div>
           <div class="tool-card-desc">Automatically generate a shooting schedule from your breakdown — scene order, days and locations organized for production.</div>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Call Sheet Generator</div>
           <div class="tool-card-desc">Create daily call sheets straight from your schedule — cast, crew, times and locations in one document.</div>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Budget Estimator</div>
           <div class="tool-card-desc">Estimate production costs directly from your breakdown data — cast, crew, locations and equipment.</div>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Crew Management</div>
           <div class="tool-card-desc">Manage crew members, roles, departments and contact information for each production.</div>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Crew Network</div>
           <div class="tool-card-desc">Discover and connect with filmmakers and crew across the industry.</div>
         </div>
+
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Script Generator</div>
           <div class="tool-card-desc">Generate original screenplay drafts and scene ideas with Missolowo's AI writing tools.</div>
         </div>
+
       </div>
     </section>
   </main>
+
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-modal">
+      <button class="auth-close" onclick="closeAuthModal()">×</button>
+      <div class="auth-tabs">
+        <button class="auth-tab" id="tabLogin" onclick="switchAuthTab('login')">Sign In</button>
+        <button class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')">Create Account</button>
+      </div>
+
+      <form class="auth-form" id="formLogin" onsubmit="return false;">
+        <div class="auth-field">
+          <label for="loginEmail2">Email</label>
+          <input type="email" id="loginEmail2" placeholder="you@email.com">
+        </div>
+        <div class="auth-field">
+          <label for="loginPassword2">Password</label>
+          <input type="password" id="loginPassword2" placeholder="••••••••">
+        </div>
+        <button type="submit" class="auth-submit">Sign In</button>
+      </form>
+
+      <form class="auth-form" id="formSignup" onsubmit="return false;">
+        <div class="auth-field">
+          <label for="signupName2">Full Name</label>
+          <input type="text" id="signupName2" placeholder="Elizabeth Olalere">
+        </div>
+        <div class="auth-field">
+          <label for="signupEmail2">Email</label>
+          <input type="email" id="signupEmail2" placeholder="you@email.com">
+        </div>
+        <div class="auth-field">
+          <label for="signupPassword2">Password</label>
+          <input type="password" id="signupPassword2" placeholder="8+ characters">
+        </div>
+        <button type="submit" class="auth-submit">Create Free Account</button>
+      </form>
+    </div>
+  </div>
+
   <script>
     document.querySelectorAll('.nav-item[href^="#"]').forEach(function(link) {
       link.addEventListener('click', function(e) {
@@ -350,10 +418,11 @@
     (function() {
       var ADMIN_EMAILS = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
       var strip = document.getElementById('accountStrip');
+
       function renderAccount() {
         var raw = localStorage.getItem('scriptiq_user');
         if (!raw) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="/">Sign In</a></div>';
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
           return;
         }
         try {
@@ -361,12 +430,45 @@
           var isAdmin = user.role === 'admin' || ADMIN_EMAILS.indexOf(user.email) !== -1;
           var credits = isAdmin ? '∞' : (user.credits_remaining != null ? user.credits_remaining : 0);
           var name = user.name || (user.email ? user.email.split('@')[0] : 'Filmmaker');
-          strip.innerHTML = '<div class="account-name">' + name + '</div><div class="account-credits">' + credits + ' credits</div>';
+          strip.innerHTML =
+            '<div class="account-name">' + name + '</div>' +
+            '<div class="account-credits">' + credits + ' credits</div>';
         } catch (e) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="/">Sign In</a></div>';
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
         }
       }
+
       renderAccount();
+      gateHomeView();
+
+      function gateHomeView() {
+        var raw = localStorage.getItem('scriptiq_user');
+        var uploadState = document.getElementById('uploadState');
+        var authState = document.getElementById('authRequiredState');
+        if (raw) {
+          uploadState.style.display = '';
+          authState.style.display = 'none';
+        } else {
+          uploadState.style.display = 'none';
+          authState.style.display = '';
+        }
+      }
+
+      window.openAuthModal = function(tab) {
+        document.getElementById('authOverlay').classList.add('open');
+        switchAuthTab(tab || 'login');
+      };
+      window.closeAuthModal = function() {
+        document.getElementById('authOverlay').classList.remove('open');
+      };
+      window.switchAuthTab = function(tab) {
+        var isLogin = tab === 'login';
+        document.getElementById('tabLogin').classList.toggle('active', isLogin);
+        document.getElementById('tabSignup').classList.toggle('active', !isLogin);
+        document.getElementById('formLogin').classList.toggle('active', isLogin);
+        document.getElementById('formSignup').classList.toggle('active', !isLogin);
+      };
+
       var logoutLink = document.querySelector('a[href="#logout"]');
       if (logoutLink) {
         logoutLink.addEventListener('click', function(e) {
