@@ -77,6 +77,63 @@
   .auth-submit:hover { background: var(--gold-bright); }
   .auth-note { color: var(--text-3); font-size: var(--t-small); margin-top: var(--s-4); text-align: center; }
   .auth-error { color: var(--error); font-size: var(--t-small); min-height: 0; }
+ /* ============ UPLOAD INTERFACE ============ */
+  .upload-panel {
+    background: var(--ink-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-card);
+    padding: var(--s-8);
+    max-width: 640px;
+    margin: var(--s-8) auto 0;
+  }
+  .lang-label {
+    font-family: var(--font-data);
+    font-size: var(--t-slug);
+    letter-spacing: var(--t-eyebrow-tracking);
+    text-transform: uppercase;
+    color: var(--text-2);
+    margin-bottom: var(--s-3);
+  }
+  .lang-row { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-8); }
+  .lang-chip {
+    background: var(--ink-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-control);
+    color: var(--text-2);
+    font-size: var(--t-small);
+    padding: var(--s-2) var(--s-4);
+    cursor: pointer;
+  }
+  .lang-chip:hover { border-color: var(--line-2); color: var(--paper); }
+  .lang-chip.active { background: var(--gold-tint); border-color: var(--gold); color: var(--gold-bright); font-weight: 600; }
+  .dropzone {
+    border: 2px dashed var(--line-2);
+    border-radius: var(--r-card);
+    padding: var(--s-16) var(--s-8);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--gold); background: var(--gold-tint); }
+  .dropzone-icon { width: 48px; height: 48px; margin: 0 auto var(--s-4); color: var(--text-3); }
+  .dropzone-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); margin-bottom: var(--s-2); }
+  .dropzone-sub { color: var(--text-3); font-size: var(--t-small); }
+  .dropzone input[type="file"] { display: none; }
+  .file-selected {
+    display: none;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-4);
+    background: var(--ink-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-control);
+  }
+  .file-selected.active { display: flex; }
+  .file-icon { width: 32px; height: 32px; color: var(--gold); flex-shrink: 0; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { color: var(--paper); font-weight: 600; font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-meta { font-family: var(--font-data); color: var(--text-3); font-size: var(--t-slug); margin-top: 2px; }
+  .file-change { background: none; border: none; color: var(--gold); font-size: var(--t-small); font-weight: 600; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -150,15 +207,38 @@
         <div class="label">Workspace</div>
       </div>
       <h1 class="page-title">Production Workspace</h1>
-      <div class="empty-state" id="uploadState" style="display:none">
-        <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="8" y="14" width="40" height="30" rx="2"/>
-          <path d="M8 22h40" />
-          <path d="M18 14v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4" />
-        </svg>
-        <div class="empty-title">No productions yet</div>
-        <div class="empty-body">Upload a screenplay to generate your first production breakdown — scenes, characters, locations, and more, ready in minutes.</div>
-        <button class="btn-primary">Upload Your Script</button>
+      <div id="uploadState" style="display:none">
+        <div class="upload-panel">
+          <div class="lang-label">Script Language</div>
+          <div class="lang-row" id="langRow">
+            <button class="lang-chip active" data-lang="auto">🔍 Auto-detect</button>
+            <button class="lang-chip" data-lang="en">🇬🇧 English</button>
+            <button class="lang-chip" data-lang="yo">🇳🇬 Yorùbá</button>
+            <button class="lang-chip" data-lang="fr">🇫🇷 Français</button>
+            <button class="lang-chip" data-lang="ig">🇳🇬 Igbo</button>
+            <button class="lang-chip" data-lang="ha">🇳🇬 Hausa</button>
+          </div>
+          <div class="dropzone" id="dropzone">
+            <svg class="dropzone-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M24 6v24m0 0-8-8m8 8 8-8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8 32v6a2 2 0 0 0 2 2h28a2 2 0 0 0 2-2v-6" stroke-linecap="round"/>
+            </svg>
+            <div class="dropzone-title">Drop your screenplay here</div>
+            <div class="dropzone-sub">or click to browse — PDF, DOCX or TXT</div>
+            <input type="file" id="scriptFileInput" accept=".pdf,.docx,.txt">
+          </div>
+          <div class="file-selected" id="fileSelected" style="margin-top: var(--s-6)">
+            <svg class="file-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 3h11l5 5v19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke-linejoin="round"/>
+              <path d="M19 3v5h5" stroke-linejoin="round"/>
+            </svg>
+            <div class="file-info">
+              <div class="file-name" id="fileName">—</div>
+              <div class="file-meta" id="fileMeta">—</div>
+            </div>
+            <button class="file-change" id="fileChangeBtn">Change</button>
+          </div>
+        </div>
       </div>
 
       <div class="empty-state" id="authRequiredState" style="display:none">
@@ -455,6 +535,61 @@
           btn.disabled = false;
         });
       };
+    })();
+  </script>
+
+  <script>
+    (function() {
+      var selectedFile = null;
+      var selectedLang = 'auto';
+      var langRow = document.getElementById('langRow');
+      if (langRow) {
+        langRow.querySelectorAll('.lang-chip').forEach(function(chip) {
+          chip.addEventListener('click', function() {
+            langRow.querySelectorAll('.lang-chip').forEach(function(c) { c.classList.remove('active'); });
+            chip.classList.add('active');
+            selectedLang = chip.getAttribute('data-lang');
+          });
+        });
+      }
+      var dropzone = document.getElementById('dropzone');
+      var fileInput = document.getElementById('scriptFileInput');
+      var fileSelected = document.getElementById('fileSelected');
+      var fileName = document.getElementById('fileName');
+      var fileMeta = document.getElementById('fileMeta');
+      var fileChangeBtn = document.getElementById('fileChangeBtn');
+      function showFile(file) {
+        selectedFile = file;
+        var sizeKb = Math.round(file.size / 1024);
+        fileName.textContent = file.name;
+        fileMeta.textContent = sizeKb + ' KB';
+        fileSelected.classList.add('active');
+        dropzone.style.display = 'none';
+      }
+      function resetFile() {
+        selectedFile = null;
+        fileInput.value = '';
+        fileSelected.classList.remove('active');
+        dropzone.style.display = '';
+      }
+      if (dropzone) {
+        dropzone.addEventListener('click', function() { fileInput.click(); });
+        dropzone.addEventListener('dragover', function(e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', function(e) {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) { showFile(e.dataTransfer.files[0]); }
+        });
+      }
+      if (fileInput) {
+        fileInput.addEventListener('change', function() {
+          if (fileInput.files && fileInput.files[0]) showFile(fileInput.files[0]);
+        });
+      }
+      if (fileChangeBtn) {
+        fileChangeBtn.addEventListener('click', function(e) { e.stopPropagation(); resetFile(); });
+      }
     })();
   </script>
 </body>
