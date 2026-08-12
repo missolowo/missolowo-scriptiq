@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Missolowo Slate — Production Workspace</title>
 <link rel="stylesheet" href="tokens.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--ink-0); color: var(--paper); font-family: var(--font-text); font-size: var(--t-body); line-height: var(--t-body-lh); min-height: 100vh; display: flex; }
@@ -77,63 +84,26 @@
   .auth-submit:hover { background: var(--gold-bright); }
   .auth-note { color: var(--text-3); font-size: var(--t-small); margin-top: var(--s-4); text-align: center; }
   .auth-error { color: var(--error); font-size: var(--t-small); min-height: 0; }
- /* ============ UPLOAD INTERFACE ============ */
-  .upload-panel {
-    background: var(--ink-2);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-card);
-    padding: var(--s-8);
-    max-width: 640px;
-    margin: var(--s-8) auto 0;
-  }
-  .lang-label {
-    font-family: var(--font-data);
-    font-size: var(--t-slug);
-    letter-spacing: var(--t-eyebrow-tracking);
-    text-transform: uppercase;
-    color: var(--text-2);
-    margin-bottom: var(--s-3);
-  }
+  .upload-panel { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-8); max-width: 640px; margin: var(--s-8) auto 0; }
+  .lang-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); margin-bottom: var(--s-3); }
   .lang-row { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-8); }
-  .lang-chip {
-    background: var(--ink-3);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-control);
-    color: var(--text-2);
-    font-size: var(--t-small);
-    padding: var(--s-2) var(--s-4);
-    cursor: pointer;
-  }
+  .lang-chip { background: var(--ink-3); border: 1px solid var(--line-1); border-radius: var(--r-control); color: var(--text-2); font-size: var(--t-small); padding: var(--s-2) var(--s-4); cursor: pointer; }
   .lang-chip:hover { border-color: var(--line-2); color: var(--paper); }
   .lang-chip.active { background: var(--gold-tint); border-color: var(--gold); color: var(--gold-bright); font-weight: 600; }
-  .dropzone {
-    border: 2px dashed var(--line-2);
-    border-radius: var(--r-card);
-    padding: var(--s-16) var(--s-8);
-    text-align: center;
-    cursor: pointer;
-    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
-  }
+  .dropzone { border: 2px dashed var(--line-2); border-radius: var(--r-card); padding: var(--s-16) var(--s-8); text-align: center; cursor: pointer; transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease); }
   .dropzone:hover, .dropzone.dragover { border-color: var(--gold); background: var(--gold-tint); }
   .dropzone-icon { width: 48px; height: 48px; margin: 0 auto var(--s-4); color: var(--text-3); }
   .dropzone-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); margin-bottom: var(--s-2); }
   .dropzone-sub { color: var(--text-3); font-size: var(--t-small); }
   .dropzone input[type="file"] { display: none; }
-  .file-selected {
-    display: none;
-    align-items: center;
-    gap: var(--s-4);
-    padding: var(--s-4);
-    background: var(--ink-3);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-control);
-  }
+  .file-selected { display: none; align-items: center; gap: var(--s-4); padding: var(--s-4); background: var(--ink-3); border: 1px solid var(--line-1); border-radius: var(--r-control); }
   .file-selected.active { display: flex; }
   .file-icon { width: 32px; height: 32px; color: var(--gold); flex-shrink: 0; }
   .file-info { flex: 1; min-width: 0; }
   .file-name { color: var(--paper); font-weight: 600; font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-meta { font-family: var(--font-data); color: var(--text-3); font-size: var(--t-slug); margin-top: 2px; }
   .file-change { background: none; border: none; color: var(--gold); font-size: var(--t-small); font-weight: 600; cursor: pointer; }
+  .file-meta.error { color: var(--error); }
 </style>
 </head>
 <body>
@@ -240,7 +210,6 @@
           </div>
         </div>
       </div>
-
       <div class="empty-state" id="authRequiredState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="16" y="24" width="24" height="20" rx="2"/>
@@ -260,50 +229,42 @@
       </div>
       <h1 class="page-title">Production Center</h1>
       <div class="card-grid">
-
         <div class="tool-card">
           <span class="status-chip live">Live</span>
           <div class="tool-card-title">Script Breakdown</div>
           <div class="tool-card-desc">Turn any screenplay into a complete production breakdown — scenes, characters, locations, props and more.</div>
           <a class="tool-card-action" href="#home">Open</a>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Shooting Schedule Generator</div>
           <div class="tool-card-desc">Automatically generate a shooting schedule from your breakdown — scene order, days and locations organized for production.</div>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Call Sheet Generator</div>
           <div class="tool-card-desc">Create daily call sheets straight from your schedule — cast, crew, times and locations in one document.</div>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Budget Estimator</div>
           <div class="tool-card-desc">Estimate production costs directly from your breakdown data — cast, crew, locations and equipment.</div>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Crew Management</div>
           <div class="tool-card-desc">Manage crew members, roles, departments and contact information for each production.</div>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Crew Network</div>
           <div class="tool-card-desc">Discover and connect with filmmakers and crew across the industry.</div>
         </div>
-
         <div class="tool-card">
           <span class="status-chip soon">Coming Soon</span>
           <div class="tool-card-title">Script Generator</div>
           <div class="tool-card-desc">Generate original screenplay drafts and scene ideas with Missolowo's AI writing tools.</div>
         </div>
-
       </div>
     </section>
   </main>
@@ -315,7 +276,6 @@
         <button class="auth-tab" id="tabLogin" onclick="switchAuthTab('login')">Sign In</button>
         <button class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')">Create Account</button>
       </div>
-
       <form class="auth-form" id="formLogin" onsubmit="handleLoginInline(); return false;">
         <div class="auth-field">
           <label for="loginEmail2">Email</label>
@@ -328,7 +288,6 @@
         <div class="auth-error" id="loginError2"></div>
         <button type="submit" class="auth-submit" id="loginSubmitBtn">Sign In</button>
       </form>
-
       <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
         <div class="auth-field">
           <label for="signupName2">Full Name</label>
@@ -558,6 +517,7 @@
       var fileName = document.getElementById('fileName');
       var fileMeta = document.getElementById('fileMeta');
       var fileChangeBtn = document.getElementById('fileChangeBtn');
+
       function showFile(file) {
         selectedFile = file;
         var sizeKb = Math.round(file.size / 1024);
@@ -566,12 +526,14 @@
         fileSelected.classList.add('active');
         dropzone.style.display = 'none';
       }
+
       function resetFile() {
         selectedFile = null;
         fileInput.value = '';
         fileSelected.classList.remove('active');
         dropzone.style.display = '';
       }
+
       if (dropzone) {
         dropzone.addEventListener('click', function() { fileInput.click(); });
         dropzone.addEventListener('dragover', function(e) { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -579,16 +541,87 @@
         dropzone.addEventListener('drop', function(e) {
           e.preventDefault();
           dropzone.classList.remove('dragover');
-          if (e.dataTransfer.files && e.dataTransfer.files[0]) { showFile(e.dataTransfer.files[0]); }
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            processSelectedFile(e.dataTransfer.files[0]);
+          }
         });
       }
       if (fileInput) {
         fileInput.addEventListener('change', function() {
-          if (fileInput.files && fileInput.files[0]) showFile(fileInput.files[0]);
+          if (fileInput.files && fileInput.files[0]) processSelectedFile(fileInput.files[0]);
         });
       }
       if (fileChangeBtn) {
         fileChangeBtn.addEventListener('click', function(e) { e.stopPropagation(); resetFile(); });
+      }
+
+      var extractedScriptText = '';
+
+      async function extractTextFromPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          let lastY = -1;
+          let pageText = "";
+          for (const item of textContent.items) {
+            if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 5) {
+              pageText += "\n";
+            }
+            pageText += item.str;
+            lastY = item.transform[5];
+          }
+          fullText += pageText + "\n\n--- PAGE BREAK ---\n\n";
+        }
+        return fullText.trim();
+      }
+
+      async function extractTextFromDOCX(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+        if (result.value) { return result.value; }
+        throw new Error("No readable text found inside this Word document.");
+      }
+
+      function extractTextFromTXT(file) {
+        return new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function(e) { resolve(e.target.result); };
+          reader.onerror = function() { reject(new Error("Unable to read text file.")); };
+          reader.readAsText(file);
+        });
+      }
+
+      async function processSelectedFile(file) {
+        showFile(file);
+        fileMeta.classList.remove('error');
+        fileMeta.textContent = 'Reading file contents…';
+        var lowerName = file.name.toLowerCase();
+        try {
+          var text;
+          if (lowerName.endsWith('.pdf')) {
+            text = await extractTextFromPDF(file);
+          } else if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
+            text = await extractTextFromDOCX(file);
+          } else if (lowerName.endsWith('.txt')) {
+            text = await extractTextFromTXT(file);
+          } else {
+            throw new Error('Unsupported format. Please upload a .pdf, .docx, or .txt screenplay.');
+          }
+          if (!text || text.trim().length < 50) {
+            throw new Error('This file has very little readable text. Please check the file and try again.');
+          }
+          extractedScriptText = text;
+          var sizeKb = Math.round(file.size / 1024);
+          fileMeta.textContent = sizeKb + ' KB · ' + text.length.toLocaleString() + ' characters — ready';
+        } catch (err) {
+          extractedScriptText = '';
+          fileMeta.classList.add('error');
+          fileMeta.textContent = err.message || 'Could not read this file. Please try again.';
+        }
       }
     })();
   </script>
