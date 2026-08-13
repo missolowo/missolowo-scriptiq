@@ -34,11 +34,28 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const { breakdown, schedule_day, shoot_date, general_call, user_email, user_id } = JSON.parse(event.body);
+const { breakdown, schedule, schedule_day, shoot_date, general_call, user_email, user_id } = JSON.parse(event.body);
 
     if (!breakdown) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
     }
+
+    // FIX (Aug 2026): call sheets must be grounded in the REAL schedule,
+    // not guessed from a bare day number.
+    if (!schedule || !Array.isArray(schedule.schedule)) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'No schedule data provided. Generate a shooting schedule first, then request the call sheet for a specific day.' }) };
+    }
+
+    const targetDay = Number(schedule_day) || 1;
+    const dayData = schedule.schedule.find(d => Number(d.day) === targetDay);
+
+    if (!dayData) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: `No matching day ${targetDay} found in the provided schedule.` }) };
+    }
+
+    // Full, rich scene detail for exactly this day's scenes — never the whole script.
+    const todaysSceneNumbers = new Set((dayData.scenes || []).map(s => s.scene_number));
+    const todaysFullScenes = (breakdown.scenes || []).filter(s => todaysSceneNumbers.has(s.scene_number));
 
     const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
 
@@ -82,17 +99,20 @@ exports.handler = async function(event, context) {
       }
     }
 
-    // ── STEP 4: Build AI prompt ──
+// ── STEP 4: Build AI prompt — grounded in the real schedule for this day ──
     const prompt = `You are a professional Nollywood production manager generating an industry-standard daily call sheet.
 
-BREAKDOWN DATA:
-${JSON.stringify(breakdown, null, 2)}
+TODAY'S SCENES (the ONLY scenes to include — this is the authoritative shoot-day assignment from the approved schedule):
+${JSON.stringify(todaysFullScenes, null, 2)}
 
-SHOOT DAY: ${schedule_day || 1}
-SHOOT DATE: ${shoot_date || 'Monday 30 June 2026'}
+DAY LOCATION: ${dayData.location || 'See scenes'}
+DAY PRODUCTION NOTES: ${dayData.production_notes || 'None'}
+
+SHOOT DAY: ${targetDay}
+SHOOT DATE: ${shoot_date || dayData.date || 'Monday 30 June 2026'}
 GENERAL CALL TIME: ${general_call || '07:00'}
 
-Generate a professional call sheet based strictly on the matching scenes for this shoot day. Return ONLY valid JSON (no markdown):
+Generate a professional call sheet using ONLY the scenes listed above — do not include or invent any other scenes. Return ONLY valid JSON (no markdown):
 {
   "title": "project title",
   "shoot_day": 1,
