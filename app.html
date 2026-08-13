@@ -216,6 +216,14 @@
           <div class="credit-warning" id="creditWarning">You're out of credits. Please contact support to add more while billing is being finalized.</div>
         </div>
       </div>
+      <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
+      <div id="wsProgressWrap" style="display:none;margin:24px 0">
+        <div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-bottom:8px" id="wsProgressLabel">Preparing...</div>
+        <div style="height:4px;background:var(--ink-3,#25282F);border-radius:2px;overflow:hidden">
+          <div id="wsProgressBar" style="height:100%;width:0%;background:var(--gold,#D4A64A);transition:width .4s"></div>
+        </div>
+      </div>
+      <div id="wsResults" style="display:none;margin-top:32px"></div>
       <div class="empty-state" id="authRequiredState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="16" y="24" width="24" height="20" rx="2"/>
@@ -660,6 +668,284 @@
         console.log('[Missolowo Slate] Ready to break down', extractedScriptText.length, 'characters, language:', selectedLang);
         alert('Credit check passed. Real AI processing wires in next (Phase 3b).');
       });
+     // ============================================================
+      // MISSOLOWO SLATE — WORKSPACE BREAKDOWN ENGINE (Phase 3b)
+      // Faithful port of the battle-tested V1 engine (index.html):
+      // same chunking, merge (chunkOffset fixes), oversize slicing,
+      // diagnostics. Adapted to Workspace auth + UI hooks only.
+      // ============================================================
+      var CHUNK_SIZE = 3000; // Tuned Jul 2026: ~6-13s/section, safe under Netlify ceiling
+      var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
+
+      function siqTrack(name, params) {
+        try { if (typeof gtag === 'function') gtag('event', name, params || {}); } catch (e) {}
+      }
+
+      function splitScriptForProcessing(script, maxChunkSize) {
+        const text = script.trim();
+        if (text.length <= maxChunkSize) return [text];
+        const sceneBoundary = /\n(?=(?:SCENE\s*\d+|SC\s*\d+|INT\.|EXT\.|I\/E\.|INT\/EXT|INTERIOR[\/\s]|EXTERIOR[\/\s]))/i;
+        let segments = text.split(sceneBoundary);
+        if (segments.length <= 1) {
+          segments = splitBySize(text, maxChunkSize);
+        }
+        const chunks = [];
+        let currentChunk = '';
+        for (const seg of segments) {
+          if ((currentChunk + seg).length > maxChunkSize && currentChunk.length > 0) {
+            chunks.push(currentChunk.trim());
+            currentChunk = seg;
+          } else {
+            currentChunk += (currentChunk ? '\n' : '') + seg;
+          }
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk.trim());
+        return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+      }
+
+      function splitBySize(text, maxChunkSize) {
+        const paragraphs = text.split(/\n\s*\n/);
+        const out = [];
+        let buffer = '';
+        for (const p of paragraphs) {
+          if ((buffer + p).length > maxChunkSize && buffer.length > 0) {
+            out.push(buffer);
+            buffer = p;
+          } else {
+            buffer += (buffer ? '\n\n' : '') + p;
+          }
+        }
+        if (buffer) out.push(buffer);
+        const final = [];
+        for (const piece of out) {
+          if (piece.length <= maxChunkSize) {
+            final.push(piece);
+          } else {
+            for (let i = 0; i < piece.length; i += maxChunkSize) {
+              final.push(piece.substring(i, i + maxChunkSize));
+            }
+          }
+        }
+        return final;
+      }
+
+      async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId) {
+        try {
+          const response = await fetch('/.netlify/functions/breakdown', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              script: chunkText,
+              language: language,
+              user_email: user && user.email,
+              user_id: user && user.id,
+              chunk_index: chunkIndex,
+              total_chunks: totalChunks,
+              production_id: productionId
+            })
+          });
+          if (response.status === 402) {
+            var cw = document.getElementById('creditWarning');
+            if (cw) cw.classList.add('active');
+            return { error: true, message: 'No credits remaining' };
+          }
+          const rawText = await response.text();
+          if (rawText.trim().startsWith('<')) {
+            return { error: true, message: 'This section took too long. Please try a shorter script section.' };
+          }
+          if (!response.ok) {
+            let errMsg = 'Processing error';
+            try { errMsg = JSON.parse(rawText).error || errMsg; } catch (e) {}
+            return { error: true, message: errMsg };
+          }
+          return JSON.parse(rawText);
+        } catch (err) {
+          return { error: true, message: err.message };
+        }
+      }
+
+      function mergeBreakdownChunks(chunks) {
+        const merged = {
+          title: chunks[0].title || 'Untitled Script',
+          language_detected: chunks[0].language_detected || 'Unknown',
+          total_scenes: 0,
+          scenes: [],
+          character_breakdown: [],
+          outline_schedule: [],
+          production_elements: {
+            all_cast: [], all_props: [], all_costume: [],
+            all_equipment: [], special_requirements: []
+          }
+        };
+        let sceneOffset = 0;
+        for (const chunk of chunks) {
+          const scenes = chunk.scenes || [];
+          const chunkOffset = sceneOffset;
+          for (const scene of scenes) {
+            merged.scenes.push({ ...scene, scene_number: sceneOffset + (scene.scene_number || 1) });
+          }
+          sceneOffset += scenes.length;
+          merged.total_scenes += scenes.length;
+          for (const char of (chunk.character_breakdown || [])) {
+            const existing = merged.character_breakdown.find(c => c.character === char.character);
+            if (existing) {
+              existing.scenes = [...existing.scenes, ...(char.scenes || []).map(n => chunkOffset + n)];
+              existing.total += (char.total || 0);
+            } else {
+              merged.character_breakdown.push({ ...char, scenes: (char.scenes || []).map(n => chunkOffset + n) });
+            }
+          }
+          for (const loc of (chunk.outline_schedule || [])) {
+            const existing = merged.outline_schedule.find(l => l.set_location === loc.set_location);
+            if (existing) {
+              existing.scenes = [...existing.scenes, ...(loc.scenes || []).map(n => chunkOffset + n)];
+              existing.total += (loc.total || 0);
+            } else {
+              merged.outline_schedule.push({ ...loc, scenes: (loc.scenes || []).map(n => chunkOffset + n) });
+            }
+          }
+          const pe = chunk.production_elements || {};
+          merged.production_elements.all_cast = [...new Set([...merged.production_elements.all_cast, ...(pe.all_cast || [])])];
+          merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
+          merged.production_elements.all_costume = [...new Set([...merged.production_elements.all_costume, ...(pe.all_costume || [])])];
+          merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
+          merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
+        }
+        merged.character_breakdown.sort((a, b) => (b.total || 0) - (a.total || 0));
+        return merged;
+      }
+
+      function wsProgress(pct, label) {
+        var wrap = document.getElementById('wsProgressWrap');
+        var bar = document.getElementById('wsProgressBar');
+        var lab = document.getElementById('wsProgressLabel');
+        if (wrap) wrap.style.display = 'block';
+        if (bar) bar.style.width = pct + '%';
+        if (lab) lab.textContent = label || '';
+      }
+
+      function updateCreditsAfterRun(user, isAdmin) {
+        if (isAdmin) return;
+        try {
+          user.credits_remaining = Math.max(0, (user.credits_remaining || 0) - 1);
+          localStorage.setItem('scriptiq_user', JSON.stringify(user));
+          ['sidebarCredits', 'creditsNum', 'navCreditsCount'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = user.credits_remaining;
+          });
+        } catch (e) {}
+      }
+
+      function renderWorkspaceResults(data, partial) {
+        var box = document.getElementById('wsResults');
+        if (!box) return;
+        var scenes = data.scenes || [];
+        var chars = data.character_breakdown || [];
+        var locs = data.outline_schedule || [];
+        var pe = data.production_elements || {};
+        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
+        var html = '';
+        if (partial) {
+          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">Partial result: processing stopped at section ' + partial.failedSection + ' of ' + partial.totalSections + '. Showing everything completed so far — you can retry to attempt the full script.</div>';
+        }
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">'
+          + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
+          + chip(locs.length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
+        html += scenes.map(function(s) {
+          return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + String(s.scene_number).padStart(2, '0') + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || 'INT') + '. ' + (s.location || s.set_location || '') + ' — ' + (s.time_of_day || 'DAY') + '</span></div>'
+            + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
+            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join('') + '</div>' : '')
+            + '</div>';
+        }).join('');
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 2 — Character Scene Breakdown</div>';
+        html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
+          + chars.map(function(c) {
+            return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
+              + '<span style="color:var(--paper,#F4EFE6);font-weight:600">' + c.character + '</span>'
+              + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (c.scenes || []).join(', ') + '</span>'
+              + '<span style="color:var(--gold,#D4A64A);font-family:monospace">' + (c.total || (c.scenes || []).length) + '</span></div>';
+          }).join('') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
+        html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
+          + locs.map(function(l) {
+            return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
+              + '<span style="color:var(--paper,#F4EFE6)">' + (l.set_location || '') + '</span>'
+              + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (l.scenes || []).join(', ') + '</span></div>';
+          }).join('') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 4 — Production Elements</div>';
+        html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
+          + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
+          + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Costume</div><div>' + (pe.all_costume || []).map(chip).join('') + '</div>';
+        html += '<div style="margin-top:32px"><button class="btn-primary" disabled title="Wiring in progress — next build session" style="opacity:.5;cursor:not-allowed">Generate Shooting Schedule (coming next)</button></div>';
+        box.innerHTML = html;
+        box.style.display = 'block';
+      }
+
+      async function runWorkspaceBreakdown(user) {
+        var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
+        var script = extractedScriptText;
+        var productionId = (crypto.randomUUID && crypto.randomUUID()) ||
+          ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+        generateBtn.disabled = true;
+        document.getElementById('wsResults').style.display = 'none';
+        try {
+          wsProgress(5, 'Reading screenplay...');
+          const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
+          // Oversize policy (Jul 17 fix): never reject — slice.
+          for (let ci = 0; ci < chunks.length; ci++) {
+            if (chunks[ci].length > CHUNK_SIZE * 2) {
+              const oversized = chunks[ci];
+              const pieces = [];
+              for (let p = 0; p < oversized.length; p += CHUNK_SIZE) {
+                pieces.push(oversized.slice(p, p + CHUNK_SIZE));
+              }
+              chunks.splice(ci, 1, ...pieces);
+              ci += pieces.length - 1;
+            }
+          }
+          const totalChunks = chunks.length;
+          siqTrack('breakdown_started', { script_size_chars: script.length, total_sections: totalChunks, production_id: productionId });
+          let completedChunks = [];
+          let partialFailure = null;
+          for (let i = 0; i < totalChunks; i++) {
+            const sectionStart = Date.now();
+            wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
+            const result = await sendChunkToBackend(user, chunks[i], (typeof selectedLang !== 'undefined' ? selectedLang : 'English'), i, totalChunks, productionId);
+            const chunkDuration = Date.now() - sectionStart;
+            if (result.error) {
+              console.error('[Slate Diagnostics]', JSON.stringify({
+                production_id: productionId, section: i + 1, total_sections: totalChunks,
+                script_size_chars: script.length, section_size_chars: chunks[i].length,
+                error_type: result.message, duration_ms: chunkDuration, completed_sections: completedChunks.length
+              }));
+              siqTrack('breakdown_failed', { section_number: i + 1, duration_ms: chunkDuration, failure_reason: result.message, production_id: productionId });
+              partialFailure = { failedSection: i + 1, totalSections: totalChunks };
+              break;
+            }
+            siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
+            completedChunks.push(result);
+          }
+          if (completedChunks.length === 0) {
+            throw new Error('Could not process the script. Please try again.');
+          }
+          wsProgress(92, 'Combining production data...');
+          slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+          try { localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown)); } catch (e) {}
+          wsProgress(100, partialFailure ? 'Partial breakdown ready.' : 'Breakdown complete.');
+          if (!partialFailure) {
+            siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
+            updateCreditsAfterRun(user, isAdmin);
+          }
+          renderWorkspaceResults(slateBreakdown, partialFailure);
+        } catch (err) {
+          wsProgress(100, err.message || 'Could not process the script. Please try again.');
+          console.error('[Slate] Breakdown error:', err);
+        } finally {
+          generateBtn.disabled = false;
+        }
+      } 
     })();
   </script>
 </body>
