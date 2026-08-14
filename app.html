@@ -960,7 +960,137 @@
         } finally {
           generateBtn.disabled = false;
         }
-      } 
+      } // ============================================================
+      // SHOOTING SCHEDULE + CALL SHEET — the connected pipeline
+      // ============================================================
+      var slateSchedule = null;
+
+      async function runWorkspaceSchedule() {
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        if (!slateBreakdown) return;
+        var btn = document.getElementById('wsScheduleBtn');
+        var out = document.getElementById('wsScheduleOut');
+        var startDate = (document.getElementById('wsStartDate') || {}).value || '';
+        var shootDays = parseInt((document.getElementById('wsShootDays') || {}).value, 10) || 10;
+        btn.disabled = true; btn.textContent = 'Building schedule...';
+        out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Grouping scenes by location and time of day...</div>';
+        try {
+          var res = await fetch('/.netlify/functions/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              breakdown: slateBreakdown, start_date: startDate, shoot_days: shootDays,
+              user_email: user.email, user_id: user.id
+            })
+          });
+          var raw = await res.text();
+          if (res.status === 402) { out.innerHTML = '<div style="color:var(--warn,#C97E3D);font-size:13px">No credits remaining for scheduling.</div>'; return; }
+          if (raw.trim().startsWith('<') || !res.ok) {
+            var msg = 'Could not build the schedule. Please try again.';
+            try { msg = JSON.parse(raw).error || msg; } catch (e) {}
+            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + msg + '</div>';
+            return;
+          }
+          slateSchedule = JSON.parse(raw);
+          try { localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule)); } catch (e) {}
+          siqTrack('schedule_completed', { total_days: (slateSchedule.schedule || []).length });
+          renderWorkspaceSchedule(slateSchedule);
+        } catch (err) {
+          out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Schedule error') + '</div>';
+        } finally {
+          btn.disabled = false; btn.textContent = 'Regenerate Shooting Schedule';
+        }
+      }
+
+      function renderWorkspaceSchedule(sched) {
+        var out = document.getElementById('wsScheduleOut');
+        if (!out) return;
+        var days = sched.schedule || [];
+        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + ' days</div>';
+        html += days.map(function(d) {
+          return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || '') + '</span></div>'
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return s.scene_number; }).join(', ') + '</div>'
+            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
+            + '</div>';
+        }).join('');
+        html += '<div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--line-1,#2E323A)">'
+          + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Call Sheet</div>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">'
+          + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Shoot day<br><select id="wsDaySelect" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit">'
+          + days.map(function(d) { return '<option value="' + d.day + '">Day ' + d.day + (d.location ? ' — ' + d.location : '') + '</option>'; }).join('')
+          + '</select></label>'
+          + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">General call<br><input type="time" id="wsGeneralCall" value="07:00" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+          + '<button class="btn-primary" id="wsCallsheetBtn">Generate Call Sheet</button>'
+          + '</div><div id="wsCallsheetOut" style="margin-top:24px"></div></div>';
+        out.innerHTML = html;
+        var cb = document.getElementById('wsCallsheetBtn');
+        if (cb) cb.addEventListener('click', runWorkspaceCallsheet);
+      }
+
+      async function runWorkspaceCallsheet() {
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        if (!slateBreakdown || !slateSchedule) return;
+        var btn = document.getElementById('wsCallsheetBtn');
+        var out = document.getElementById('wsCallsheetOut');
+        var day = parseInt((document.getElementById('wsDaySelect') || {}).value, 10) || 1;
+        var call = (document.getElementById('wsGeneralCall') || {}).value || '07:00';
+        var dayData = (slateSchedule.schedule || []).find(function(d) { return Number(d.day) === day; }) || {};
+        btn.disabled = true; btn.textContent = 'Building call sheet...';
+        out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Preparing call times for day ' + day + '...</div>';
+        try {
+          var res = await fetch('/.netlify/functions/callsheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              breakdown: slateBreakdown, schedule: slateSchedule, schedule_day: day,
+              shoot_date: dayData.date || '', general_call: call,
+              user_email: user.email, user_id: user.id
+            })
+          });
+          var raw = await res.text();
+          if (res.status === 402) { out.innerHTML = '<div style="color:var(--warn,#C97E3D);font-size:13px">No credits remaining for call sheets.</div>'; return; }
+          if (raw.trim().startsWith('<') || !res.ok) {
+            var msg = 'Could not build the call sheet. Please try again.';
+            try { msg = JSON.parse(raw).error || msg; } catch (e) {}
+            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + msg + '</div>';
+            return;
+          }
+          var cs = JSON.parse(raw);
+          siqTrack('callsheet_completed', { shoot_day: day });
+          renderWorkspaceCallsheet(cs);
+        } catch (err) {
+          out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Call sheet error') + '</div>';
+        } finally {
+          btn.disabled = false; btn.textContent = 'Generate Call Sheet';
+        }
+      }
+
+      function renderWorkspaceCallsheet(cs) {
+        var out = document.getElementById('wsCallsheetOut');
+        if (!out) return;
+        var scenes = cs.scenes_today || [];
+        var cast = cs.cast_call_times || [];
+        // Paper mode — documents are square, per the design system
+        var html = '<div style="background:var(--doc-bg,#F4EFE6);color:var(--doc-ink,#0D0E10);padding:24px;border-radius:0">'
+          + '<div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Call Sheet · Day ' + (cs.shoot_day || '') + '</div>'
+          + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
+          + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
+          + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '') + (cs.location_address ? ' — ' + cs.location_address : '') + '</div>'
+          + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Scenes</div>'
+          + scenes.map(function(s) {
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + s.scene_number + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + (s.location || '') + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div></div>';
+            }).join('')
+          + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
+          + cast.map(function(c) {
+              return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
+            }).join('')
+          + (cs.production_notes && cs.production_notes.length ? '<div style="margin-top:18px;font-size:12px;color:#4A463D">' + cs.production_notes.join('<br>') + '</div>' : '')
+          + '</div>';
+        out.innerHTML = html;
+      }
     })();
   </script>
 </body>
