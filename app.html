@@ -883,15 +883,19 @@
           html += '<div style="margin-top:40px;padding-top:28px;border-top:1px solid var(--line-1,#2E323A)">'
             + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:8px">Next Production Steps</div>'
             + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-bottom:18px">Your breakdown is ready. Continue the production workflow:</div>'
-            + '<div style="display:flex;flex-wrap:wrap;gap:12px">'
-            + '<button class="btn-primary" id="wsScheduleBtn" disabled style="opacity:.55;cursor:not-allowed">Generate Shooting Schedule</button>'
-            + '<button class="btn-primary" id="wsCallsheetBtn" disabled style="opacity:.55;cursor:not-allowed">Generate Call Sheet</button>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">'
+            + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Start date<br><input type="date" id="wsStartDate" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+            + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Shoot days<br><input type="number" id="wsShootDays" min="1" max="90" value="10" style="margin-top:6px;width:90px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+            + '<button class="btn-primary" id="wsScheduleBtn">Generate Shooting Schedule</button>'
             + '</div>'
-            + '<div style="margin-top:12px;font-size:12px;color:var(--text-3,#7D786E)">Shooting Schedule and Call Sheet wiring lands in the next build session.</div>'
+            + '<div style="margin-top:12px;font-size:12px;color:var(--text-3,#7D786E)">Uses 1 credit. Your Call Sheet is generated from the schedule once it is ready.</div>'
+      + '<div id="wsScheduleOut" style="margin-top:28px"></div>'
             + '</div>';
         }
         box.innerHTML = html;
         box.style.display = 'block';
+        var schedBtn = document.getElementById('wsScheduleBtn');
+        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);      
       }
 
       async function runWorkspaceBreakdown(user) {
