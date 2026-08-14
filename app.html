@@ -835,7 +835,7 @@
         } catch (e) {}
       }
 
-      function renderWorkspaceResults(data, partial) {
+      function renderWorkspaceResults(data, partial, streaming) {
         var box = document.getElementById('wsResults');
         if (!box) return;
         var scenes = data.scenes || [];
@@ -877,7 +877,19 @@
         html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Costume</div><div>' + (pe.all_costume || []).map(chip).join('') + '</div>';
-        html += '<div style="margin-top:32px"><button class="btn-primary" disabled title="Wiring in progress — next build session" style="opacity:.5;cursor:not-allowed">Generate Shooting Schedule (coming next)</button></div>';
+      if (streaming && !streaming.complete) {
+          html += '<div style="margin-top:32px;padding:14px 16px;border:1px dashed var(--line-1,#2E323A);border-radius:8px;color:var(--text-2,#B5AFA3);font-size:13px">Still reading your screenplay — section ' + streaming.done + ' of ' + streaming.total + '. Scenes appear here as they are analysed.</div>';
+        } else {
+          html += '<div style="margin-top:40px;padding-top:28px;border-top:1px solid var(--line-1,#2E323A)">'
+            + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:8px">Next Production Steps</div>'
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-bottom:18px">Your breakdown is ready. Continue the production workflow:</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:12px">'
+            + '<button class="btn-primary" id="wsScheduleBtn" disabled style="opacity:.55;cursor:not-allowed">Generate Shooting Schedule</button>'
+            + '<button class="btn-primary" id="wsCallsheetBtn" disabled style="opacity:.55;cursor:not-allowed">Generate Call Sheet</button>'
+            + '</div>'
+            + '<div style="margin-top:12px;font-size:12px;color:var(--text-3,#7D786E)">Shooting Schedule and Call Sheet wiring lands in the next build session.</div>'
+            + '</div>';
+        }
         box.innerHTML = html;
         box.style.display = 'block';
       }
@@ -925,7 +937,11 @@
             }
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
             completedChunks.push(result);
+            // Progressive reveal (PM-approved Aug 14) — show what's done so far
+            var soFar = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+            renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
           }
+          
           if (completedChunks.length === 0) {
             throw new Error('Could not process the script. Please try again.');
           }
@@ -937,7 +953,7 @@
             siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
             updateCreditsAfterRun(user, isAdmin);
           }
-          renderWorkspaceResults(slateBreakdown, partialFailure);
+          renderWorkspaceResults(slateBreakdown, partialFailure, { complete: true });
         } catch (err) {
           wsProgress(100, err.message || 'Could not process the script. Please try again.');
           console.error('[Slate] Breakdown error:', err);
