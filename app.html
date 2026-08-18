@@ -224,6 +224,10 @@
         </div>
       </div>
       <div id="wsResults" style="display:none;margin-top:32px"></div>
+            <div id="wsExportBar" style="display:none;margin-top:24px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A)">
+        <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Export</div>
+        <button class="btn-primary" onclick="slateExportBreakdown()">↓ Breakdown PDF</button>
+      </div>
       <div class="empty-state" id="authRequiredState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="16" y="24" width="24" height="20" rx="2"/>
@@ -1095,6 +1099,223 @@
           + '</div>';
         out.innerHTML = html;
       }
+           // ============================================================
+      // MISSOLOWO SLATE — DOCUMENT EXPORT FRAMEWORK
+      // Shared engine + per-document definitions. New production
+      // documents plug in here rather than spawning new generators.
+      // Night Shoot paper mode: warm white, grayscale-safe gold.
+      // ============================================================
+      var SLATE_PAPER = [244, 239, 230];   // --doc-bg
+      var SLATE_INK   = [13, 14, 16];      // --doc-ink
+      var SLATE_LINE  = [201, 194, 180];   // --doc-line
+      var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
+      var SLATE_MUTED = [120, 115, 105];
+
+      function slateDoc(documentLabel) {
+        var jsPDF = window.jspdf.jsPDF;
+        var doc = new jsPDF();
+        var y = 0;
+
+        function paintPage() {
+          doc.setFillColor.apply(doc, SLATE_PAPER);
+          doc.rect(0, 0, 210, 297, 'F');
+        }
+        function footer() {
+          var pg = doc.internal.getCurrentPageInfo().pageNumber;
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(15, 285, 195, 285);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text('MISSOLOWO SLATE  ·  ' + documentLabel + '  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
+          doc.text('Page ' + pg, 195, 291, { align: 'right' });
+        }
+        function newPage() { doc.addPage(); paintPage(); footer(); y = 24; }
+        function check(n) { if (y + (n || 20) > 278) newPage(); }
+
+        function cover(title, meta) {
+          paintPage();
+          doc.setFillColor.apply(doc, SLATE_GOLD);
+          doc.rect(0, 0, 210, 2, 'F');
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text('MISSOLOWO SLATE — FILM PRODUCTION OPERATING SYSTEM', 20, 40);
+          doc.setDrawColor.apply(doc, SLATE_GOLD);
+          doc.setLineWidth(0.6);
+          doc.line(20, 46, 44, 46);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(26);
+          doc.setFont('helvetica', 'bold');
+          doc.text(documentLabel.toUpperCase(), 20, 66);
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(20, 96, 190, 96);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('PROJECT TITLE', 20, 110);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(18);
+          doc.text(title, 20, 122);
+          var mx = 20;
+          (meta || []).forEach(function(pair) {
+            doc.setTextColor.apply(doc, SLATE_MUTED);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'bold');
+            doc.text(pair[0].toUpperCase(), mx, 145);
+            doc.setTextColor.apply(doc, SLATE_GOLD);
+            doc.setFontSize(20);
+            doc.text(String(pair[1]), mx, 158);
+            mx += 45;
+          });
+          doc.line(20, 172, 190, 172);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.text('Generated ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), 20, 182);
+          footer();
+        }
+
+        function sectionHeader(label) {
+          newPage();
+          doc.setFillColor.apply(doc, SLATE_GOLD);
+          doc.rect(15, y - 4, 20, 1.2, 'F');
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text(label.toUpperCase(), 15, y + 6);
+          y += 18;
+        }
+
+        // Scene numeral — PM-approved hierarchy: 15pt bold gold, widened zone
+        function sceneNumeral(num) {
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(15);
+          doc.setFont('helvetica', 'bold');
+          doc.text(String(num).padStart(2, '0'), 15, y + 4);
+        }
+
+        function slugline(text, x) {
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(9);
+          doc.setFont('courier', 'bold');
+          doc.text(text, x || 34, y + 4);
+        }
+
+        function body(text, x, width) {
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          var lines = doc.splitTextToSize(text, width || 160);
+          doc.text(lines, x || 34, y);
+          y += lines.length * 4;
+        }
+
+        function labelledList(label, items, x) {
+          var arr = Array.isArray(items) ? items.filter(Boolean) : [];
+          if (!arr.length) return;
+          check(8);
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text(label.toUpperCase() + ':', x || 34, y);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFont('helvetica', 'normal');
+          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);
+          doc.text(lines, (x || 34) + 26, y);
+          y += lines.length * 4 + 1;
+        }
+
+        function rule() {
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(15, y, 195, y);
+          y += 6;
+        }
+
+        return {
+          doc: doc,
+          cover: cover,
+          sectionHeader: sectionHeader,
+          sceneNumeral: sceneNumeral,
+          slugline: slugline,
+          body: body,
+          labelledList: labelledList,
+          rule: rule,
+          check: check,
+          gap: function(n) { y += (n || 6); },
+          getY: function() { return y; },
+          setY: function(v) { y = v; },
+          save: function(name) { doc.save(name); }
+        };
+      }
+
+      // ── DOCUMENT: SCRIPT BREAKDOWN ──
+      function slateExportBreakdown() {
+        if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
+        var d = slateBreakdown;
+        var scenes = d.scenes || [];
+        var chars = d.character_breakdown || [];
+        var locs = d.outline_schedule || [];
+        var pe = d.production_elements || {};
+        var pdf = slateDoc('Script Breakdown');
+
+        pdf.cover(d.title || 'Untitled Production', [
+          ['Scenes', scenes.length],
+          ['Characters', chars.length],
+          ['Locations', locs.length]
+        ]);
+
+        pdf.sectionHeader('Report 1 — Scene Breakdown');
+        scenes.forEach(function(s) {
+          pdf.check(28);
+          pdf.sceneNumeral(s.scene_number);
+          pdf.slugline((s.int_ext || 'INT') + '. ' + (s.location || 'LOCATION') + ' — ' + (s.time_of_day || 'DAY'));
+          pdf.gap(9);
+          if (s.description) pdf.body(s.description, 34, 158);
+          pdf.gap(2);
+          pdf.labelledList('Cast', s.cast);
+          pdf.labelledList('Props', s.props);
+          pdf.labelledList('Costume', s.costume);
+          pdf.labelledList('Equipment', s.equipment);
+          pdf.gap(3);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Report 2 — Character Scene Breakdown');
+        chars.forEach(function(c) {
+          pdf.check(12);
+          pdf.slugline(c.character || '', 15);
+          pdf.gap(6);
+          pdf.body('Scenes: ' + (c.scenes || []).join(', ') + '   ·   Total: ' + (c.total || (c.scenes || []).length), 15, 175);
+          pdf.gap(2);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Report 3 — Locations');
+        locs.forEach(function(l) {
+          pdf.check(12);
+          pdf.slugline(l.set_location || '', 15);
+          pdf.gap(6);
+          pdf.body('Scenes: ' + (l.scenes || []).join(', '), 15, 175);
+          pdf.gap(2);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Report 4 — Production Elements');
+        pdf.labelledList('All Cast', pe.all_cast, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Props', pe.all_props, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Costume', pe.all_costume, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Equipment', pe.all_equipment, 15);
+
+        siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
+        pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
+      } 
     })();
   </script>
 </body>
