@@ -227,6 +227,7 @@
             <div id="wsExportBar" style="display:none;margin-top:24px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A)">
         <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Export</div>
         <button class="btn-primary" onclick="slateExportBreakdown()">↓ Breakdown PDF</button>
+         <button class="btn-primary" onclick="slateExportSchedule()" style="margin-left:8px">↓ Schedule PDF</button>     
       </div>
       <div class="empty-state" id="authRequiredState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1316,7 +1317,81 @@
 
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
         pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
-      } 
+      }
+      
+      // ── Page eighths — production-standard page math (V2 launch scope) ──
+      function slateEighths(scene) {
+        var text = ((scene.description || '') + ' ' + (scene.production_notes || '')).trim();
+        var eighths = Math.max(1, Math.round(text.length / 160));
+        var pages = Math.floor(eighths / 8);
+        var rem = eighths % 8;
+        return { total: eighths, label: (pages > 0 ? pages + ' ' : '') + rem + '/8' };
+      }
+
+      function slateTotalEighths(scenes) {
+        var t = 0;
+        (scenes || []).forEach(function(s) { t += slateEighths(s).total; });
+        var pages = Math.floor(t / 8);
+        var rem = t % 8;
+        return pages + ' ' + rem + '/8';
+      }
+
+      // ── DOCUMENT: SHOOTING SCHEDULE ──
+      function slateExportSchedule() {
+        if (!slateSchedule) { alert('Generate a shooting schedule first.'); return; }
+        var s = slateSchedule;
+        var days = s.schedule || [];
+        var allScenes = [];
+        days.forEach(function(d) { (d.scenes || []).forEach(function(sc) { allScenes.push(sc); }); });
+        var locations = {};
+        days.forEach(function(d) { if (d.location) locations[d.location] = true; });
+
+        var pdf = slateDoc('Shooting Schedule');
+        pdf.cover(s.title || (slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
+          ['Shoot Days', days.length],
+          ['Scenes', allScenes.length],
+          ['Locations', Object.keys(locations).length]
+        ]);
+
+        days.forEach(function(day, di) {
+          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || ''));
+          (day.scenes || []).forEach(function(sc) {
+            pdf.check(24);
+            pdf.sceneNumeral(sc.scene_number);
+            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + (sc.location || sc.set_location || ''));
+            pdf.gap(9);
+            if (sc.description) pdf.body(sc.description, 34, 130);
+            pdf.gap(1);
+            pdf.labelledList('Cast', sc.cast_required || sc.cast);
+            pdf.labelledList('Props', sc.props);
+            pdf.labelledList('Pages', [slateEighths(sc).label]);
+            pdf.gap(3);
+            pdf.rule();
+          });
+          if (day.production_notes) {
+            pdf.check(14);
+            pdf.labelledList('Day Notes', [day.production_notes], 15);
+            pdf.gap(4);
+          }
+          pdf.check(12);
+          pdf.labelledList('Day Pages', [slateTotalEighths(day.scenes)], 15);
+        });
+
+        if (s.cast_release_schedule && s.cast_release_schedule.length) {
+          pdf.sectionHeader('Cast Release Schedule');
+          s.cast_release_schedule.forEach(function(c) {
+            pdf.check(12);
+            pdf.slugline(c.character || '', 15);
+            pdf.gap(6);
+            pdf.body('Days required: ' + (c.days_required || []).join(', ') + '   ·   Release: Day ' + (c.release_day || '—'), 15, 175);
+            pdf.gap(2);
+            pdf.rule();
+          });
+        }
+
+        siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
+        pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
+      }
     })();
   </script>
 </body>
