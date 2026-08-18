@@ -962,6 +962,7 @@
             updateCreditsAfterRun(user, isAdmin);
           }
           renderWorkspaceResults(slateBreakdown, partialFailure, { complete: true });
+          document.getElementById('wsExportBar').style.display = 'block';
         } catch (err) {
           wsProgress(100, err.message || 'Could not process the script. Please try again.');
           console.error('[Slate] Breakdown error:', err);
