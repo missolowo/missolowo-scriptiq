@@ -1088,6 +1088,8 @@
             return;
           }
           var cs = JSON.parse(raw);
+           slateCallsheet = cs;
+          document.getElementById('wsExportBar').style.display = 'block';
           siqTrack('callsheet_completed', { shoot_day: day });
           renderWorkspaceCallsheet(cs);
         } catch (err) {
