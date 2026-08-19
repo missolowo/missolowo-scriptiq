@@ -974,6 +974,25 @@
       // SHOOTING SCHEDULE + CALL SHEET — the connected pipeline
       // ============================================================
       var slateSchedule = null;
+            var slateCallsheet = null;
+      var slateProductionDetails = {
+        // Operational data the AI cannot know — user-editable (PM Option A).
+        // V3 Production Profile will bind to this same object.
+        locations: [], weather_high: '', weather_low: '', precipitation: '',
+        humidity_wind: '', sunrise_sunset: '', forecast_note: '',
+        hospital: '', base_camp: '', base_camp_maps: '',
+        director: '', producer: '', first_ad: '', line_producer: '',
+        emergency_contacts: [], department_timeline: [], crew: [],
+        cast_hotel: '', crew_hotel: '', quote_of_day: '',
+        safety_notes: [
+          'No flip-flops or open-toe footwear on set at any time.',
+          'No alcohol during working hours — before or during the shoot day.',
+          'No photography or recording of any kind without written permission from Production.',
+          'This is a closed set. All confidentiality agreements remain in effect.',
+          'Meal break no later than 6 hours from general crew call, per standard practice.',
+          'All crew to sign in with the 2nd AD on arrival.'
+        ]
+      };
 
       async function runWorkspaceSchedule() {
         var user = getCurrentUser();
