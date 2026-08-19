@@ -227,7 +227,8 @@
             <div id="wsExportBar" style="display:none;margin-top:24px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A)">
         <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Export</div>
         <button class="btn-primary" onclick="slateExportBreakdown()">↓ Breakdown PDF</button>
-         <button class="btn-primary" onclick="slateExportSchedule()" style="margin-left:8px">↓ Schedule PDF</button>     
+         <button class="btn-primary" onclick="slateExportSchedule()" style="margin-left:8px">↓ Schedule PDF</button>
+        <button class="btn-primary" onclick="slateExportCallsheet()" style="margin-left:8px">↓ Call Sheet PDF</button>       
       </div>
       <div class="empty-state" id="authRequiredState" style="display:none">
         <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1412,6 +1413,194 @@
 
         siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
         pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
+      }
+      
+      // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
+      function slateExportCallsheet() {
+        if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        var cs = slateCallsheet;
+        var pd = slateProductionDetails || {};
+        var scenes = cs.scenes_today || [];
+        var cast = cs.cast_call_times || [];
+        var pdf = slateDoc('Call Sheet');
+        var d = pdf.doc;
+
+        pdf.cover(cs.title || 'Untitled Production', [
+          ['Shoot Day', String(cs.shoot_day || 1).padStart(2, '0')],
+          ['General Call', cs.general_call || '—'],
+          ['Est. Wrap', cs.wrap_estimate || '—']
+        ]);
+
+        function labelValue(label, value, x, width) {
+          d.setTextColor(120, 115, 105);
+          d.setFontSize(6.5);
+          d.setFont('helvetica', 'bold');
+          d.text(label.toUpperCase(), x, pdf.getY());
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(9);
+          d.setFont('courier', 'normal');
+          var lines = d.splitTextToSize(String(value || '—'), width || 55);
+          d.text(lines, x, pdf.getY() + 5);
+          return lines.length;
+        }
+
+        function fourUp(items) {
+          pdf.check(18);
+          var startY = pdf.getY();
+          var maxLines = 1;
+          items.forEach(function(it, i) {
+            pdf.setY(startY);
+            var n = labelValue(it[0], it[1], 15 + (i * 45), 42);
+            if (n > maxLines) maxLines = n;
+          });
+          pdf.setY(startY + 8 + (maxLines - 1) * 4);
+        }
+
+        pdf.sectionHeader('Locations');
+        var locs = (pd.locations && pd.locations.length) ? pd.locations : [cs.location_address || cs.location || '—'];
+        fourUp(locs.slice(0, 4).map(function(l, i) { return ['Location ' + (i + 1), l]; }));
+
+        pdf.sectionHeader('Weather & Logistics');
+        fourUp([
+          ['High / Low', (pd.weather_high || '—') + ' / ' + (pd.weather_low || '—')],
+          ['Precipitation', pd.precipitation],
+          ['Humidity / Wind', pd.humidity_wind],
+          ['Sunrise / Sunset', pd.sunrise_sunset]
+        ]);
+        if (pd.forecast_note) { pdf.body(pd.forecast_note, 15, 175); pdf.gap(4); }
+        fourUp([
+          ['Nearest Hospital', pd.hospital],
+          ['Base Camp', pd.base_camp],
+          ['Base Camp — Maps', pd.base_camp_maps],
+          ['', '']
+        ]);
+
+        pdf.sectionHeader('Key Contacts');
+        fourUp([
+          ['Director', pd.director],
+          ['Producer', pd.producer],
+          ['1st AD', pd.first_ad],
+          ['Line Producer', pd.line_producer]
+        ]);
+
+        if (pd.emergency_contacts && pd.emergency_contacts.length) {
+          pdf.check(14 + pd.emergency_contacts.length * 6);
+          var eY = pdf.getY();
+          d.setFillColor(13, 14, 16);
+          d.rect(15, eY - 4, 180, 10 + pd.emergency_contacts.length * 6, 'F');
+          d.setTextColor(212, 166, 74);
+          d.setFontSize(6.5);
+          d.setFont('helvetica', 'bold');
+          d.text('EMERGENCY CONTACTS', 19, eY + 2);
+          pd.emergency_contacts.forEach(function(c, i) {
+            d.setTextColor(244, 239, 230);
+            d.setFontSize(8);
+            d.setFont('courier', 'normal');
+            d.text(String(c.role || '') + ' — ' + String(c.name || ''), 19, eY + 9 + (i * 6));
+            d.setTextColor(212, 166, 74);
+            d.text(String(c.phone || ''), 191, eY + 9 + (i * 6), { align: 'right' });
+          });
+          pdf.setY(eY + 12 + pd.emergency_contacts.length * 6);
+        }
+
+        if (pd.department_timeline && pd.department_timeline.length) {
+          pdf.sectionHeader('Department Call Timeline');
+          pd.department_timeline.forEach(function(t) {
+            pdf.check(8);
+            d.setTextColor(156, 122, 47);
+            d.setFontSize(10);
+            d.setFont('courier', 'bold');
+            d.text(String(t.time || ''), 15, pdf.getY());
+            d.setTextColor(13, 14, 16);
+            d.setFontSize(8);
+            d.setFont('helvetica', 'normal');
+            d.text(String(t.label || ''), 45, pdf.getY());
+            pdf.gap(7);
+          });
+        }
+
+        pdf.sectionHeader("Today's Scene Schedule");
+        scenes.forEach(function(s) {
+          pdf.check(20);
+          pdf.sceneNumeral(s.scene_number);
+          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + (s.location || ''));
+          pdf.gap(9);
+          if (s.description) pdf.body(s.description, 34, 130);
+          pdf.labelledList('Cast', s.cast);
+          if (typeof slateEighths === 'function') pdf.labelledList('Pages', [slateEighths(s).label]);
+          pdf.gap(2);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Cast');
+        cast.forEach(function(c) {
+          pdf.check(14);
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(9);
+          d.setFont('helvetica', 'bold');
+          d.text(String(c.character || ''), 15, pdf.getY());
+          d.setFont('courier', 'normal');
+          d.setFontSize(8);
+          d.setTextColor(120, 115, 105);
+          d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—') + '   ·   Scenes ' + (c.scenes || []).join(', '), 15, pdf.getY() + 5);
+          pdf.gap(11);
+          pdf.rule();
+        });
+
+        if (pd.crew && pd.crew.length) {
+          pdf.sectionHeader('Full Crew List');
+          pd.crew.forEach(function(m) {
+            pdf.check(8);
+            d.setTextColor(120, 115, 105);
+            d.setFontSize(7);
+            d.setFont('helvetica', 'normal');
+            d.text(String(m.role || ''), 15, pdf.getY());
+            d.setTextColor(13, 14, 16);
+            d.setFontSize(8.5);
+            d.setFont('helvetica', 'bold');
+            d.text(String(m.name || ''), 75, pdf.getY());
+            d.setFont('courier', 'normal');
+            d.setFontSize(8);
+            d.text(String(m.phone || ''), 191, pdf.getY(), { align: 'right' });
+            pdf.gap(6);
+          });
+        }
+
+        if (pd.cast_hotel || pd.crew_hotel) {
+          pdf.sectionHeader('Hotels');
+          fourUp([['Cast Hotel', pd.cast_hotel], ['Crew Hotel', pd.crew_hotel], ['', ''], ['', '']]);
+        }
+
+        if (cs.production_notes && cs.production_notes.length) {
+          pdf.sectionHeader('Production Notes');
+          cs.production_notes.forEach(function(n) {
+            pdf.check(8);
+            pdf.body('•  ' + n, 15, 175);
+            pdf.gap(3);
+          });
+        }
+
+        if (pd.quote_of_day) {
+          pdf.check(16);
+          d.setDrawColor(156, 122, 47);
+          d.setLineWidth(0.8);
+          d.line(15, pdf.getY() - 3, 15, pdf.getY() + 6);
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(10);
+          d.setFont('helvetica', 'italic');
+          d.text('"' + pd.quote_of_day + '"', 20, pdf.getY() + 2);
+          pdf.gap(12);
+        }
+
+        pdf.sectionHeader('Standard Notes & Safety');
+        (pd.safety_notes || []).forEach(function(n) {
+          pdf.check(8);
+          pdf.body('•  ' + n, 15, 175);
+          pdf.gap(3);
+        });
+
+        siqTrack('pdf_export', { document_type: 'callsheet', shoot_day: cs.shoot_day });
+        pdf.save(((cs.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-call-sheet-day-' + (cs.shoot_day || 1) + '.pdf');
       }
     })();
   </script>
