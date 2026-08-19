@@ -1057,6 +1057,7 @@
         out.innerHTML = html;
         var cb = document.getElementById('wsCallsheetBtn');
         if (cb) cb.addEventListener('click', runWorkspaceCallsheet);
+         renderProductionDetailsPanel();
       }
 
       async function runWorkspaceCallsheet() {
@@ -1602,6 +1603,139 @@
         siqTrack('pdf_export', { document_type: 'callsheet', shoot_day: cs.shoot_day });
         pdf.save(((cs.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-call-sheet-day-' + (cs.shoot_day || 1) + '.pdf');
       }
+     
+      // ── PRODUCTION DETAILS — operational data the AI cannot know ──
+      // Saves to slateProductionDetails (read by the Call Sheet export) and
+      // persists locally. V3's Production Profile binds to this same object.
+      function loadProductionDetails() {
+        try {
+          var saved = localStorage.getItem('slate_production_details');
+          if (saved) {
+            var p = JSON.parse(saved);
+            Object.keys(p).forEach(function(k) { slateProductionDetails[k] = p[k]; });
+          }
+        } catch (e) {}
+      }
+
+      function saveProductionDetails() {
+        var g = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        var pd = slateProductionDetails;
+        pd.weather_high = g('pdWeatherHigh');
+        pd.weather_low = g('pdWeatherLow');
+        pd.precipitation = g('pdPrecip');
+        pd.humidity_wind = g('pdHumidityWind');
+        pd.sunrise_sunset = g('pdSunriseSunset');
+        pd.forecast_note = g('pdForecast');
+        pd.hospital = g('pdHospital');
+        pd.base_camp = g('pdBaseCamp');
+        pd.base_camp_maps = g('pdBaseCampMaps');
+        pd.director = g('pdDirector');
+        pd.producer = g('pdProducer');
+        pd.first_ad = g('pdFirstAd');
+        pd.line_producer = g('pdLineProducer');
+        pd.cast_hotel = g('pdCastHotel');
+        pd.crew_hotel = g('pdCrewHotel');
+        pd.quote_of_day = g('pdQuote');
+        pd.locations = g('pdLocations').split('\n').filter(Boolean);
+        pd.emergency_contacts = g('pdEmergency').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { role: (parts[0] || '').trim(), name: (parts[1] || '').trim(), phone: (parts[2] || '').trim() };
+        });
+        pd.department_timeline = g('pdTimeline').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { time: (parts[0] || '').trim(), label: (parts[1] || '').trim() };
+        });
+        pd.crew = g('pdCrew').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { role: (parts[0] || '').trim(), name: (parts[1] || '').trim(), phone: (parts[2] || '').trim() };
+        });
+        var notes = g('pdSafety');
+        if (notes) pd.safety_notes = notes.split('\n').filter(Boolean);
+        try { localStorage.setItem('slate_production_details', JSON.stringify(pd)); } catch (e) {}
+        var status = document.getElementById('pdSaveStatus');
+        if (status) {
+          status.textContent = 'Saved — these details will appear on your call sheet.';
+          setTimeout(function() { status.textContent = ''; }, 4000);
+        }
+      }
+
+      function renderProductionDetailsPanel() {
+        var host = document.getElementById('wsCallsheetOut');
+        if (!host || document.getElementById('pdPanel')) return;
+        loadProductionDetails();
+        var pd = slateProductionDetails;
+        var inputCss = 'width:100%;margin-top:5px;padding:8px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px;box-sizing:border-box';
+        var labelCss = 'font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-2,#B5AFA3)';
+        function field(id, label, value, placeholder) {
+          return '<label style="' + labelCss + '">' + label
+            + '<input id="' + id + '" value="' + (value || '').replace(/"/g, '&quot;') + '" placeholder="' + (placeholder || '') + '" style="' + inputCss + '"></label>';
+        }
+        function area(id, label, value, placeholder, rows) {
+          return '<label style="' + labelCss + '">' + label
+            + '<textarea id="' + id + '" rows="' + (rows || 3) + '" placeholder="' + (placeholder || '') + '" style="' + inputCss + ';resize:vertical">' + (value || '') + '</textarea></label>';
+        }
+        function group(title, inner, cols) {
+          return '<div style="margin-bottom:22px">'
+            + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:10px">' + title + '</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(' + (cols || 200) + 'px,1fr));gap:12px">' + inner + '</div></div>';
+        }
+
+        var panel = document.createElement('div');
+        panel.id = 'pdPanel';
+        panel.style.cssText = 'margin-bottom:24px;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden';
+        panel.innerHTML =
+          '<div id="pdToggle" style="padding:14px 18px;background:var(--ink-2,#1B1D22);cursor:pointer;display:flex;justify-content:space-between;align-items:center">'
+          + '<div><div style="font-size:14px;font-weight:600;color:var(--paper,#F4EFE6)">Production Details</div>'
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">Weather, contacts, crew and logistics — the information only you can provide.</div></div>'
+          + '<div id="pdChevron" style="color:var(--gold,#D4A64A);font-size:18px">▾</div></div>'
+          + '<div id="pdBody" style="display:none;padding:20px 18px;background:var(--ink-1,#141519)">'
+          + group('Locations', area('pdLocations', 'One per line', (pd.locations || []).join('\n'), 'Danfo Motor Park, Ikorodu Rd, Lagos', 3), 320)
+          + group('Weather &amp; Logistics',
+              field('pdWeatherHigh', 'High', pd.weather_high, '31°C')
+            + field('pdWeatherLow', 'Low', pd.weather_low, '24°C')
+            + field('pdPrecip', 'Precipitation', pd.precipitation, '20% chance')
+            + field('pdHumidityWind', 'Humidity / Wind', pd.humidity_wind, '78% · 11 km/h')
+            + field('pdSunriseSunset', 'Sunrise / Sunset', pd.sunrise_sunset, '06:42 / 18:58')
+            + field('pdForecast', 'Forecast note', pd.forecast_note, 'Light showers possible after 4 PM'))
+          + group('Base &amp; Safety',
+              field('pdHospital', 'Nearest hospital', pd.hospital, 'Lagos Island Gen. — 0803 000 0000')
+            + field('pdBaseCamp', 'Base camp', pd.base_camp, 'Gate B, Ikorodu Rd')
+            + field('pdBaseCampMaps', 'Maps link', pd.base_camp_maps, 'maps.app.goo.gl/...'))
+          + group('Key Contacts',
+              field('pdDirector', 'Director', pd.director, 'Name · 0803 000 0000')
+            + field('pdProducer', 'Producer', pd.producer, 'Name · 0803 000 0000')
+            + field('pdFirstAd', '1st AD', pd.first_ad, 'Name · 0803 000 0000')
+            + field('pdLineProducer', 'Line producer', pd.line_producer, 'Name · 0803 000 0000'))
+          + group('Emergency Contacts', area('pdEmergency', 'One per line — Role | Name | Phone',
+              (pd.emergency_contacts || []).map(function(c) { return [c.role, c.name, c.phone].join(' | '); }).join('\n'),
+              'Set Medic | Dr. Ade Fashola | 0803 555 6666', 3), 320)
+          + group('Department Call Timeline', area('pdTimeline', 'One per line — Time | Label',
+              (pd.department_timeline || []).map(function(t) { return [t.time, t.label].join(' | '); }).join('\n'),
+              '05:00 | Crew departs basecamp\n07:00 | Art dept call\n08:00 | Wardrobe call', 5), 320)
+          + group('Crew List', area('pdCrew', 'One per line — Role | Name | Phone',
+              (pd.crew || []).map(function(m) { return [m.role, m.name, m.phone].join(' | '); }).join('\n'),
+              'DP | Segun Adewale | 0803 000 1111\n1st AC | Yemi Kolawole | 0803 222 4444', 6), 320)
+          + group('Hotels',
+              field('pdCastHotel', 'Cast hotel', pd.cast_hotel, 'Name, address')
+            + field('pdCrewHotel', 'Crew hotel', pd.crew_hotel, 'Name, address'))
+          + group('Notes', field('pdQuote', 'Quote of the day', pd.quote_of_day, 'Optional'), 320)
+          + group('Standard Notes &amp; Safety', area('pdSafety', 'One per line — pre-filled with standard set rules',
+              (pd.safety_notes || []).join('\n'), '', 6), 320)
+          + '<div style="display:flex;align-items:center;gap:14px;margin-top:6px">'
+          + '<button class="btn-primary" id="pdSaveBtn">Save Production Details</button>'
+          + '<span id="pdSaveStatus" style="font-size:12px;color:var(--ok,#7FAE7E)"></span></div>'
+          + '</div>';
+        host.parentNode.insertBefore(panel, host);
+
+        document.getElementById('pdToggle').addEventListener('click', function() {
+          var body = document.getElementById('pdBody');
+          var chev = document.getElementById('pdChevron');
+          var open = body.style.display !== 'none';
+          body.style.display = open ? 'none' : 'block';
+          chev.textContent = open ? '▾' : '▴';
+        });
+        document.getElementById('pdSaveBtn').addEventListener('click', saveProductionDetails);
+      } 
     })();
   </script>
 </body>
