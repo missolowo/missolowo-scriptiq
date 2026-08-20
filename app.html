@@ -5,7 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Missolowo Slate — Production Workspace</title>
 <link rel="stylesheet" href="tokens.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // jsPDF loader with fallbacks — mobile networks drop CDN requests
+  // often enough that a single source isn't reliable.
+  (function () {
+    var sources = [
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'
+    ];
+    var i = 0;
+    function tryNext() {
+      if (i >= sources.length) {
+        console.warn('[Slate] PDF library could not be loaded from any source.');
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = sources[i++];
+      s.onerror = tryNext; 
+  document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+</script>  
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>  
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script>
   if (typeof pdfjsLib !== 'undefined') {
@@ -1158,6 +1181,10 @@
       var SLATE_MUTED = [120, 115, 105];
 
       function slateDoc(documentLabel) {
+              if (!window.jspdf || !window.jspdf.jsPDF) {
+          alert('The PDF library is still loading, or your connection blocked it. Please check your network and try again in a moment.');
+          throw new Error('jsPDF unavailable');
+        }
         var jsPDF = window.jspdf.jsPDF;
         var doc = new jsPDF();
         var y = 0;
