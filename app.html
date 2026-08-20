@@ -769,6 +769,25 @@
         }
       }
 
+           // Real scripts spell names inconsistently — "OWOLABI'S LIVINGROOM",
+      // "Owolabi living room", "Owolabi's Living Room" are one place.
+      // Match on a normalized key; display the cleanest spelling found.
+      function slateKey(name) {
+        return String(name || '')
+          .toUpperCase()
+          .replace(/[''`]/g, '')
+          .replace(/[^A-Z0-9 ]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      function slateBetterLabel(a, b) {
+        var A = String(a || ''), B = String(b || '');
+        var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
+        var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
+        if (mixedA && !mixedB) return A;
+        if (mixedB && !mixedA) return B;
+        return A.length >= B.length ? A : B;
+      } 
       function mergeBreakdownChunks(chunks) {
         const merged = {
           title: chunks[0].title || 'Untitled Script',
@@ -792,7 +811,8 @@
           sceneOffset += scenes.length;
           merged.total_scenes += scenes.length;
           for (const char of (chunk.character_breakdown || [])) {
-            const existing = merged.character_breakdown.find(c => c.character === char.character);
+          const existing = merged.character_breakdown.find(c => slateKey(c.character) === slateKey(char.character));
+            if (existing) existing.character = slateBetterLabel(existing.character, char.character);
             if (existing) {
               existing.scenes = [...existing.scenes, ...(char.scenes || []).map(n => chunkOffset + n)];
               existing.total += (char.total || 0);
@@ -801,7 +821,8 @@
             }
           }
           for (const loc of (chunk.outline_schedule || [])) {
-            const existing = merged.outline_schedule.find(l => l.set_location === loc.set_location);
+             const existing = merged.outline_schedule.find(l => slateKey(l.set_location) === slateKey(loc.set_location));
+            if (existing) existing.set_location = slateBetterLabel(existing.set_location, loc.set_location);
             if (existing) {
               existing.scenes = [...existing.scenes, ...(loc.scenes || []).map(n => chunkOffset + n)];
               existing.total += (loc.total || 0);
@@ -1735,8 +1756,14 @@
           chev.textContent = open ? '▾' : '▴';
         });
         document.getElementById('pdSaveBtn').addEventListener('click', saveProductionDetails);
-      } 
-    })();
+      }
+     
+      // Export functions live inside this closure — expose them so the
+      // onclick handlers in the export bar can reach them.
+      window.slateExportBreakdown = slateExportBreakdown;
+      window.slateExportSchedule = slateExportSchedule;
+      window.slateExportCallsheet = slateExportCallsheet; 
+    })(); 
   </script>
 </body>
 </html>
