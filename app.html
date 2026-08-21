@@ -1300,7 +1300,58 @@
           doc.text(lines, (x || 34) + 26, y);
           y += lines.length * 4 + 1;
         }
-
+        // Reusable table — used by Breakdown, Schedule and Call Sheet.
+        // cols: [{ label, width, align }]  rows: [[cell, cell, ...]]
+        function table(cols, rows) {
+          var x0 = 15;
+          function header() {
+            check(14);
+            doc.setFillColor(237, 230, 216);
+            doc.rect(x0, y - 4, 180, 8, 'F');
+            doc.setTextColor.apply(doc, SLATE_MUTED);
+            doc.setFontSize(6.5);
+            doc.setFont('helvetica', 'bold');
+            var cx = x0 + 2;
+            cols.forEach(function (c) {
+              doc.text(String(c.label).toUpperCase(), c.align === 'right' ? cx + c.width - 4 : cx, y + 1,
+                c.align === 'right' ? { align: 'right' } : undefined);
+              cx += c.width;
+            });
+            y += 10;
+          }
+          header();
+          rows.forEach(function (row, ri) {
+            var heights = cols.map(function (c, i) {
+              doc.setFontSize(8);
+              return doc.splitTextToSize(String(row[i] == null ? '' : row[i]), c.width - 4).length;
+            });
+            var lines = Math.max.apply(null, heights);
+            var rowH = Math.max(8, lines * 4 + 4);
+            if (y + rowH > 278) { newPage(); header(); }
+            if (ri % 2 === 0) {
+              doc.setFillColor(248, 245, 238);
+              doc.rect(x0, y - 4, 180, rowH, 'F');
+            }
+            var cx = x0 + 2;
+            cols.forEach(function (c, i) {
+              var val = String(row[i] == null ? '' : row[i]);
+              if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
+              else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
+              else { doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 58, 54); }
+              doc.setFontSize(8);
+              var txt = doc.splitTextToSize(val, c.width - 4);
+              doc.text(txt, c.align === 'right' ? cx + c.width - 4 : cx, y,
+                c.align === 'right' ? { align: 'right' } : undefined);
+              cx += c.width;
+            });
+            y += rowH;
+            doc.setDrawColor.apply(doc, SLATE_LINE);
+            doc.setLineWidth(0.15);
+            doc.line(x0, y - 3, x0 + 180, y - 3);
+          });
+          y += 6;
+        }
+        
         function rule() {
           doc.setDrawColor.apply(doc, SLATE_LINE);
           doc.setLineWidth(0.2);
@@ -1317,6 +1368,7 @@
           body: body,
           labelledList: labelledList,
           rule: rule,
+           table: table, 
           check: check,
           gap: function(n) { y += (n || 6); },
           getY: function() { return y; },
@@ -1358,24 +1410,24 @@
         });
 
         pdf.sectionHeader('Report 2 — Character Scene Breakdown');
-        chars.forEach(function(c) {
-          pdf.check(12);
-          pdf.slugline(c.character || '', 15);
-          pdf.gap(6);
-          pdf.body('Scenes: ' + (c.scenes || []).join(', ') + '   ·   Total: ' + (c.total || (c.scenes || []).length), 15, 175);
-          pdf.gap(2);
-          pdf.rule();
-        });
+                pdf.table(
+          [{ label: 'Character', width: 60, bold: true },
+           { label: 'Scene Numbers', width: 95 },
+           { label: 'Total', width: 25, align: 'right', gold: true }],
+          chars.map(function (c) {
+            return [c.character || '', (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
+          })
+        );
 
         pdf.sectionHeader('Report 3 — Locations');
-        locs.forEach(function(l) {
-          pdf.check(12);
-          pdf.slugline(l.set_location || '', 15);
-          pdf.gap(6);
-          pdf.body('Scenes: ' + (l.scenes || []).join(', '), 15, 175);
-          pdf.gap(2);
-          pdf.rule();
-        });
+                pdf.table(
+          [{ label: 'Set / Location', width: 70, bold: true },
+           { label: 'Scene Numbers', width: 85 },
+           { label: 'Total', width: 25, align: 'right', gold: true }],
+          locs.map(function (l) {
+            return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
+          })
+        );
 
         pdf.sectionHeader('Report 4 — Production Elements');
         pdf.labelledList('All Cast', pe.all_cast, 15);
