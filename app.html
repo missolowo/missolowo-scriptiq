@@ -866,8 +866,6 @@
           merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
           merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
         } 
-        
-        }
         merged.character_breakdown.sort((a, b) => (b.total || 0) - (a.total || 0));
         return merged;
       }
