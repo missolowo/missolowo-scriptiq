@@ -1271,14 +1271,14 @@
         }
 
         function slugline(text, x) {
-          doc.setTextColor.apply(doc, SLATE_INK);
+         doc.setTextColor.apply(doc, SLATE_INK);
           doc.setFontSize(9);
           doc.setFont('courier', 'bold');
           doc.text(text, x || 34, y + 4);
         }
 
         function body(text, x, width) {
-          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setTextColor.apply(doc,SLATE_INK);
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
           var lines = doc.splitTextToSize(text, width || 160);
