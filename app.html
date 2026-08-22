@@ -827,6 +827,23 @@
                let sceneOffset = 0;
         for (const chunk of chunks) {
           const scenes = chunk.scenes || [];
+           // Collapse duplicates that arrive WITHIN a single chunk — the AI
+          // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
+          function slateDedupe(list, nameField) {
+            var out = [];
+            (list || []).forEach(function (item) {
+              var hit = out.find(function (o) { return slateKey(o[nameField]) === slateKey(item[nameField]); });
+              if (hit) {
+                hit[nameField] = slateBetterLabel(hit[nameField], item[nameField]);
+                hit.scenes = [...new Set([...(hit.scenes || []), ...(item.scenes || [])])];
+              } else {
+                out.push({ ...item, scenes: [...new Set(item.scenes || [])] });
+              }
+            });
+            return out;
+          }
+          chunk.character_breakdown = slateDedupe(chunk.character_breakdown, 'character');
+          chunk.outline_schedule = slateDedupe(chunk.outline_schedule, 'set_location');
           const chunkOffset = sceneOffset;
           // The AI returns the script's real printed scene numbers. Only apply
           // an offset if this chunk restarted its numbering from 1.
