@@ -84,12 +84,23 @@ exports.handler = async function(event, context) {
     }
 
     // ── STEP 4: Build AI prompt ──
+       // Scheduling only needs scene identity, location, timing and cast.
+    // Sending full descriptions/props/costume blew the function timeout.
+    const slimScenes = (breakdown.scenes || []).map(function (s) {
+      return {
+        n: s.scene_number,
+        ie: s.int_ext || 'INT',
+        tod: s.time_of_day || 'DAY',
+        loc: s.location || s.set_location || '',
+        cast: (s.cast || []).slice(0, 8)
+      };
+    });
     const prompt = `You are a professional Nollywood film production manager with real scheduling experience.
 
 Based on this script breakdown data, generate a complete shooting schedule.
 
 BREAKDOWN DATA:
-${JSON.stringify(breakdown, null, 2)}
+${JSON.stringify(slimScenes)}
 
 START DATE: ${start_date || 'Monday 30 June 2026'}
 SHOOT DAYS: ${shoot_days || breakdown.total_scenes || 10}
