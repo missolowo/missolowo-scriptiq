@@ -1235,7 +1235,7 @@
           doc.setFillColor.apply(doc, SLATE_GOLD);
           doc.rect(0, 0, 210, 2, 'F');
           doc.setTextColor.apply(doc, SLATE_GOLD);
-          doc.setFontSize(8);
+          doc.setFontSize(9);
           doc.setFont('helvetica', 'bold');
           doc.text('MISSOLOWO SLATE — FILM PRODUCTION OPERATING SYSTEM', 20, 40);
           doc.setDrawColor.apply(doc, SLATE_GOLD);
@@ -1302,7 +1302,7 @@
 
         function body(text, x, width) {
           doc.setTextColor.apply(doc,SLATE_INK);
-          doc.setFontSize(8);
+          doc.setFontSize(9);
           doc.setFont('helvetica', 'normal');
           var lines = doc.splitTextToSize(text, width || 160);
           doc.text(lines, x || 34, y);
@@ -1332,7 +1332,7 @@
             doc.setFillColor(237, 230, 216);
             doc.rect(x0, y - 4, 180, 8, 'F');
             doc.setTextColor.apply(doc, SLATE_MUTED);
-            doc.setFontSize(6.5);
+            doc.setFontSize(7.5);
             doc.setFont('helvetica', 'bold');
             var cx = x0 + 2;
             cols.forEach(function (c) {
@@ -1345,11 +1345,11 @@
           header();
           rows.forEach(function (row, ri) {
             var heights = cols.map(function (c, i) {
-              doc.setFontSize(8);
+              doc.setFontSize(9);
               return doc.splitTextToSize(String(row[i] == null ? '' : row[i]), c.width - 4).length;
             });
             var lines = Math.max.apply(null, heights);
-            var rowH = Math.max(8, lines * 4 + 4);
+             var rowH = Math.max(9, lines * 4.5 + 4);
             if (y + rowH > 278) { newPage(); header(); }
             if (ri % 2 === 0) {
               doc.setFillColor(248, 245, 238);
@@ -1361,7 +1361,7 @@
               if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
               else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
               else { doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 58, 54); }
-              doc.setFontSize(8);
+              doc.setFontSize(9);
               var txt = doc.splitTextToSize(val, c.width - 4);
               doc.text(txt, c.align === 'right' ? cx + c.width - 4 : cx, y,
                 c.align === 'right' ? { align: 'right' } : undefined);
