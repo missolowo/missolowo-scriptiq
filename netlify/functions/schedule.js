@@ -133,9 +133,10 @@ exports.handler = async function(event, context) {
     if (current.scenes.length) days.push(current);
 
     // Dates
-    function addDays(dateStr, n) {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return '';
+       function addDays(dateStr, n) {
+      var d;
+      try { d = new Date(String(dateStr || '').replace(/^[A-Za-z]+\s+/, '')); } catch (e) { return ''; }
+      if (!d || isNaN(d.getTime())) return '';
       d.setDate(d.getDate() + n);
       return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     }
@@ -179,7 +180,8 @@ exports.handler = async function(event, context) {
     });
     schedule.cast_release_schedule = Object.keys(castDays).map(function (k) {
       const c = castDays[k];
-      return { character: c.character, days_required: c.days_required, release_day: Math.max.apply(null, c.days_required) };
+            var dr = c.days_required.length ? c.days_required : [1];
+      return { character: c.character, days_required: dr, release_day: Math.max.apply(null, dr) };
     });
 
     // ── Small AI pass for production notes only — fails safe ──
@@ -243,7 +245,7 @@ exports.handler = async function(event, context) {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Failed to generate schedule: ' + error.message })
+      body: JSON.stringify({ error: 'Failed to generate schedule: ' + error.message, where: (error.stack || '').split('\n')[1] || '' })
     };
   }
 };
