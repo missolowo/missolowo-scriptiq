@@ -95,84 +95,121 @@ exports.handler = async function(event, context) {
         cast: (s.cast || []).slice(0, 8)
       };
     });
-    const prompt = `You are a professional Nollywood film production manager with real scheduling experience.
+      // ── Build the schedule in CODE — deterministic, instant, no timeout ──
+    // The AI only adds production notes afterwards. Grouping scenes by
+    // location is arithmetic, not judgement, so code does it reliably.
+    const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
 
-Based on this script breakdown data, generate a complete shooting schedule.
-
-BREAKDOWN DATA:
-${JSON.stringify(slimScenes)}
-
-START DATE: ${start_date || 'Monday 30 June 2026'}
-SHOOT DAYS: ${shoot_days || breakdown.total_scenes || 10}
-
-SCHEDULING RULES:
-1. Group scenes by LOCATION to minimize company moves
-2. Group INT scenes together, EXT scenes together where possible
-3. NIGHT scenes should be scheduled at end of day or separate night shoot days
-4. Consider cast availability — minimize days per actor
-5. Each shoot day should have a reasonable number of scenes
-
-Return ONLY valid JSON (no markdown):
-{
-  "title": "project title",
-  "total_shoot_days": 3,
-  "total_scenes": 4,
-  "schedule": [
-    {
-      "day": 1,
-      "date": "Monday 30 June 2026",
-      "location": "Location Name",
-      "scenes": [
-        {
-          "scene_number": 1,
-          "int_ext": "INT",
-          "time_of_day": "DAY",
-          "description": "brief scene description",
-          "cast_required": ["Character Name"],
-          "props": ["prop item"]
-        }
-      ],
-      "production_notes": "Any important notes for this day"
+    function normKey(s) {
+      return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     }
-  ],
-  "cast_release_schedule": [
-    {
-      "character": "CHARACTER NAME",
-      "days_required": [1, 2],
-      "release_day": 3
-    }
-  ]
-}`;
 
-    // ── STEP 5: Call OpenAI with strict Native JSON Enforcement ──
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 4000,
-        temperature: 0.3,
-        response_format: { type: "json_object" }, // FIX 3: Enforces strict programmatic JSON parsing
-        messages: [{ role: 'user', content: prompt }]
-      })
+    // Group scenes by location, keeping day and night separate
+    const groups = {};
+    slimScenes.forEach(function (s) {
+      const key = normKey(s.loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+      if (!groups[key]) groups[key] = { location: s.loc || 'Unspecified', night: key.endsWith('|N'), scenes: [] };
+      groups[key].scenes.push(s);
     });
 
-    const aiData = await response.json();
+    // Largest groups first so big locations aren't split across days
+    const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
+      .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
 
-    if (!response.ok) {
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: aiData.error?.message || 'AI processing error' })
-      };
+    // Distribute into shoot days
+    const perDay = Math.ceil(slimScenes.length / dayCount) || 1;
+    const days = [];
+    let current = { scenes: [], location: '' };
+    ordered.forEach(function (g) {
+      g.scenes.forEach(function (s) {
+        if (current.scenes.length >= perDay && days.length < dayCount - 1) {
+          days.push(current);
+          current = { scenes: [], location: '' };
+        }
+        if (!current.location) current.location = g.location;
+        current.scenes.push(s);
+      });
+    });
+    if (current.scenes.length) days.push(current);
+
+    // Dates
+    function addDays(dateStr, n) {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      d.setDate(d.getDate() + n);
+      return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     }
+    const baseDate = start_date || 'Monday 30 June 2026';
 
-    const text = aiData.choices?.[0]?.message?.content || '{}';
-    const schedule = JSON.parse(text.trim());
+    const schedule = {
+      title: breakdown.title || 'Untitled Production',
+      total_shoot_days: days.length,
+      total_scenes: slimScenes.length,
+      schedule: days.map(function (d, i) {
+        return {
+          day: i + 1,
+          date: addDays(baseDate, i) || baseDate,
+          location: d.location,
+          scenes: d.scenes.map(function (s) {
+            return {
+              scene_number: s.n,
+              int_ext: s.ie,
+              time_of_day: s.tod,
+              description: '',
+              cast_required: s.cast || [],
+              props: []
+            };
+          }),
+          production_notes: ''
+        };
+      }),
+      cast_release_schedule: []
+    };
 
+    // Cast release — derived in code
+    const castDays = {};
+    schedule.schedule.forEach(function (d) {
+      d.scenes.forEach(function (s) {
+        (s.cast_required || []).forEach(function (c) {
+          const k = normKey(c);
+          if (!castDays[k]) castDays[k] = { character: c, days_required: [] };
+          if (castDays[k].days_required.indexOf(d.day) < 0) castDays[k].days_required.push(d.day);
+        });
+      });
+    });
+    schedule.cast_release_schedule = Object.keys(castDays).map(function (k) {
+      const c = castDays[k];
+      return { character: c.character, days_required: c.days_required, release_day: Math.max.apply(null, c.days_required) };
+    });
+
+    // ── Small AI pass for production notes only — fails safe ──
+    try {
+      const notePrompt = 'You are a Nollywood production manager. For each shoot day below, write one short production note (logistics, moves, night-shoot warnings). Return JSON: {"notes":[{"day":1,"note":"..."}]}\n\n'
+        + JSON.stringify(schedule.schedule.map(function (d) {
+            return { day: d.day, location: d.location, scenes: d.scenes.length, night: d.scenes.filter(function (s) { return String(s.time_of_day).toUpperCase().indexOf('NIGHT') >= 0; }).length };
+          }));
+      const noteRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 1200,
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: notePrompt }]
+        })
+      });
+      if (noteRes.ok) {
+        const noteData = await noteRes.json();
+        const parsed = JSON.parse(noteData.choices?.[0]?.message?.content || '{}');
+        (parsed.notes || []).forEach(function (n) {
+          const target = schedule.schedule.find(function (d) { return d.day === n.day; });
+          if (target) target.production_notes = n.note || '';
+        });
+      }
+    } catch (e) {
+      console.warn('[Slate] Production notes unavailable:', e.message);
+    } 
     // ── STEP 6: Deduct credit uniformly using pre-fetched user context ──
     if (user) {
       let finalRemainingCredits = user.credits_remaining;
