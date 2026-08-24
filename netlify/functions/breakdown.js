@@ -161,10 +161,17 @@ exports.handler = async function(event) {
     }
 
     // ── Build prompt ──
-    const langInstruction = (!language || language === 'auto')
-      ? 'Auto-detect the script language.'
-      : `The script is in ${language}.`;
-
+       // Output is ALWAYS English regardless of the script's language (PM ruling,
+    // Aug 2026). This also prevents the same place appearing twice under
+    // different languages, e.g. "Ile Abake" and "Abake's House".
+    const langInstruction = ((!language || language === 'auto')
+      ? 'Auto-detect the script language. '
+      : `The script is in ${language}. `)
+      + 'IMPORTANT: Write ALL extracted output in ENGLISH — scene descriptions, '
+      + 'location names, character names, props, costume and equipment — even when '
+      + 'the screenplay is written in another language. Translate location names to '
+      + 'English and use the SAME English name for the same physical place every time '
+      + 'it appears. Keep character names as written in the script.';
     const sectionNote = totalChunks > 1
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
