@@ -1874,7 +1874,7 @@
       function slateHealthCheck(text) {
         var findings = [];
         var lines = String(text || '').split('\n');
-        var headingRe = /^\s*(\d+[A-Z]?)?\s*(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)\b(.*)$/i;
+       var headingRe = /(?:^|\s)(\d+[A-Z]?)?\s*\b(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)[\s.]+(.*)$/i;
         var scenes = [];
 
         lines.forEach(function (line, i) {
