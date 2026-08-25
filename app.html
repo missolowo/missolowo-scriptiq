@@ -668,6 +668,7 @@
           var sizeKb = Math.round(file.size / 1024);
           fileMeta.textContent = sizeKb + ' KB · ' + text.length.toLocaleString() + ' characters — ready';
           generateBtn.classList.add('ready');
+          renderHealthPanel(text); 
         } catch (err) {
           extractedScriptText = '';
           fileMeta.classList.add('error');
