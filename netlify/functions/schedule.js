@@ -98,6 +98,8 @@ exports.handler = async function(event, context) {
       // ── Build the schedule in CODE — deterministic, instant, no timeout ──
     // The AI only adds production notes afterwards. Grouping scenes by
     // location is arithmetic, not judgement, so code does it reliably.
+     let schedule;
+    try {
     const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
 
     function normKey(s) {
@@ -142,7 +144,7 @@ exports.handler = async function(event, context) {
     }
     const baseDate = start_date || 'Monday 30 June 2026';
 
-    const schedule = {
+    schedule = {
       title: breakdown.title || 'Untitled Production',
       total_shoot_days: days.length,
       total_scenes: slimScenes.length,
@@ -209,9 +211,17 @@ exports.handler = async function(event, context) {
           if (target) target.production_notes = n.note || '';
         });
       }
-    } catch (e) {
+,
+        body:     } catch (e) {
       console.warn('[Slate] Production notes unavailable:', e.message);
     } 
+        } catch (buildErr) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ error: 'DIAGNOSTIC: ' + buildErr.message, stack: (buildErr.stack || '').split('\n').slice(0, 3).join(' | ') })
+      };
+    }   
     // ── STEP 6: Deduct credit uniformly using pre-fetched user context ──
     if (user) {
       let finalRemainingCredits = user.credits_remaining;
