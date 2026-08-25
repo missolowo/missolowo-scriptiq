@@ -1864,7 +1864,92 @@
       // onclick handlers in the export bar can reach them.
       window.slateExportBreakdown = slateExportBreakdown;
       window.slateExportSchedule = slateExportSchedule;
-      window.slateExportCallsheet = slateExportCallsheet; 
+      window.slateExportCallsheet = slateExportCallsheet;
+      
+      // ── SCRIPT HEALTH CHECK — runs in the browser before processing ──
+      // Advisory only. Real scripts legitimately contain 47A/47B scenes and
+      // unnumbered montages, so gaps are weighted lightly.
+      function slateHealthCheck(text) {
+        var findings = [];
+        var lines = String(text || '').split('\n');
+        var headingRe = /^\s*(\d+[A-Z]?)?\s*(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)\b(.*)$/i;
+        var scenes = [];
+
+        lines.forEach(function (line, i) {
+          var m = line.match(headingRe);
+          if (!m) return;
+          scenes.push({
+            line: i + 1,
+            number: m[1] || null,
+            rest: (m[3] || '').trim(),
+            raw: line.trim()
+          });
+        });
+
+        if (!scenes.length) {
+          return {
+            score: 0,
+            band: 'red',
+            sceneCount: 0,
+            findings: [{ level: 'high', title: 'No scene headings found',
+              detail: 'We could not find any INT. or EXT. scene headings. Check the file uploaded correctly.' }]
+          };
+        }
+
+        // Duplicate scene numbers
+        var seen = {}, dupes = [];
+        scenes.forEach(function (s) {
+          if (!s.number) return;
+          var k = String(s.number).toUpperCase();
+          if (seen[k]) { if (dupes.indexOf(k) < 0) dupes.push(k); } else { seen[k] = true; }
+        });
+        if (dupes.length) {
+          findings.push({ level: 'high', title: dupes.length + ' duplicate scene number' + (dupes.length > 1 ? 's' : ''),
+            detail: 'Scene ' + dupes.slice(0, 6).join(', ') + (dupes.length > 6 ? '…' : '') + ' appear more than once.' });
+        }
+
+        // Unnumbered headings
+        var unnumbered = scenes.filter(function (s) { return !s.number; });
+        if (unnumbered.length) {
+          findings.push({ level: unnumbered.length > scenes.length * 0.3 ? 'high' : 'low',
+            title: unnumbered.length + ' scene' + (unnumbered.length > 1 ? 's' : '') + ' without a number',
+            detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
+        }
+
+        // Missing time of day
+        var noTod = scenes.filter(function (s) { return !/\b(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\b/i.test(s.rest); });
+        if (noTod.length) {
+          findings.push({ level: 'medium', title: noTod.length + ' heading' + (noTod.length > 1 ? 's' : '') + ' missing DAY or NIGHT',
+            detail: 'Scheduling separates day and night shoots, so this affects your shooting schedule.' });
+        }
+
+        // Inconsistent location naming
+        function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+        var byKey = {};
+        scenes.forEach(function (s) {
+          var loc = s.rest.split(/[-—–]/)[0].replace(/^(INT|EXT|I\/E|INT\/EXT)\.?\s*/i, '').trim();
+          if (!loc) return;
+          var k = key(loc);
+          if (!byKey[k]) byKey[k] = [];
+          if (byKey[k].indexOf(loc) < 0) byKey[k].push(loc);
+        });
+        var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
+        if (inconsistent.length) {
+          findings.push({ level: 'medium', title: inconsistent.length + ' location' + (inconsistent.length > 1 ? 's' : '') + ' written inconsistently',
+            detail: 'e.g. ' + byKey[inconsistent[0]].slice(0, 3).join(' / ') + '. Consistent naming groups scenes correctly.' });
+        }
+
+        // Score — weighted so well-formed scripts land green
+        var score = 100;
+        findings.forEach(function (f) {
+          score -= f.level === 'high' ? 20 : f.level === 'medium' ? 8 : 3;
+        });
+        score = Math.max(0, Math.min(100, Math.round(score)));
+        var band = score >= 85 ? 'green' : score >= 60 ? 'amber' : 'red';
+
+        return { score: score, band: band, sceneCount: scenes.length, findings: findings };
+      }
+      window.slateHealthCheck = slateHealthCheck;
     })(); 
   </script>
 </body>
