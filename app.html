@@ -356,6 +356,64 @@
           <label for="signupPassword2">Password</label>
           <input type="password" id="signupPassword2" placeholder="8+ characters">
         </div>
+                <div class="auth-field">
+          <label for="signupRole2">Your role in production</label>
+          <select id="signupRole2" style="width:100%;padding:11px 12px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit;font-size:14px">
+            <option value="">Select your role</option>
+            <optgroup label="Production">
+              <option>Producer</option>
+              <option>Executive Producer</option>
+              <option>Line Producer</option>
+              <option>Production Manager</option>
+              <option>Production Coordinator</option>
+              <option>Production Accountant</option>
+            </optgroup>
+            <optgroup label="Direction">
+              <option>Director</option>
+              <option>Assistant Director</option>
+              <option>Script Supervisor</option>
+            </optgroup>
+            <optgroup label="Writing">
+              <option>Screenwriter</option>
+            </optgroup>
+            <optgroup label="Camera &amp; Lighting">
+              <option>Cinematographer / DoP</option>
+              <option>Camera Operator</option>
+              <option>Gaffer</option>
+              <option>Grip</option>
+            </optgroup>
+            <optgroup label="Art &amp; Wardrobe">
+              <option>Production Designer</option>
+              <option>Art Director</option>
+              <option>Costume Designer</option>
+              <option>Makeup Artist</option>
+              <option>Hair Stylist</option>
+            </optgroup>
+            <optgroup label="Sound">
+              <option>Sound Recordist</option>
+              <option>Boom Operator</option>
+            </optgroup>
+            <optgroup label="Post Production">
+              <option>Editor</option>
+              <option>Colorist</option>
+              <option>VFX Artist</option>
+              <option>Animator</option>
+            </optgroup>
+            <optgroup label="Cast &amp; Casting">
+              <option>Actor</option>
+              <option>Casting Director</option>
+            </optgroup>
+            <optgroup label="Locations">
+              <option>Location Manager</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option>Investor</option>
+              <option>Film Student</option>
+              <option>Film School</option>
+              <option>Other</option>
+            </optgroup>
+          </select>
+        </div>
         <div class="auth-error" id="signupError2"></div>
         <button type="submit" class="auth-submit" id="signupSubmitBtn">Create Free Account</button>
       </form>
