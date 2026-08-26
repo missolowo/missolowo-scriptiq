@@ -529,6 +529,8 @@
       window.handleSignupInline = function() {
         var name = document.getElementById('signupName2').value.trim();
         var email = document.getElementById('signupEmail2').value.trim();
+         var roleEl = document.getElementById('signupRole2');
+        var filmRole = roleEl ? roleEl.value : ''; 
         var password = document.getElementById('signupPassword2').value;
         var errEl = document.getElementById('signupError2');
         var btn = document.getElementById('signupSubmitBtn');
