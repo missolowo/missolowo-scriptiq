@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Missolowo Slate — The production workspace for filmmakers</title>
+<meta name="description" content="Missolowo Slate is the production workspace where filmmakers prepare every project — from script breakdown to production planning — with speed, clarity, and confidence.">
+
+<!-- TODO(launch): OG/Twitter tags, favicon links, GA4 snippet.
+     Copy from the current index.html <head>. Do not rewrite them. -->
+
+<link rel="stylesheet" href="/tokens.css">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Inter:wght@400;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================================
+   MISSOLOWO SLATE — HOMEPAGE V2 · PHASE 1
+   Nav · Hero · Stats
+   All values from tokens.css. Nothing hardcoded.
+   =========================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ink-0);
+  color: var(--paper);
+  font-family: var(--font-text);
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+.shell {
+  max-width: var(--layout-max);
+  margin-inline: auto;
+  padding-inline: var(--margin-mobile);
+}
+@media (min-width: 768px) {
+  .shell { padding-inline: var(--gutter-desktop); }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--gold);
+  color: var(--ink-0);
+  padding: var(--s-3) var(--s-6);
+  font-weight: 600;
+  border-radius: var(--r-control);
+}
+.skip-link:focus { left: 0; }
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* ---------------- Eyebrow / slug ----------------
+
+   LAW CONFLICT — needs a ruling before launch.
+   tokens.css: "gold never carries text < 14px or weight < 600."
+   The approved comp shows gold eyebrow text at slug size (12px).
+   Built as designed for now, flagged. The compliant alternative is
+   --text-2 for the words with the gold rule kept (a rule is a
+   graphic, not text), which reads almost identically.
+   ------------------------------------------------ */
+.eyebrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-8);
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 600;
+  letter-spacing: var(--t-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.eyebrow::before {
+  content: "";
+  flex: none;
+  width: var(--sync-rule-w);
+  height: var(--sync-rule-h);
+  background: var(--gold);
+  /* Centres on the FIRST line, not the whole block — the eyebrow
+     wraps to two lines on mobile. */
+  margin-top: calc((var(--t-slug) * var(--t-slug-lh) - var(--sync-rule-h)) / 2);
+}
+
+/* ---------------- Nav ---------------- */
+
+.nav {
+  position: relative;
+  z-index: 3;
+  background: var(--ink-0);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: var(--s-16);
+}
+
+.nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: var(--t-h3);
+  font-weight: 600;
+}
+
+/* TODO(assets): confirm filename against the logo assets on v2-build. */
+.nav__mark { width: 22px; height: 22px; flex: none; display: block; }
+
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+}
+
+.nav__signin {
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  font-weight: 500;
+  letter-spacing: var(--t-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav__signin:hover { color: var(--paper); }
+
+/* ---------------- Buttons ----------------
+   Motion law: animate transform and opacity ONLY.
+   Hover is an opacity fade on an overlay layer, not a
+   background-color transition.
+   ----------------------------------------- */
+
+.btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--btn-h);
+  padding-inline: var(--s-6);
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-family: var(--font-text);
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn > span { position: relative; z-index: 1; }
+
+.btn--gold { background: var(--gold); color: var(--ink-0); }
+.btn--gold::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: var(--gold-bright);
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.btn--gold:hover::after { opacity: 1; }
+.btn--gold:active::after { background: var(--gold-deep); opacity: 1; }
+
+.btn--ghost {
+  background: transparent;
+  border-color: var(--line-1);
+  color: var(--paper);
+}
+.btn--ghost:hover { border-color: var(--line-2); }
+
+@media (min-width: 768px) {
+  .btn--compact { min-height: 40px; padding-inline: var(--s-4); }
+}
+
+/* ---------------- Hero ---------------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-1);
+}
+
+/*
+  HERO MEDIA SLOT
+  ---------------
+  Static wash for launch, per PM ruling (Aug 27).
+
+  To drop in the looping founder video later, replace the contents
+  of .hero__media with:
+
+    <video class="hero__video" autoplay muted loop playsinline
+           poster="/media/hero-poster.jpg">
+      <source src="/media/hero.mp4" type="video/mp4">
+    </video>
+
+  and delete .hero__wash. Nothing else on the page changes.
+  Keep the poster frame — on Nigerian mobile data it is what
+  loads first and may be all a user ever sees.
+*/
+.hero__media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hero__wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(58% 46% at 62% 4%,   var(--gold-tint) 0%, transparent 68%),
+    radial-gradient(70% 60% at 18% 100%, var(--gold-tint) 0%, transparent 70%);
+}
+
+.hero__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.38;
+}
+
+.hero__inner {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  padding-block: var(--s-16) var(--s-16);
+}
+@media (min-width: 768px) {
+  .hero__inner { padding-block: var(--s-24) var(--s-24); }
+}
+
+.hero__title {
+  margin: 0 0 var(--s-6);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--t-display);
+  line-height: var(--t-display-lh);
+  letter-spacing: -0.015em;
+}
+/* The scale defines no desktop step for display. 3.4rem picked to
+   match the comp — confirm with the designer. */
+@media (min-width: 768px) {
+  .hero__title { font-size: 3.4rem; }
+}
+
+/* Mobile comp wraps "great preparation." inline mid-phrase;
+   desktop comp gives it its own line. */
+.hero__title em {
+  font-style: italic;
+  color: var(--gold);
+}
+@media (min-width: 768px) {
+  .hero__title em { display: block; }
+}
+
+.hero__lede {
+  margin: 0 0 var(--s-8);
+  max-width: 40ch;
+  color: var(--text-2);
+}
+
+.hero__ctas {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+@media (min-width: 768px) {
+  .hero__ctas {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+.hero__note {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-3);
+}
+
+/* ---------------- Stats ---------------- */
+
+.stats {
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--line-1);
+}
+
+/* Mobile: 15+ spans the full width, 04 and 16 share the row beneath.
+   Desktop: all three on one row. */
+.stats__inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-6) var(--s-8);
+  padding-block: var(--s-8);
+}
+.stats__inner > .stat:first-child { grid-column: 1 / -1; }
+
+@media (min-width: 768px) {
+  .stats__inner {
+    grid-template-columns: repeat(3, auto);
+    justify-content: start;
+    gap: var(--s-16);
+  }
+  .stats__inner > .stat:first-child { grid-column: auto; }
+}
+
+.stat__value {
+  display: block;
+  margin-bottom: var(--s-1);
+  font-family: var(--font-data);
+  font-size: var(--t-h2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--gold);
+}
+
+.stat__label {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------------- Responsive ---------------- */
+
+@media (max-width: 767px) {
+  .nav__signin { display: none; } /* auth is inline in the Workspace */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__video { display: none; }
+  /* Durations already zeroed by tokens.css. */
+}
+</style>
+</head>
+
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="shell nav__inner">
+    <a class="nav__brand" href="/">
+      <img class="nav__mark" src="/assets/slate-mark-gold.svg" alt="">
+      <span>Missolowo Slate</span>
+    </a>
+
+    <nav class="nav__actions" aria-label="Account">
+      <!-- Auth is inline in the Production Workspace (Aug 12 pattern).
+           These route to app.html and let it raise its own modal. -->
+      <a class="nav__signin" href="/app.html?auth=signin">Sign in</a>
+      <a class="btn btn--gold btn--compact" href="/app.html?auth=signup"><span>Create free account</span></a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero">
+    <div class="hero__media" aria-hidden="true">
+      <div class="hero__wash"></div>
+    </div>
+
+    <div class="shell hero__inner">
+      <p class="eyebrow">Built by a filmmaker, for filmmakers</p>
+
+      <h1 class="hero__title">
+        Every great production starts with
+        <em>great preparation.</em>
+      </h1>
+
+      <p class="hero__lede">
+        Missolowo Slate is the production workspace where filmmakers prepare
+        every project — from script breakdown to production planning — with
+        speed, clarity, and confidence.
+      </p>
+
+      <div class="hero__ctas">
+        <a class="btn btn--gold" href="/app.html?auth=signup"><span>Create your free account</span></a>
+        <a class="btn btn--ghost" href="/sample-breakdown.html"><span>See a sample breakdown</span></a>
+      </div>
+
+      <p class="hero__note">3 free breakdowns. No credit card required.</p>
+    </div>
+  </section>
+
+  <section class="stats" aria-label="Track record">
+    <div class="shell stats__inner">
+      <div class="stat">
+        <span class="stat__value">15+</span>
+        <span class="stat__label">Years production experience</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value">04</span>
+        <span class="stat__label">Netflix productions</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value">16</span>
+        <span class="stat__label">Languages supported</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 2: What Missolowo Slate does · The production pipeline -->
+  <!-- Phase 3: Why Missolowo Slate exists · Closing CTA · Footer -->
+
+</main>
+
+</body>
+</html>
