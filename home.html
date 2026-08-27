@@ -380,6 +380,163 @@ a { color: inherit; }
   color: var(--text-3);
 }
 
+/* ---------------- Sections ---------------- */
+
+.section {
+  border-bottom: 1px solid var(--line-1);
+  padding-block: var(--s-16);
+}
+.section--raised { background: var(--ink-1); }
+
+@media (min-width: 768px) {
+  .section { padding-block: var(--s-24); }
+}
+
+.section__title {
+  margin: 0 0 var(--s-6);
+  max-width: 20ch;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--t-h1);
+  line-height: var(--t-h1-lh);
+  letter-spacing: -0.01em;
+}
+@media (min-width: 768px) {
+  .section__title { font-size: 2.6rem; max-width: 24ch; }
+}
+
+.section__lede {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--text-2);
+}
+
+.section__note {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--text-2);
+}
+
+/* ---------------- Document stack ----------------
+   These represent produced documents, so they take --r-doc
+   (square) under the "tools are rounded, documents are square"
+   law rather than --r-card.
+
+   Elevation law: depth is surface step plus border, one shadow
+   token reserved for modals. So the cards step ink-1 → ink-2 →
+   ink-3 as they come forward. No shadows.
+   ------------------------------------------------ */
+
+.stack {
+  position: relative;
+  margin-block: var(--s-12);
+}
+
+.doc {
+  position: relative;
+  width: 78%;
+  padding: var(--s-4);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-doc);
+}
+.doc + .doc { margin-top: calc(var(--s-8) * -1); }
+
+.doc--1 { background: var(--ink-1); z-index: 1; }
+.doc--2 { background: var(--ink-2); z-index: 2; margin-left: 11%; }
+.doc--3 { background: var(--ink-3); z-index: 3; margin-left: 22%; }
+
+.doc__num {
+  margin: 0 0 var(--s-1);
+  font-family: var(--font-data);
+  font-size: var(--t-h3);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--gold);
+}
+
+.doc__name {
+  margin: 0 0 var(--s-3);
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.doc__lines { display: grid; gap: var(--s-2); }
+.doc__lines i {
+  display: block;
+  height: 4px;
+  background: var(--line-1);
+  border-radius: var(--r-doc);
+}
+.doc__lines i:nth-child(1) { width: 82%; }
+.doc__lines i:nth-child(2) { width: 64%; }
+.doc__lines i:nth-child(3) { width: 73%; }
+
+@media (min-width: 768px) {
+  .doc { width: 58%; padding: var(--s-6); }
+  .doc + .doc { margin-top: calc(var(--s-12) * -1); }
+  .doc--2 { margin-left: 18%; }
+  .doc--3 { margin-left: 36%; }
+}
+
+/* ---------------- Pipeline ----------------
+   Numerals earn their place here: this is a real sequence.
+   Breakdown feeds Schedule feeds Call Sheet, and the order is
+   the product's whole argument. The gold rule down the left is
+   the connection made visible.
+   ------------------------------------------ */
+
+.pipe {
+  list-style: none;
+  margin: var(--s-12) 0 var(--s-8);
+  padding: 0 0 0 var(--s-6);
+  border-left: 1px solid var(--gold-tint);
+}
+
+.pipe__step + .pipe__step { margin-top: var(--s-12); }
+
+.pipe__num {
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-data);
+  font-size: var(--t-h2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--gold);
+}
+
+.pipe__name {
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-text);
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  font-weight: 600;
+}
+
+.pipe__copy {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--text-2);
+}
+
+.pipe__callout {
+  margin: 0;
+  padding: var(--s-4);
+  background: var(--ink-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-card);
+  font-family: var(--font-data);
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
+  color: var(--text-2);
+}
+.pipe__callout strong { color: var(--paper); font-weight: 600; }
+
 /* ---------------- Responsive ---------------- */
 
 @media (max-width: 767px) {
@@ -460,7 +617,92 @@ a { color: inherit; }
     </div>
   </section>
 
-  <!-- Phase 2: What Missolowo Slate does · The production pipeline -->
+  <section class="section" aria-labelledby="does-title">
+    <div class="shell">
+      <p class="eyebrow">What Missolowo Slate does</p>
+
+      <h2 class="section__title" id="does-title">
+        Everything before the first day of shooting, in one place.
+      </h2>
+
+      <p class="section__lede">
+        Upload a screenplay and get a scene-by-scene breakdown, a day-by-day
+        shooting schedule, and production-ready call sheets — without switching
+        between five different tools, three spreadsheets, and a WhatsApp thread.
+      </p>
+
+      <div class="stack">
+        <article class="doc doc--1">
+          <p class="doc__num">01</p>
+          <p class="doc__name">Scene Breakdown</p>
+          <div class="doc__lines" aria-hidden="true"><i></i><i></i><i></i></div>
+        </article>
+
+        <article class="doc doc--2">
+          <p class="doc__num">02</p>
+          <p class="doc__name">Shooting Schedule</p>
+          <div class="doc__lines" aria-hidden="true"><i></i><i></i><i></i></div>
+        </article>
+
+        <article class="doc doc--3">
+          <p class="doc__num">03</p>
+          <p class="doc__name">Call Sheet</p>
+          <div class="doc__lines" aria-hidden="true"><i></i><i></i><i></i></div>
+        </article>
+      </div>
+
+      <p class="section__note">
+        Every document is generated from the same source — your script — so
+        nothing gets re-typed, and nothing falls out of sync as the production
+        changes.
+      </p>
+    </div>
+  </section>
+
+  <section class="section section--raised" aria-labelledby="pipeline-title">
+    <div class="shell">
+      <p class="eyebrow">The production pipeline</p>
+
+      <h2 class="section__title" id="pipeline-title">
+        One connected workflow, not three separate tools.
+      </h2>
+
+      <ol class="pipe">
+        <li class="pipe__step">
+          <p class="pipe__num">01</p>
+          <h3 class="pipe__name">Scene Breakdown</h3>
+          <p class="pipe__copy">
+            Upload your screenplay. Get cast, props, locations, and scene
+            details in minutes — in your language.
+          </p>
+        </li>
+
+        <li class="pipe__step">
+          <p class="pipe__num">02</p>
+          <h3 class="pipe__name">Shooting Schedule</h3>
+          <p class="pipe__copy">
+            A day-by-day shoot plan generated straight from your breakdown —
+            ready to adjust in seconds.
+          </p>
+        </li>
+
+        <li class="pipe__step">
+          <p class="pipe__num">03</p>
+          <h3 class="pipe__name">Call Sheet</h3>
+          <p class="pipe__copy">
+            Professional, on-set-ready call sheets pulled directly from your
+            schedule — not re-entered by hand.
+          </p>
+        </li>
+      </ol>
+
+      <p class="pipe__callout">
+        Change a scene in the breakdown, and it flows through your schedule and
+        call sheet <strong>automatically</strong>.
+      </p>
+    </div>
+  </section>
+
   <!-- Phase 3: Why Missolowo Slate exists · Closing CTA · Footer -->
 
 </main>
