@@ -6,8 +6,32 @@
 <title>Missolowo Slate — The production workspace for filmmakers</title>
 <meta name="description" content="Missolowo Slate is the production workspace where filmmakers prepare every project — from script breakdown to production planning — with speed, clarity, and confidence.">
 
-<!-- TODO(launch): OG/Twitter tags, favicon links, GA4 snippet.
-     Copy from the current index.html <head>. Do not rewrite them. -->
+<!-- TODO(launch): OG/Twitter tags + favicon links.
+     Copy the paths from the current index.html <head>. -->
+
+<!-- Google Analytics 4 — same property as V1, so homepage traffic
+     stays continuous when index.html is retired at launch. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G1F83JSDLX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+
+  /* Deploy previews must not pollute production analytics. */
+  var siqIsPreview = /deploy-preview|--/.test(location.hostname) || location.hostname === 'localhost';
+
+  if (!siqIsPreview) {
+    gtag('js', new Date());
+    gtag('config', 'G-G1F83JSDLX');
+  }
+
+  /* Same wrapper and name as index.html — analytics must never
+     interrupt the product. */
+  function siqTrack(eventName, params) {
+    try {
+      if (!siqIsPreview && typeof gtag === 'function') gtag('event', eventName, params || {});
+    } catch (e) { /* swallow */ }
+  }
+</script>
 
 <link rel="stylesheet" href="/tokens.css">
 
@@ -383,8 +407,8 @@ a { color: inherit; }
     <nav class="nav__actions" aria-label="Account">
       <!-- Auth is inline in the Production Workspace (Aug 12 pattern).
            These route to app.html and let it raise its own modal. -->
-      <a class="nav__signin" href="/app.html?auth=signin">Sign in</a>
-      <a class="btn btn--gold btn--compact" href="/app.html?auth=signup"><span>Create free account</span></a>
+      <a class="nav__signin" href="/app.html?auth=signin" data-cta="nav" data-cta-action="signin">Sign in</a>
+      <a class="btn btn--gold btn--compact" href="/app.html?auth=signup" data-cta="nav" data-cta-action="signup"><span>Create free account</span></a>
     </nav>
   </div>
 </header>
@@ -411,8 +435,8 @@ a { color: inherit; }
       </p>
 
       <div class="hero__ctas">
-        <a class="btn btn--gold" href="/app.html?auth=signup"><span>Create your free account</span></a>
-        <a class="btn btn--ghost" href="/sample-breakdown.html"><span>See a sample breakdown</span></a>
+        <a class="btn btn--gold" href="/app.html?auth=signup" data-cta="hero" data-cta-action="signup"><span>Create your free account</span></a>
+        <a class="btn btn--ghost" href="/sample-breakdown.html" data-cta="hero" data-cta-action="sample"><span>See a sample breakdown</span></a>
       </div>
 
       <p class="hero__note">3 free breakdowns. No credit card required.</p>
@@ -440,6 +464,21 @@ a { color: inherit; }
   <!-- Phase 3: Why Missolowo Slate exists · Closing CTA · Footer -->
 
 </main>
+
+<script>
+/* Homepage → signup funnel. Delegated, so CTAs added in Phase 2 and 3
+   are tracked automatically via data-cta.
+   TODO: check "home_cta_click" against the existing GA4 event taxonomy
+   before launch so it doesn't collide with the auth funnel events. */
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-cta]');
+  if (!el) return;
+  siqTrack('home_cta_click', {
+    cta_location: el.getAttribute('data-cta'),
+    cta_action: el.getAttribute('data-cta-action') || ''
+  });
+});
+</script>
 
 </body>
 </html>
