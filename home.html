@@ -229,26 +229,21 @@ a { color: inherit; }
 }
 
 /*
-  HERO MEDIA SLOT
-  ---------------
-  Static wash for launch, per PM ruling (Aug 27).
+  HERO MEDIA
+  ----------
+  Landscape BTS footage from Elizabeth's own set, 1280x720.
+  Runs at every width. The static wash stays underneath as the
+  fallback for reduced-motion and data-saver users, who never
+  download the video.
 
-  To drop in the looping founder video later, replace the contents
-  of .hero__media with:
-
-    <video class="hero__video" autoplay muted loop playsinline
-           poster="/media/hero-poster.jpg">
-      <source src="/media/hero.mp4" type="video/mp4">
-    </video>
-
-  and delete .hero__wash. Nothing else on the page changes.
-  Keep the poster frame — on Nigerian mobile data it is what
-  loads first and may be all a user ever sees.
+  The <video> is built in script, so it is only ever requested
+  when it will actually be used.
 */
 .hero__media {
   position: absolute;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -261,10 +256,23 @@ a { color: inherit; }
 }
 
 .hero__video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.38;
+}
+
+/* Dark scrim so the headline stays legible over daylight footage.
+   Heavier at the bottom, where the copy sits. */
+.hero__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom,
+      rgba(13,14,16,0.55) 0%,
+      rgba(13,14,16,0.78) 45%,
+      rgba(13,14,16,0.94) 100%);
 }
 
 .hero__inner {
@@ -987,6 +995,35 @@ a { color: inherit; }
    are tracked automatically via data-cta.
    TODO: check "home_cta_click" against the existing GA4 event taxonomy
    before launch so it doesn't collide with the auth funnel events. */
+/* Hero video. Landscape footage, so it runs at all widths.
+   Skipped for reduced-motion and data-saver users, who keep the
+   static wash and never download the file. */
+(function () {
+  var calm    = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var thrifty = navigator.connection && navigator.connection.saveData;
+  if (calm || thrifty) return;
+
+  var media = document.querySelector('.hero__media');
+  if (!media) return;
+
+  var v = document.createElement('video');
+  v.className = 'hero__video';
+  v.src = '/hero.mp4';
+  v.poster = '/hero-poster.jpg';
+  v.autoplay = true;
+  v.loop = true;
+  v.setAttribute('muted', '');
+  v.setAttribute('playsinline', '');
+  v.setAttribute('aria-hidden', 'true');
+  v.muted = true;
+
+  var scrim = document.createElement('div');
+  scrim.className = 'hero__scrim';
+
+  media.insertBefore(v, media.firstChild);
+  media.appendChild(scrim);
+})();
+
 /* Scroll reveals. Anything already on screen at load is shown
    immediately, so the first paint is never blank. */
 (function () {
