@@ -1,45 +1,8 @@
-  --gutter-desktop: 24px;
-  --margin-mobile: 16px;
-
-  /* ---------- RADIUS ----------
-     LAW: tools are rounded, documents are square. */
-  --r-control: 8px;             /* buttons, inputs, chips */
-  --r-card: 12px;               /* cards, modals */
-  --r-doc: 0px;                 /* anything representing a document */
-
-  /* ---------- ELEVATION ----------
-     Depth = surface step + border; one shadow token, modals only. */
-  --shadow-modal: 0 24px 48px rgba(0,0,0,0.5);
-
-  /* ---------- MOTION (see Motion & Experience Design §3.8) ---------- */
-  --fast: 150ms;                /* hover, toggles, focus — the invisible cut */
-  --base: 250ms;                /* modals, panels, expand/collapse */
-  --slow: 400ms;                /* reserved: the roll & the develop only */
-  --ease: cubic-bezier(0.2, 0, 0, 1);
-  /* Exits: opacity-only at half duration. Entrances: ≤8px translate.
-     Animate transform & opacity ONLY. No motion libraries. */
-
-  /* ---------- COMPONENT CONSTANTS ---------- */
-  --btn-h: 48px;                /* mobile touch floor; 40px compact desktop */
-  --focus-ring: 2px solid var(--gold);
-  --focus-offset: 2px;
-  --sidebar-w: 240px;
-  --sync-rule-w: 24px;          /* the sync mark: 24×2px gold rule */
-  --sync-rule-h: 2px;
-  --status-dot: 6px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root { --fast: 0ms; --base: 0ms; --slow: 0ms; }
-  /* Information beats (completion hold, discrete numeral changes)
-     are timing, not motion — preserve them in JS orchestration. */
-}
 /* ============================================================
    MISSOLOWO SLATE — DESIGN TOKENS v1.0 (FROZEN)
    Night Shoot design language · Brand v1.0 · July 2026
    Single source of truth. Do not hardcode values in components.
    ============================================================ */
-
 :root {
   /* ---------- COLOR · CHARCOAL (surfaces, dark app) ---------- */
   --ink-0: #0D0E10;             /* app background */
@@ -102,3 +65,39 @@
   --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
   --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px; --s-24: 96px;
   --layout-max: 1200px;
+  --gutter-desktop: 24px;
+  --margin-mobile: 16px;
+
+  /* ---------- RADIUS ----------
+     LAW: tools are rounded, documents are square. */
+  --r-control: 8px;             /* buttons, inputs, chips */
+  --r-card: 12px;               /* cards, modals */
+  --r-doc: 0px;                 /* anything representing a document */
+
+  /* ---------- ELEVATION ----------
+     Depth = surface step + border; one shadow token, modals only. */
+  --shadow-modal: 0 24px 48px rgba(0,0,0,0.5);
+
+  /* ---------- MOTION (see Motion & Experience Design §3.8) ---------- */
+  --fast: 150ms;                /* hover, toggles, focus — the invisible cut */
+  --base: 250ms;                /* modals, panels, expand/collapse */
+  --slow: 400ms;                /* reserved: the roll & the develop only */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Exits: opacity-only at half duration. Entrances: ≤8px translate.
+     Animate transform & opacity ONLY. No motion libraries. */
+
+  /* ---------- COMPONENT CONSTANTS ---------- */
+  --btn-h: 48px;                /* mobile touch floor; 40px compact desktop */
+  --focus-ring: 2px solid var(--gold);
+  --focus-offset: 2px;
+  --sidebar-w: 240px;
+  --sync-rule-w: 24px;          /* the sync mark: 24×2px gold rule */
+  --sync-rule-h: 2px;
+  --status-dot: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --fast: 0ms; --base: 0ms; --slow: 0ms; }
+  /* Information beats (completion hold, discrete numeral changes)
+     are timing, not motion — preserve them in JS orchestration. */
+}
