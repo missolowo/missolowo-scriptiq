@@ -273,9 +273,6 @@ a { color: inherit; }
   max-width: 680px;
   padding-block: var(--s-16) var(--s-16);
 }
-@media (min-width: 768px) {
-  .hero__inner { padding-block: var(--s-24) var(--s-24); }
-}
 
 .hero__title {
   margin: 0 0 var(--s-6);
@@ -330,6 +327,12 @@ a { color: inherit; }
   font-weight: 500;
   letter-spacing: var(--t-slug-tracking);
   color: var(--text-3);
+}
+
+.hero__shell { position: relative; z-index: 1; }
+
+@media (min-width: 768px) {
+  .hero__inner { padding-block: var(--s-24) var(--s-24); }
 }
 
 /* ---------------- Stats ---------------- */
@@ -557,7 +560,7 @@ a { color: inherit; }
 <header class="nav">
   <div class="shell nav__inner">
     <a class="nav__brand" href="/">
-      <img class="nav__mark" src="/assets/slate-mark-gold.svg" alt="">
+      <img class="nav__mark" src="/slate-mark-gold.svg" alt="">
       <span>Missolowo Slate</span>
     </a>
 
@@ -577,7 +580,8 @@ a { color: inherit; }
       <div class="hero__wash"></div>
     </div>
 
-    <div class="shell hero__inner">
+    <div class="shell hero__shell">
+      <div class="hero__inner">
       <p class="eyebrow">Built by a filmmaker, for filmmakers</p>
 
       <h1 class="hero__title">
@@ -596,7 +600,8 @@ a { color: inherit; }
         <a class="btn btn--ghost" href="/sample-breakdown.html" data-cta="hero" data-cta-action="sample"><span>See a sample breakdown</span></a>
       </div>
 
-      <p class="hero__note">3 free breakdowns. No credit card required.</p>
+        <p class="hero__note">3 free breakdowns. No credit card required.</p>
+      </div>
     </div>
   </section>
 
