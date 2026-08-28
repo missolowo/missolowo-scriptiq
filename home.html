@@ -540,6 +540,205 @@ a { color: inherit; }
 }
 .pipe__callout strong { color: var(--paper); font-weight: 600; }
 
+/* ---------------- Founder ---------------- */
+
+.founder__grid { display: grid; gap: var(--s-8); }
+
+@media (min-width: 768px) {
+  .founder__grid {
+    grid-template-columns: 2fr 3fr;
+    gap: var(--s-16);
+    align-items: start;
+  }
+}
+
+/*
+  FOUNDER PORTRAIT
+  ----------------
+  Frame is 3:4 (portrait). To drop the photo in, replace the
+  contents of .founder__frame with:
+
+    <img class="founder__photo" src="/media/elizabeth.jpg"
+         alt="Elizabeth Olalere on set">
+
+  and delete .founder__wash. Nothing else changes.
+*/
+.founder__frame {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-doc);
+  background: var(--ink-2);
+}
+
+.founder__wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(80% 60% at 50% 0%, var(--gold-tint) 0%, transparent 70%);
+}
+
+.founder__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.founder__name {
+  margin: 0 0 var(--s-3);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--t-h1);
+  line-height: var(--t-h1-lh);
+}
+
+.founder__credits {
+  margin: 0 0 var(--s-8);
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.founder__quote {
+  margin: 0 0 var(--s-8);
+  padding-left: var(--s-6);
+  border-left: 2px solid var(--gold);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  color: var(--paper);
+}
+
+.founder__byline {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-3);
+}
+
+/* ---------------- Closing CTA ---------------- */
+
+.close {
+  padding-block: var(--s-24);
+  border-bottom: 1px solid var(--line-1);
+  text-align: center;
+}
+
+.close__title {
+  margin: 0 0 var(--s-6);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--t-h1);
+  line-height: var(--t-h1-lh);
+}
+.close__title em {
+  display: block;
+  font-style: italic;
+  color: var(--gold);
+}
+@media (min-width: 768px) {
+  .close__title { font-size: 2.6rem; }
+}
+
+.close__lede {
+  margin: 0 auto var(--s-8);
+  max-width: 44ch;
+  color: var(--text-2);
+}
+
+.close__note {
+  margin: var(--s-4) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-3);
+}
+
+.close__langs {
+  margin: var(--s-6) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 600;
+  letter-spacing: var(--t-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+/* Same open gold-law conflict as the eyebrow — built as the comp
+   shows, pending a ruling. */
+.close__langs b { color: var(--gold); font-weight: 600; }
+
+/* ---------------- Footer ---------------- */
+
+.foot { padding-block: var(--s-8); }
+
+.foot__name {
+  margin: 0 0 var(--s-1);
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-2);
+}
+
+.foot__meta {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--t-slug);
+  line-height: var(--t-slug-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-3);
+}
+
+/* ---------------- Motion ----------------
+   PM-approved, Aug 28: scroll reveals + stack assembly only.
+   Opacity and translateY, nothing else. 8px cap per the design
+   system's entrance rule. Uses --base (250ms); --slow stays
+   reserved for the roll and the develop.
+
+   Everything is scoped to .js, which is set by script. If the
+   script never runs, nothing is hidden and the page reads normally.
+   ---------------------------------------- */
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--base) var(--ease), transform var(--base) var(--ease);
+}
+.js .reveal.is-in { opacity: 1; transform: none; }
+
+.js .stack .doc {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--base) var(--ease), transform var(--base) var(--ease);
+}
+.js .stack.is-in .doc { opacity: 1; transform: none; }
+.js .stack.is-in .doc--2 { transition-delay: 90ms; }
+.js .stack.is-in .doc--3 { transition-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal,
+  .js .stack .doc {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
 /* ---------------- Responsive ---------------- */
 
 @media (max-width: 767px) {
@@ -554,6 +753,8 @@ a { color: inherit; }
 </head>
 
 <body>
+
+<script>document.documentElement.className += ' js';</script>
 
 <a class="skip-link" href="#main">Skip to content</a>
 
@@ -580,7 +781,7 @@ a { color: inherit; }
       <div class="hero__wash"></div>
     </div>
 
-    <div class="shell hero__shell">
+    <div class="shell hero__shell reveal">
       <div class="hero__inner">
       <p class="eyebrow">Built by a filmmaker, for filmmakers</p>
 
@@ -605,15 +806,15 @@ a { color: inherit; }
     </div>
   </section>
 
-  <section class="stats" aria-label="Track record">
+  <section class="stats reveal" aria-label="Track record">
     <div class="shell stats__inner">
       <div class="stat">
         <span class="stat__value">15+</span>
         <span class="stat__label">Years production experience</span>
       </div>
       <div class="stat">
-        <span class="stat__value">04</span>
-        <span class="stat__label">Netflix productions</span>
+        <span class="stat__value">09</span>
+        <span class="stat__label">Netflix titles</span>
       </div>
       <div class="stat">
         <span class="stat__value">16</span>
@@ -622,7 +823,7 @@ a { color: inherit; }
     </div>
   </section>
 
-  <section class="section" aria-labelledby="does-title">
+  <section class="section reveal" aria-labelledby="does-title">
     <div class="shell">
       <p class="eyebrow">What Missolowo Slate does</p>
 
@@ -664,7 +865,7 @@ a { color: inherit; }
     </div>
   </section>
 
-  <section class="section section--raised" aria-labelledby="pipeline-title">
+  <section class="section section--raised reveal" aria-labelledby="pipeline-title">
     <div class="shell">
       <p class="eyebrow">The production pipeline</p>
 
@@ -708,15 +909,103 @@ a { color: inherit; }
     </div>
   </section>
 
-  <!-- Phase 3: Why Missolowo Slate exists · Closing CTA · Footer -->
+  <section class="section reveal" aria-labelledby="founder-title">
+    <div class="shell">
+      <p class="eyebrow">Why Missolowo Slate exists</p>
+
+      <div class="founder__grid">
+        <div class="founder__frame">
+          <div class="founder__wash" aria-hidden="true"></div>
+        </div>
+
+        <div>
+          <h2 class="founder__name" id="founder-title">Elizabeth Olalere</h2>
+
+          <!-- TODO: verify official title spellings and diacritics
+               before launch. Yoruba titles are frequently written
+               inconsistently across listings. -->
+          <p class="founder__credits">
+            Selected credits — Anikulapo · Jagunjagun 1&amp;2 · Lisabi 1&amp;2 ·
+            Ijogbon · 7 Doors
+          </p>
+
+          <blockquote class="founder__quote">
+            A producer who codes. A builder who tells stories.
+          </blockquote>
+
+          <!-- ==========================================================
+               FOUNDER NARRATIVE — NOT YET WRITTEN. DO NOT UNCOMMENT
+               UNTIL ELIZABETH SUPPLIES THE FINAL COPY IN HER OWN WORDS.
+               The comp marks this block as do-not-ship-as-written.
+               Paste the text between the <p> tags and remove the
+               comment markers. Styling is already in place.
+               ==========================================================
+          <p class="section__lede" style="margin-bottom: var(--s-8)">
+            [ FOUNDER NARRATIVE GOES HERE ]
+          </p>
+          -->
+
+          <p class="founder__byline">Founded by filmmaker Elizabeth Olalere</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="close reveal" aria-labelledby="close-title">
+    <div class="shell">
+      <h2 class="close__title" id="close-title">
+        Control the chaos.
+        <em>Command the set.</em>
+      </h2>
+
+      <p class="close__lede">
+        Join filmmakers already preparing smarter with Missolowo Slate.
+      </p>
+
+      <a class="btn btn--gold" href="/app.html?auth=signup"
+         data-cta="closing" data-cta-action="signup">
+        <span>Create your free account</span>
+      </a>
+
+      <p class="close__note">3 free breakdowns. No credit card required.</p>
+
+      <p class="close__langs"><b>16</b> languages supported, with more on the way</p>
+    </div>
+  </section>
 
 </main>
+
+  <footer class="foot">
+    <div class="shell">
+      <p class="foot__name">Missolowo Slate</p>
+      <p class="foot__meta">© 2026 · Film Production Operating System</p>
+    </div>
+  </footer>
 
 <script>
 /* Homepage → signup funnel. Delegated, so CTAs added in Phase 2 and 3
    are tracked automatically via data-cta.
    TODO: check "home_cta_click" against the existing GA4 event taxonomy
    before launch so it doesn't collide with the auth funnel events. */
+/* Scroll reveals. Anything already on screen at load is shown
+   immediately, so the first paint is never blank. */
+(function () {
+  var items = document.querySelectorAll('.reveal, .stack');
+  if (!('IntersectionObserver' in window)) {
+    for (var i = 0; i < items.length; i++) items[i].classList.add('is-in');
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { rootMargin: '0px 0px -10% 0px', threshold: 0.05 });
+  items.forEach(function (el) { io.observe(el); });
+})();
+
 document.addEventListener('click', function (e) {
   var el = e.target.closest('[data-cta]');
   if (!el) return;
