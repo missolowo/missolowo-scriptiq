@@ -1953,9 +1953,20 @@
       // unnumbered montages, so gaps are weighted lightly.
       function slateHealthCheck(text) {
         var findings = [];
-         var lines = String(text || '').split(/\r?\n/);
-       var headingRe = /(?:^|\s)(\d+[A-Z]?)?\s*\b(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)[\s.]+(.*)$/i;
+        var lines = String(text || '').split(/\r?\n/);
+
+        // Layer 1 — standard slug lines: INT. LOCATION - DAY
+        // Used across Hollywood, Bollywood and much of Nollywood.
+        var headingRe = /(?:^|\s)(\d+[A-Z]?)?\s*\b(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)[\s.]+(.*)$/i;
+
+        // Layer 2 — SCENE n <tab> LOCATION <tab> INT/DAY
+        // A standard Nollywood layout. Carries more structure than a slug
+        // line: the scene number is explicit and INT/EXT is already split
+        // from the time of day.
+        var sceneRe = /^\s*SCENE\s+(\d+[A-Za-z]?)\s+(.+?)\s+(INT|EXT|I\/E|INT\/EXT)\s*[\/\-—–]\s*(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\s*$/i;
+
         var scenes = [];
+        var format = 'standard';
 
         lines.forEach(function (line, i) {
           var m = line.match(headingRe);
@@ -1968,16 +1979,33 @@
           });
         });
 
+        // Only try layer 2 if layer 1 found nothing, so a standard script
+        // can never be misread by the looser pattern.
         if (!scenes.length) {
+          lines.forEach(function (line, i) {
+            var m = line.match(sceneRe);
+            if (!m) return;
+            format = 'scene-numbered';
+            scenes.push({
+              line: i + 1,
+              number: m[1] || null,
+              // Rebuilt as LOCATION - TIME so every check below works unchanged
+              rest: m[2].trim() + ' - ' + m[4].toUpperCase(),
+              raw: line.trim()
+            });
+          });
+        }
+        
+
+               if (!scenes.length) {
           return {
             score: 0,
             band: 'red',
             sceneCount: 0,
             findings: [{ level: 'high', title: 'No scene headings found',
-              detail: 'We could not find any INT. or EXT. scene headings. Check the file uploaded correctly.' }]
+              detail: 'We could not find scene headings in a format we recognise yet. Your script can still be broken down — scenes will be detected from the text.' }]
           };
         }
-
         // Duplicate scene numbers
         var seen = {}, dupes = [];
         scenes.forEach(function (s) {
