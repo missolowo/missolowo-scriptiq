@@ -1254,10 +1254,16 @@
           + '<div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Call Sheet · Day ' + (cs.shoot_day || '') + '</div>'
           + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
           + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
-          + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '') + (cs.location_address ? ' — ' + cs.location_address : '') + '</div>'
+          + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '')
+            + (cs.location_address
+                ? ' — ' + cs.location_address
+                : ' <span style="color:#9C7A2F">— address required</span>') + '</div>'
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Scenes</div>'
           + scenes.map(function(s) {
-              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + s.scene_number + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + (s.location || '') + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div></div>';
+               // Row names the SET (Sitting Room), not the location —
+              // the location is the address in the header above.
+              var setName = s.set || s.location || '';
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + s.scene_number + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div></div>';  
             }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
           + cast.map(function(c) {
