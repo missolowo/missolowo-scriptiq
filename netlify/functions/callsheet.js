@@ -4,7 +4,10 @@
 // Generates professional call sheet from breakdown + schedule
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
-const fetch = require('node-fetch'); // FIX 1: Explicitly use node-fetch to prevent runtime crashes
+const fetch = (() => {
+  try { return require('node-fetch'); }
+  catch(e) { return global.fetch; }
+})();
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
