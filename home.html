@@ -6,8 +6,27 @@
 <title>Missolowo Slate — The production workspace for filmmakers</title>
 <meta name="description" content="Missolowo Slate is the production workspace where filmmakers prepare every project — from script breakdown to production planning — with speed, clarity, and confidence.">
 
-<!-- TODO(launch): OG/Twitter tags + favicon links.
-     Copy the paths from the current index.html <head>. -->
+<link rel="canonical" href="https://missolowo-scriptiq.netlify.app/">
+
+<!-- TODO(launch): update og:url and canonical if a custom domain lands
+     before launch. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Missolowo Slate">
+<meta property="og:title" content="Missolowo Slate | Film Production Operating System">
+<meta property="og:description" content="Built by a filmmaker, for filmmakers. Break down scripts, plan productions, generate schedules, and manage your workflow — all in one intelligent production platform.">
+<meta property="og:image" content="https://missolowo-scriptiq.netlify.app/og-image-1200x630.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://missolowo-scriptiq.netlify.app/">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Missolowo Slate | Film Production Operating System">
+<meta name="twitter:description" content="Built by a filmmaker, for filmmakers. Break down scripts, plan productions, generate schedules, and manage your workflow — all in one intelligent production platform.">
+<meta name="twitter:image" content="https://missolowo-scriptiq.netlify.app/og-image-1200x630.png">
+
+<link rel="icon" type="image/svg+xml" href="/slate-mark-gold.svg">
+<link rel="apple-touch-icon" href="/slate-mark-gold-512.png">
+<meta name="theme-color" content="#0D0E10">
 
 <!-- Google Analytics 4 — same property as V1, so homepage traffic
      stays continuous when index.html is retired at launch. -->
@@ -90,12 +109,11 @@ a { color: inherit; }
 
 /* ---------------- Eyebrow / slug ----------------
 
-   LAW CONFLICT — needs a ruling before launch.
-   tokens.css: "gold never carries text < 14px or weight < 600."
-   The approved comp shows gold eyebrow text at slug size (12px).
-   Built as designed for now, flagged. The compliant alternative is
-   --text-2 for the words with the gold rule kept (a rule is a
-   graphic, not text), which reads almost identically.
+   PM ruling, Aug 29: gold eyebrows stay gold, raised from --t-slug
+   (12px) to --t-small (14px) to satisfy the design-system law that
+   gold never carries text under 14px or under weight 600.
+   Weight is already 600. The comps show 12px and are now out of
+   date — designer notified.
    ------------------------------------------------ */
 .eyebrow {
   display: flex;
@@ -103,8 +121,8 @@ a { color: inherit; }
   gap: var(--s-3);
   margin: 0 0 var(--s-8);
   font-family: var(--font-data);
-  font-size: var(--t-slug);
-  line-height: var(--t-slug-lh);
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
   font-weight: 600;
   letter-spacing: var(--t-eyebrow-tracking);
   text-transform: uppercase;
@@ -118,7 +136,7 @@ a { color: inherit; }
   background: var(--gold);
   /* Centres on the FIRST line, not the whole block — the eyebrow
      wraps to two lines on mobile. */
-  margin-top: calc((var(--t-slug) * var(--t-slug-lh) - var(--sync-rule-h)) / 2);
+  margin-top: calc((var(--t-small) * var(--t-small-lh) - var(--sync-rule-h)) / 2);
 }
 
 /* ---------------- Nav ---------------- */
@@ -624,6 +642,10 @@ a { color: inherit; }
   color: var(--paper);
 }
 
+.founder__story { margin: 0 0 var(--s-8); max-width: 56ch; }
+.founder__story p { margin: 0 0 var(--s-4); color: var(--text-2); }
+.founder__story p:last-child { margin-bottom: 0; }
+
 .founder__byline {
   margin: 0;
   font-family: var(--font-data);
@@ -674,18 +696,17 @@ a { color: inherit; }
   color: var(--text-3);
 }
 
+/* Carries a gold numeral, so it takes 14px under the same ruling. */
 .close__langs {
   margin: var(--s-6) 0 0;
   font-family: var(--font-data);
-  font-size: var(--t-slug);
-  line-height: var(--t-slug-lh);
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
   font-weight: 600;
   letter-spacing: var(--t-eyebrow-tracking);
   text-transform: uppercase;
   color: var(--text-3);
 }
-/* Same open gold-law conflict as the eyebrow — built as the comp
-   shows, pending a ruling. */
 .close__langs b { color: var(--gold); font-weight: 600; }
 
 /* ---------------- Footer ---------------- */
@@ -701,6 +722,25 @@ a { color: inherit; }
   letter-spacing: var(--t-slug-tracking);
   color: var(--text-2);
 }
+
+.foot__social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-6);
+  padding: 0;
+  list-style: none;
+}
+.foot__social a {
+  font-family: var(--font-data);
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
+  font-weight: 500;
+  letter-spacing: var(--t-slug-tracking);
+  color: var(--text-2);
+  text-decoration: none;
+}
+.foot__social a:hover { color: var(--gold); }
 
 .foot__meta {
   margin: 0;
@@ -806,7 +846,6 @@ a { color: inherit; }
 
       <div class="hero__ctas">
         <a class="btn btn--gold" href="/app.html?auth=signup" data-cta="hero" data-cta-action="signup"><span>Create your free account</span></a>
-        <a class="btn btn--ghost" href="/sample-breakdown.html" data-cta="hero" data-cta-action="sample"><span>See a sample breakdown</span></a>
       </div>
 
         <p class="hero__note">3 free breakdowns. No credit card required.</p>
@@ -923,7 +962,9 @@ a { color: inherit; }
 
       <div class="founder__grid">
         <div class="founder__frame">
-          <div class="founder__wash" aria-hidden="true"></div>
+          <img class="founder__photo" src="/founder.jpg"
+               alt="Elizabeth Olalere, founder of Missolowo Slate"
+               width="800" height="1066" loading="lazy" decoding="async">
         </div>
 
         <div>
@@ -941,17 +982,25 @@ a { color: inherit; }
             A producer who codes. A builder who tells stories.
           </blockquote>
 
-          <!-- ==========================================================
-               FOUNDER NARRATIVE — NOT YET WRITTEN. DO NOT UNCOMMENT
-               UNTIL ELIZABETH SUPPLIES THE FINAL COPY IN HER OWN WORDS.
-               The comp marks this block as do-not-ship-as-written.
-               Paste the text between the <p> tags and remove the
-               comment markers. Styling is already in place.
-               ==========================================================
-          <p class="section__lede" style="margin-bottom: var(--s-8)">
-            [ FOUNDER NARRATIVE GOES HERE ]
-          </p>
-          -->
+          <div class="founder__story">
+            <p>
+              For years, I watched talented filmmakers spend more time managing
+              paperwork than creating films. Script breakdowns took days.
+              Shooting schedules were built manually. Call sheets were created
+              under pressure, often late at night. Every production started with
+              unnecessary chaos.
+            </p>
+            <p>
+              After experiencing these challenges on real film sets, I realised
+              the industry didn't need another generic productivity tool. It
+              needed software that truly understood how filmmakers work.
+            </p>
+            <p>
+              Every feature inside Missolowo Slate is inspired by real production
+              experience, real challenges, and real conversations with
+              filmmakers. It's my contribution to the future of filmmaking.
+            </p>
+          </div>
 
           <p class="founder__byline">Founded by filmmaker Elizabeth Olalere</p>
         </div>
@@ -985,6 +1034,15 @@ a { color: inherit; }
 
   <footer class="foot">
     <div class="shell">
+      <ul class="foot__social">
+        <li><a href="https://www.instagram.com/miss_olowo" rel="me noopener" target="_blank">Instagram</a></li>
+        <li><a href="https://www.linkedin.com/in/miss-olowo-0ab998363" rel="me noopener" target="_blank">LinkedIn</a></li>
+        <li><a href="https://x.com/miss_olowo1" rel="me noopener" target="_blank">X</a></li>
+        <li><a href="https://www.youtube.com/@missolowotv" rel="me noopener" target="_blank">YouTube</a></li>
+        <li><a href="https://www.tiktok.com/@miss_olowo1" rel="me noopener" target="_blank">TikTok</a></li>
+        <li><a href="https://www.threads.com/@miss_olowo" rel="me noopener" target="_blank">Threads</a></li>
+        <li><a href="mailto:missolowoai@gmail.com">Email</a></li>
+      </ul>
       <p class="foot__name">Missolowo Slate</p>
       <p class="foot__meta">© 2026 · Film Production Operating System</p>
     </div>
