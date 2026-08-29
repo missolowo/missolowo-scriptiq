@@ -149,7 +149,7 @@ exports.handler = async function(event) {
       }
     }
 
-    // ── Register production on first chunk (idempotent — safe if retried) ──
+   // ── Register production on first chunk (idempotent — safe if retried) ──
     if (isFirstChunk && production_id && user) {
       await supabase.from('productions')
         .upsert({
@@ -158,7 +158,7 @@ exports.handler = async function(event) {
           status: 'processing',
           created_at: new Date().toISOString()
         }, { onConflict: 'production_id', ignoreDuplicates: true });
-    }
+    } 
 
     // ── Build prompt ──
        // Output is ALWAYS English regardless of the script's language (PM ruling,
@@ -288,7 +288,7 @@ RULES:
           credits_used: (user.credits_used || 0) + 1
         }).eq('id', user.id);
 
-        // Mark production charged + completed (idempotency record)
+                // Mark production charged + completed (idempotency record)
         if (production_id) {
           await supabase.from('productions').upsert({
             production_id,
@@ -296,6 +296,35 @@ RULES:
             status: 'completed',
             charged_at: new Date().toISOString()
           }, { onConflict: 'production_id' });
+        } 
+        // ── Persist the finished breakdown against this production ──
+        // Runs only on the charging chunk, so it is written once and complete.
+        // Wrapped separately: a storage failure must never cost the user the
+        // result they just paid for, so they still receive it either way.
+        if (production_id) {
+          try {
+            await supabase.from('breakdowns').upsert({
+              production_id,
+              user_id: user.id,
+              title: breakdown.title || 'Untitled Script',
+              script_language: breakdown.language_detected || language || 'auto',
+              output_language: 'English',
+              scenes: breakdown.scenes || [],
+              character_breakdown: breakdown.character_breakdown || [],
+              outline_schedule: breakdown.outline_schedule || [],
+              production_elements: breakdown.production_elements || {},
+              total_scenes: breakdown.total_scenes || (breakdown.scenes || []).length,
+              created_at: new Date().toISOString()
+            }, { onConflict: 'production_id' });
+
+            // Carry the real title onto the production row, so the
+            // Productions list shows the film's name, not "Untitled Script".
+            await supabase.from('productions')
+              .update({ title: breakdown.title || 'Untitled Script', updated_at: new Date().toISOString() })
+              .eq('production_id', production_id);
+          } catch (saveErr) {
+            console.error('[Slate] Breakdown save failed:', saveErr.message);
+          }
         }
 
         breakdown.credits_remaining = finalCredits;
