@@ -105,8 +105,19 @@ exports.handler = async function(event, context) {
     try {
       const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
 
+      // Matching key only — never displayed. Strips diacritics so
+      // "Baale's Sitting Room" and "Baalé's Sitting Room" are the same
+      // room. NFD splits an accented letter into base + combining mark,
+      // then the mark is removed. Covers Yorùbá tone marks and the
+      // dot-below vowels (ọ, ẹ, ṣ) as well as é, à, ń.
       function normKey(s) {
-        return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        return String(s || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9 ]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
       }
 
       // Group scenes by location, keeping day and night separate
