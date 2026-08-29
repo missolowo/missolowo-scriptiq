@@ -164,14 +164,14 @@ exports.handler = async function(event) {
        // Output is ALWAYS English regardless of the script's language (PM ruling,
     // Aug 2026). This also prevents the same place appearing twice under
     // different languages, e.g. "Ile Abake" and "Abake's House".
-    const langInstruction = ((!language || language === 'auto')
-      ? 'Auto-detect the script language. '
-      : `The script is in ${language}. `)
-      + 'IMPORTANT: Write ALL extracted output in ENGLISH — scene descriptions, '
-      + 'location names, character names, props, costume and equipment — even when '
-      + 'the screenplay is written in another language. Translate location names to '
-      + 'English and use the SAME English name for the same physical place every time '
-      + 'it appears. Keep character names as written in the script.';
+        const langInstruction = ((!language || language === 'auto')
+      ? 'The screenplay may be in any language. Detect it for PARSING ONLY. '
+      : `The script is in ${language}. Use that for PARSING ONLY. `)
+      + 'OUTPUT LANGUAGE IS ALWAYS ENGLISH, whatever language the screenplay is '
+      + 'written in. Every scene description, location name, set name, prop, costume '
+      + 'and equipment item must be written in English. Translate location and set '
+      + 'names to English and use the SAME English name for the same physical place '
+      + 'every time it appears. Keep character names exactly as written in the script.';
     const sectionNote = totalChunks > 1
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
@@ -179,8 +179,17 @@ exports.handler = async function(event) {
     const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
 ${langInstruction}
 
+LOCATION vs SET — this distinction drives scheduling, so get it right:
+- "location" is the place the crew TRAVELS TO: a building, compound or area. This becomes the call sheet address. Example: "Baale's House".
+- "set" is the specific space INSIDE that location where the scene is shot. Example: "Sitting Room", "Backyard", "Parlour".
+- A heading like "INT. BAALE'S SITTING ROOM" means location "Baale's House", set "Sitting Room".
+- Use the SAME location string for every space in the same building, so the whole building can be shot in one visit.
+- If a heading names a place with no interior space, such as "EXT. BUS STOP", repeat the location as the set.
+
 SCREENPLAY:
 ${script.trim()}
+
+REMINDER: write every description, location, set, prop, costume and equipment value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
 
 Return ONLY valid JSON:
 {
@@ -192,21 +201,22 @@ Return ONLY valid JSON:
       "scene_number": 1,
       "int_ext": "INT",
       "time_of_day": "DAY",
-      "location": "Location name",
-      "description": "One sentence summary",
+      "location": "Travel destination, in English",
+      "set": "Space within that location, in English",
+      "description": "One sentence summary, in English",
       "cast": ["Character Name"],
-      "props": ["prop item"],
-      "costume": ["costume item"],
-      "equipment": ["equipment item"],
-      "production_notes": "Notes"
+      "props": ["prop item, in English"],
+      "costume": ["costume item, in English"],
+      "equipment": ["equipment item, in English"],
+      "production_notes": "Notes, in English"
     }
   ],
   "character_breakdown": [
     { "character": "CHARACTER NAME", "scenes": [1], "total": 1 }
   ],
   "outline_schedule": [
-    { "set_location": "Location Name", "scenes": [1], "total": 1 }
-  ],
+    { "set_location": "Location Name, in English", "scenes": [1], "total": 1 }
+  ],  
   "production_elements": {
     "all_cast": ["Character Name"],
     "all_props": ["prop item"],
