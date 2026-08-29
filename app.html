@@ -1953,7 +1953,7 @@
       // unnumbered montages, so gaps are weighted lightly.
       function slateHealthCheck(text) {
         var findings = [];
-        var lines = String(text || '').split('\n');
+         var lines = String(text || '').split(/\r?\n/);
        var headingRe = /(?:^|\s)(\d+[A-Z]?)?\s*\b(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)[\s.]+(.*)$/i;
         var scenes = [];
 
