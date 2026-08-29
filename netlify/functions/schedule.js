@@ -5,7 +5,10 @@
 // Columns: Day | Date | Location | Scene No | Cast Required | INT/EXT | Props
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
-const fetch = require('node-fetch'); // FIX 1: Explicitly use node-fetch to prevent crashes
+const fetch = (() => {
+  try { return require('node-fetch'); }
+  catch(e) { return global.fetch; }
+})();
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
