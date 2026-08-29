@@ -122,15 +122,41 @@ exports.handler = async function(event, context) {
       };
     });
 
+    // Character identity key. "Baale" and "BAALE" are one actor and must
+    // never appear as two rows with two call times on a printed sheet.
+    // Strips case, accents and punctuation for matching only.
+    function castKey(name) {
+      return String(name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    // Prefer the more readable spelling: mixed case over shouting.
+    function betterName(a, b) {
+      var A = String(a || ''), B = String(b || '');
+      var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
+      var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
+      if (mixedA && !mixedB) return A;
+      if (mixedB && !mixedA) return B;
+      return A.length >= B.length ? A : B;
+    }
+
     // Which cast work today, and in which scenes
     const castMap = {};
     scenesToday.forEach(function (s) {
       (s.cast || []).forEach(function (c) {
         const name = String(c || '').trim();
         if (!name) return;
-        if (!castMap[name]) castMap[name] = { character: name, scenes: [] };
-        if (castMap[name].scenes.indexOf(s.scene_number) < 0) {
-          castMap[name].scenes.push(s.scene_number);
+        const k = castKey(name);
+        if (!k) return;
+        if (!castMap[k]) castMap[k] = { character: name, scenes: [] };
+        else castMap[k].character = betterName(castMap[k].character, name);
+        if (castMap[k].scenes.indexOf(s.scene_number) < 0) {
+          castMap[k].scenes.push(s.scene_number);
         }
       });
     });
@@ -207,13 +233,18 @@ Return ONLY valid JSON:
     // Merge AI times onto the real cast list. Anyone the AI missed still
     // appears, at general call — a crew member must never be dropped from
     // a call sheet because a model forgot them.
+    // Matched on the same normalised key, so a differently-cased name
+    // coming back from the model still lands on the right person.
     const timeByName = {};
     aiCallTimes.forEach(function (t) {
-      if (t && t.character) timeByName[String(t.character).trim()] = t;
+      if (t && t.character) {
+        const k = castKey(t.character);
+        if (k && !timeByName[k]) timeByName[k] = t;
+      }
     });
 
     const castCallTimes = castToday.map(function (c) {
-      const t = timeByName[c.character] || {};
+      const t = timeByName[castKey(c.character)] || {};
       return {
         character: c.character,
         call_time: t.call_time || general_call || '07:00',
