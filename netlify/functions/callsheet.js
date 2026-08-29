@@ -1,7 +1,14 @@
 // ============================================
-// SCRIPTIQ — CALL SHEET FUNCTION
+// MISSOLOWO SLATE — CALL SHEET FUNCTION
 // Netlify Function — Secure Backend (CISO Hardened)
 // Generates professional call sheet from breakdown + schedule
+//
+// PRINCIPLE: facts come from data, never from the AI.
+// Titles, addresses, scene numbers, sets and locations are copied
+// from the breakdown and schedule. The AI is used only for
+// judgement — call times and production notes. A call sheet sends
+// a crew to a physical place; an invented address is worse than
+// a blank one.
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
 const fetch = (() => {
@@ -37,14 +44,15 @@ exports.handler = async function(event, context) {
   };
 
   try {
-const { breakdown, schedule, schedule_day, shoot_date, general_call, user_email, user_id } = JSON.parse(event.body);
+    const { breakdown, schedule, schedule_day, shoot_date, general_call,
+            location_address, user_email, user_id } = JSON.parse(event.body);
 
     if (!breakdown) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
     }
 
-    // FIX (Aug 2026): call sheets must be grounded in the REAL schedule,
-    // not guessed from a bare day number.
+    // Call sheets must be grounded in the REAL schedule, not guessed
+    // from a bare day number.
     if (!schedule || !Array.isArray(schedule.schedule)) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No schedule data provided. Generate a shooting schedule first, then request the call sheet for a specific day.' }) };
     }
@@ -62,7 +70,7 @@ const { breakdown, schedule, schedule_day, shoot_date, general_call, user_email,
 
     const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
 
-    // ── STEP 1: Rate limit — Passing user_id to fix the Film Set Wi-Fi shared-IP issue ──
+    // ── STEP 1: Rate limit — user_id passed to fix the film-set shared-IP issue ──
     if (!isAdminEmail) {
       const clientIP = getClientIP(event);
       const rateLimit = await checkRateLimit(clientIP, 'callsheet', 5, SUPABASE_SECRET, user_id || null);
@@ -72,7 +80,7 @@ const { breakdown, schedule, schedule_day, shoot_date, general_call, user_email,
     // ── STEP 2: Initialize Supabase ──
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── STEP 3: Single-Pass User Verification (Fixes UUID crashes and race conditions) ──
+    // ── STEP 3: Single-pass user verification ──
     let user = null;
     if (user_id || user_email) {
       const query = user_id
@@ -82,122 +90,168 @@ const { breakdown, schedule, schedule_day, shoot_date, general_call, user_email,
       user = data;
     }
 
-    // ── STEP 3b: Core Access Guard ──
-    if (user && !isAdminEmail) {
-      if (user.is_disabled) {
-        return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
-      }
-      // FIX 2: Check credits for ALL non-admin tiers to prevent paid-tier bypass exploits
-      if (user.credits_remaining <= 0) {
-        return {
-          statusCode: 402,
-          headers,
-          body: JSON.stringify({
-            error: 'No credits remaining',
-            code: 'NO_CREDITS',
-            message: 'You have used all your call sheet credits. Please purchase a top-up pack to continue.',
-            upgrade_required: true
-          })
-        };
-      }
+    // ── STEP 3b: Core access guard ──
+    // Call sheets are FREE: the credit was spent on the schedule this
+    // sheet derives from (PM ruling, Aug 29). We still block disabled
+    // accounts, but we do not gate on credits and we do not charge.
+    if (user && !isAdminEmail && user.is_disabled) {
+      return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
     }
 
-// ── STEP 4: Build AI prompt — grounded in the real schedule for this day ──
-    const prompt = `You are a professional Nollywood production manager generating an industry-standard daily call sheet.
+    // ── STEP 4: Build the sheet from DATA ──
+    function sceneSort(a, b) {
+      var na = parseFloat(String(a.scene_number).replace(/[^0-9.]/g, '')) || 0;
+      var nb = parseFloat(String(b.scene_number).replace(/[^0-9.]/g, '')) || 0;
+      if (na !== nb) return na - nb;
+      return String(a.scene_number).localeCompare(String(b.scene_number));
+    }
 
-TODAY'S SCENES (the ONLY scenes to include — this is the authoritative shoot-day assignment from the approved schedule):
-${JSON.stringify(todaysFullScenes, null, 2)}
+    const scenesToday = todaysFullScenes.slice().sort(sceneSort).map(function (s) {
+      return {
+        scene_number: s.scene_number,
+        int_ext: s.int_ext || 'INT',
+        time_of_day: s.time_of_day || 'DAY',
+        location: s.location || '',
+        // Backward compatible: breakdowns made before the Location/Set
+        // split have no set field, so fall back to the location.
+        set: s.set || s.location || '',
+        description: s.description || '',
+        cast: s.cast || [],
+        props: s.props || [],
+        costume: s.costume || []
+      };
+    });
 
-DAY LOCATION: ${dayData.location || 'See scenes'}
-DAY PRODUCTION NOTES: ${dayData.production_notes || 'None'}
+    // Which cast work today, and in which scenes
+    const castMap = {};
+    scenesToday.forEach(function (s) {
+      (s.cast || []).forEach(function (c) {
+        const name = String(c || '').trim();
+        if (!name) return;
+        if (!castMap[name]) castMap[name] = { character: name, scenes: [] };
+        if (castMap[name].scenes.indexOf(s.scene_number) < 0) {
+          castMap[name].scenes.push(s.scene_number);
+        }
+      });
+    });
+    const castToday = Object.keys(castMap).map(function (k) { return castMap[k]; });
+
+    const dayLocation = dayData.location || (scenesToday[0] && scenesToday[0].location) || '';
+
+    // ── STEP 5: AI for JUDGEMENT ONLY — call times and notes ──
+    // It is never asked for the title, the address, or the scene list,
+    // because it does not know them and would invent them.
+    let aiNotes = [];
+    let aiCallTimes = [];
+
+    try {
+      const prompt = `You are a Nollywood first assistant director setting call times for one shoot day.
 
 SHOOT DAY: ${targetDay}
-SHOOT DATE: ${shoot_date || dayData.date || 'Monday 30 June 2026'}
-GENERAL CALL TIME: ${general_call || '07:00'}
+LOCATION: ${dayLocation}
+GENERAL CALL: ${general_call || '07:00'}
 
-Generate a professional call sheet using ONLY the scenes listed above — do not include or invent any other scenes. Return ONLY valid JSON (no markdown):
+SCENES TODAY (already fixed — do not add, remove or renumber any):
+${JSON.stringify(scenesToday.map(function (s) {
+  return { scene: s.scene_number, set: s.set, int_ext: s.int_ext, time: s.time_of_day, cast: s.cast };
+}), null, 2)}
+
+CAST WORKING TODAY (use exactly these names):
+${JSON.stringify(castToday, null, 2)}
+
+Stagger call times sensibly: cast in the first scenes of the day come in at general call, cast who only appear later can come in later. Write 2 to 4 short production notes covering logistics, moves between sets, night work or continuity.
+
+Return ONLY valid JSON:
 {
-  "title": "project title",
-  "shoot_day": 1,
-  "shoot_date": "Monday 30 June 2026",
-  "general_call": "07:00",
   "first_shot": "08:30",
   "wrap_estimate": "18:00",
-  "location": "Location name",
-  "location_address": "Full address",
-  "scenes_today": [
-    {
-      "scene_number": 1,
-      "int_ext": "INT",
-      "time_of_day": "DAY",
-      "location": "Location",
-      "description": "Scene description",
-      "cast": ["Character Name"]
-    }
-  ],
   "cast_call_times": [
-    {
-      "character": "CHARACTER NAME",
-      "call_time": "07:00",
-      "on_set": "08:30",
-      "status": "Lead",
-      "scenes": [1]
-    }
+    { "character": "EXACT NAME FROM THE LIST ABOVE", "call_time": "07:00", "on_set": "08:30", "status": "Lead" }
   ],
   "production_notes": ["Note 1", "Note 2"]
 }`;
 
-    // ── STEP 5: Call OpenAI with strict Native JSON Enforcement ──
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 3000,
-        temperature: 0.3,
-        response_format: { type: "json_object" }, // FIX 3: Enforces strict programmatic JSON parsing
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 2000,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a professional Nollywood first assistant director. You always write your output in English, whatever language the source material uses. You never invent scene numbers, locations, addresses or character names — you use exactly what you are given.'
+            },
+            { role: 'user', content: prompt }
+          ]
+        })
+      });
 
-    const aiData = await response.json();
-
-    if (!response.ok) {
-      return { statusCode: response.status, headers, body: JSON.stringify({ error: aiData.error?.message || 'AI error' }) };
+      if (response.ok) {
+        const aiData = await response.json();
+        const parsed = JSON.parse(aiData.choices?.[0]?.message?.content || '{}');
+        aiCallTimes = Array.isArray(parsed.cast_call_times) ? parsed.cast_call_times : [];
+        aiNotes = Array.isArray(parsed.production_notes) ? parsed.production_notes : [];
+        var aiFirstShot = parsed.first_shot;
+        var aiWrap = parsed.wrap_estimate;
+      }
+    } catch (e) {
+      console.warn('[Slate] Call time suggestions unavailable:', e.message);
     }
 
-    const text = aiData.choices?.[0]?.message?.content || '{}';
-    const callsheet = JSON.parse(text.trim());
+    // Merge AI times onto the real cast list. Anyone the AI missed still
+    // appears, at general call — a crew member must never be dropped from
+    // a call sheet because a model forgot them.
+    const timeByName = {};
+    aiCallTimes.forEach(function (t) {
+      if (t && t.character) timeByName[String(t.character).trim()] = t;
+    });
 
-    // ── STEP 6: Deduct credit uniformly using pre-fetched user context ──
+    const castCallTimes = castToday.map(function (c) {
+      const t = timeByName[c.character] || {};
+      return {
+        character: c.character,
+        call_time: t.call_time || general_call || '07:00',
+        on_set: t.on_set || '08:30',
+        status: t.status || '',
+        scenes: c.scenes
+      };
+    });
+
+    // ── STEP 6: Assemble. Every fact here comes from data. ──
+    const callsheet = {
+      title: breakdown.title || 'Untitled Production',
+      shoot_day: targetDay,
+      shoot_date: shoot_date || dayData.date || '',
+      general_call: general_call || '07:00',
+      first_shot: (typeof aiFirstShot === 'string' && aiFirstShot) || '08:30',
+      wrap_estimate: (typeof aiWrap === 'string' && aiWrap) || '18:00',
+      location: dayLocation,
+      // NEVER guessed. Blank until a human supplies it.
+      location_address: location_address || '',
+      location_address_required: !location_address,
+      locations: dayData.locations || (dayLocation ? [dayLocation] : []),
+      company_move: !!dayData.company_move,
+      scenes_today: scenesToday,
+      cast_call_times: castCallTimes,
+      production_notes: aiNotes.length ? aiNotes : (dayData.production_notes ? [dayData.production_notes] : [])
+    };
+
+    // ── STEP 7: Report credits, but never charge for a call sheet ──
     if (user) {
-      let finalRemainingCredits = user.credits_remaining;
-
-      if (!isAdminEmail) {
-        finalRemainingCredits = user.credits_remaining - 1;
-
-        // Deduct 1 credit across ALL paying tiers uniformly
-        await supabase
-          .from('users')
-          .update({
-            credits_remaining: finalRemainingCredits,
-            credits_used: user.credits_used + 1
-          })
-          .eq('id', user.id);
-      }
-
-      // Synchronize response fields for frontend tracking renders
-      callsheet.credits_remaining = finalRemainingCredits;
+      callsheet.credits_remaining = user.credits_remaining;
       callsheet.user_role = user.role;
     }
 
     return { statusCode: 200, headers, body: JSON.stringify(callsheet) };
 
   } catch (error) {
-    console.error("[CISO Fatal Catch] Call Sheet processing crash:", error.message);
+    console.error('[CISO Fatal Catch] Call Sheet processing crash:', error.message);
     return {
       statusCode: 500,
       headers,
