@@ -303,7 +303,7 @@ RULES:
         // result they just paid for, so they still receive it either way.
         if (production_id) {
           try {
-            await supabase.from('breakdowns').upsert({
+          const saveResult =   await supabase.from('breakdowns').upsert({
               production_id,
               user_id: user.id,
               title: breakdown.title || 'Untitled Script',
@@ -316,6 +316,10 @@ RULES:
               total_scenes: breakdown.total_scenes || (breakdown.scenes || []).length,
               created_at: new Date().toISOString()
             }, { onConflict: 'production_id' });
+             if (saveResult && saveResult.error) {
+              breakdown.save_error = saveResult.error.message;
+              breakdown.save_error_details = saveResult.error.details || '';
+            }
 
             // Carry the real title onto the production row, so the
             // Productions list shows the film's name, not "Untitled Script".
@@ -324,6 +328,7 @@ RULES:
               .eq('production_id', production_id);
           } catch (saveErr) {
             console.error('[Slate] Breakdown save failed:', saveErr.message);
+            breakdown.save_error = saveErr.message;
           }
         }
 
