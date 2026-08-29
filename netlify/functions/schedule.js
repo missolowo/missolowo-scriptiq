@@ -121,21 +121,48 @@ exports.handler = async function(event, context) {
       const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
         .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
 
-      // Distribute into shoot days
+      // Distribute into shoot days.
+      // A day records EVERY location it contains, not just the first —
+      // otherwise the call sheet prints one address while listing scenes
+      // shot somewhere else, and crew go to the wrong place.
       const perDay = Math.ceil(slimScenes.length / dayCount) || 1;
       const days = [];
-      let current = { scenes: [], location: '' };
+      let current = { scenes: [], locations: [] };
+
+      function closeDay() {
+        if (current.scenes.length) days.push(current);
+        current = { scenes: [], locations: [] };
+      }
+
       ordered.forEach(function (g) {
+        // Keep a location's scenes together where possible: if the whole
+        // group won't fit in the day we've started, begin a fresh day
+        // rather than splitting the location across two.
+        if (current.scenes.length &&
+            (current.scenes.length + g.scenes.length) > perDay &&
+            days.length < dayCount - 1) {
+          closeDay();
+        }
         g.scenes.forEach(function (s) {
+          // Hard split only when one location has more scenes than a day holds
           if (current.scenes.length >= perDay && days.length < dayCount - 1) {
-            days.push(current);
-            current = { scenes: [], location: '' };
+            closeDay();
           }
-          if (!current.location) current.location = g.location;
+          if (current.locations.indexOf(g.location) < 0) current.locations.push(g.location);
           current.scenes.push(s);
         });
       });
-      if (current.scenes.length) days.push(current);
+      closeDay();
+
+      // Scene order within a day. PMs read call sheets in ascending scene
+      // order; 47A sorts after 47 and before 48.
+      function bySceneNumber(a, b) {
+        var na = parseFloat(String(a.n).replace(/[^0-9.]/g, '')) || 0;
+        var nb = parseFloat(String(b.n).replace(/[^0-9.]/g, '')) || 0;
+        if (na !== nb) return na - nb;
+        return String(a.n).localeCompare(String(b.n));
+      }
+      days.forEach(function (d) { d.scenes.sort(bySceneNumber); });
 
       // Dates
       function addDays(dateStr, n) {
@@ -155,7 +182,9 @@ exports.handler = async function(event, context) {
           return {
             day: i + 1,
             date: addDays(baseDate, i) || baseDate,
-            location: d.location,
+            location: d.locations.join(' · '),
+            locations: d.locations.slice(),
+            company_move: d.locations.length > 1,
             scenes: d.scenes.map(function (s) {
               return {
                 scene_number: s.n,
