@@ -868,14 +868,17 @@
            // Real scripts spell names inconsistently — "OWOLABI'S LIVINGROOM",
       // "Owolabi living room", "Owolabi's Living Room" are one place.
       // Match on a normalized key; display the cleanest spelling found.
-      function slateKey(name) {
+       function slateKey(name) {
         return String(name || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
           .replace(/[''`]/g, '')
           .replace(/[^A-Z0-9 ]/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
       }
+  
       function slateBetterLabel(a, b) {
         var A = String(a || ''), B = String(b || '');
         var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
