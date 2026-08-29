@@ -315,6 +315,12 @@ RULES:
     // ── Persist the hed breakdown ──
     // Deliberately OUTSIDE the credit block: saving is not billing.
     // Admins and non-charging paths must still have their work stored.
+       // TEMP DIAGNOSTIC — remove once persistence is confirmed
+    breakdown.save_gate = {
+      isLastChunk: !!isLastChunk,
+      hasUser: !!user,
+      production_id: production_id || null
+    };
     if (isLastChunk && user && production_id) {
       try {
         const saveResult = await supabase.from('breakdowns').upsert({
