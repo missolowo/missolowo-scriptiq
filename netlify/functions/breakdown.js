@@ -240,9 +240,15 @@ RULES:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 16000,
-        temperature: 0.3,
+        temperature: 0.1,
         response_format: { type: "json_object" },
-        messages: [{ role: 'user', content: prompt }]
+              messages: [
+          {
+            role: 'system',
+            content: 'You are a professional film script breakdown supervisor. You read screenplays in any language, but you ALWAYS write your output in English. Scene descriptions, location names, set names, props, costume and equipment are written in English every time, without exception, even when the screenplay is in Yoruba, Igbo, Hausa, French, Arabic or any other language. Never copy or paraphrase the screenplay in its original language. Character names are the only exception: keep those exactly as written. This rule applies to every scene in the output, including the last one.'
+          },
+          { role: 'user', content: prompt }
+        ]
       })
     });
 
