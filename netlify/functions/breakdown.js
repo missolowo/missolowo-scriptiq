@@ -176,12 +176,31 @@ exports.handler = async function(event) {
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
 
-    const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
+      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
 ${langInstruction}
+
+SCENE BOUNDARIES — the most important rule in this task:
+A new scene begins ONLY at a scene heading (slug line). A slug line contains INT or EXT (or an equivalent), a location, and usually a time of day, and may be preceded by a scene number.
+- NEVER start a new scene because the mood changes, a new character speaks, an argument begins, or a long scene feels like two.
+- A scene that runs for pages and covers several emotional beats is still ONE scene.
+- NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
+- The number of scenes you return must equal the number of slug lines in the text.
+
+SCENE NUMBERS:
+Copy the number from the heading EXACTLY as written, as a string. Examples: "12", "47A", "2.01", "00".
+- Do not renumber, do not convert to integers, do not fill gaps, do not correct mistakes.
+- If a heading carries no number, use null.
+- Crews work from the script's own numbering. Our documents must match their pages.
+
+HEADING METADATA — many scripts put production data in the heading. Use it:
+- A parenthesised cast list, e.g. (BIMPE, REX), lists the characters in that scene. When present, USE IT as the cast. Only infer cast from dialogue when the heading gives none.
+- A story day, e.g. (DAY 1), goes in story_day.
+- (FLASHBACK), (DREAM), (MONTAGE), (INTERCUT) go in scene_type.
 
 LOCATION vs SET — this distinction drives scheduling, so get it right:
 - "location" is the place the crew TRAVELS TO: a building, compound or area. This becomes the call sheet address. Example: "Baale's House".
-- "set" is the specific space INSIDE that location where the scene is shot. Example: "Sitting Room", "Backyard", "Parlour".
+- "set" is the specific space INSIDE that location where the scene is shot. Example: "Sitting Room", "Backyard", "Hallway".
+- Some scripts already separate them with a period: "HARMONY COURT. HALLWAY" means location "Harmony Court", set "Hallway". Use that split when it is present rather than guessing.
 - A heading like "INT. BAALE'S SITTING ROOM" means location "Baale's House", set "Sitting Room".
 - Use the SAME location string for every space in the same building, so the whole building can be shot in one visit.
 - If a heading names a place with no interior space, such as "EXT. BUS STOP", repeat the location as the set.
@@ -198,9 +217,11 @@ Return ONLY valid JSON:
   "total_scenes": 2,
   "scenes": [
     {
-      "scene_number": 1,
+      "scene_number": "2.01",
+      "scene_type": "",
+      "story_day": "",
       "int_ext": "INT",
-      "time_of_day": "DAY",
+      "time_of_day": "NIGHT",
       "location": "Travel destination, in English",
       "set": "Space within that location, in English",
       "description": "One sentence summary, in English",
