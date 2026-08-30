@@ -783,7 +783,14 @@
       }
 
       function splitScriptForProcessing(script, maxChunkSize) {
-        const text = script.trim();
+          // Discard everything before the first scene heading. Title pages,
+        // writer credits and episode synopses are not scenes, and asking
+        // the model to ignore them does not reliably work — given a section
+        // containing only a synopsis, it would rather invent a scene than
+        // return nothing. So it never sees them.
+        var raw = script.trim();
+        var firstHeading = raw.search(/(?:^|\n)[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9])/i);
+        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
         if (text.length <= maxChunkSize) return [text];
          // Cut only at scene headings, never mid-scene. A chunk boundary
         // inside a scene makes the model see two half-scenes and report
