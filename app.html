@@ -925,38 +925,28 @@
           }
           chunk.character_breakdown = slateDedupe(chunk.character_breakdown, 'character');
           chunk.outline_schedule = slateDedupe(chunk.outline_schedule, 'set_location');
-          const chunkOffset = sceneOffset;
-          // The AI returns the script's real printed scene numbers. Only apply
-          // an offset if this chunk restarted its numbering from 1.
-          const restarted = chunks.indexOf(chunk) > 0 && scenes.length > 0 && Number(scenes[0].scene_number) <= 1;
-          const shift = function (n) { return restarted ? chunkOffset + Number(n || 1) : Number(n || 1); };
+          // Scene numbers are LABELS, not numbers. "2.01", "47A" and "00"
+          // are all valid and none survive Number(). Converting them was
+          // producing NaN rows and collapsing 2.10 into 2.1.
+          // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
-            merged.scenes.push({ ...scene, scene_number: shift(scene.scene_number) });
-          }
-          sceneOffset += scenes.length;
-          merged.total_scenes += scenes.length;
-          for (const char of (chunk.character_breakdown || [])) {
-            const existing = merged.character_breakdown.find(c => slateKey(c.character) === slateKey(char.character));
-            if (existing) {
-              existing.character = slateBetterLabel(existing.character, char.character);
-              existing.scenes = [...new Set([...existing.scenes, ...(char.scenes || []).map(shift)])];
-              existing.total = existing.scenes.length;
+            var label = scene.scene_number;
+            if (label === undefined || label === null || String(label).trim() === '') {
+              label = null;
             } else {
-              var cs = [...new Set((char.scenes || []).map(shift))];
-              merged.character_breakdown.push({ ...char, scenes: cs, total: cs.length });
+              label = String(label).trim();
             }
+            merged.scenes.push({
+              ...scene,
+              scene_number: label,
+              // Position in the assembled script. This is the stable identity
+              // the schedule and call sheet look up by; scene_number is what
+              // the crew reads on their pages.
+              scene_index: merged.scenes.length + 1
+            });
           }
-          for (const loc of (chunk.outline_schedule || [])) {
-            const existing = merged.outline_schedule.find(l => slateKey(l.set_location) === slateKey(loc.set_location));
-            if (existing) {
-              existing.set_location = slateBetterLabel(existing.set_location, loc.set_location);
-              existing.scenes = [...new Set([...existing.scenes, ...(loc.scenes || []).map(shift)])];
-              existing.total = existing.scenes.length;
-            } else {
-              var ls = [...new Set((loc.scenes || []).map(shift))];
-              merged.outline_schedule.push({ ...loc, scenes: ls, total: ls.length });
-            }
-          }
+          merged.total_scenes = merged.scenes.length;
+         
           const pe = chunk.production_elements || {};
           merged.production_elements.all_cast = [...new Set([...merged.production_elements.all_cast, ...(pe.all_cast || [])])];
           merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
@@ -964,8 +954,53 @@
           merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
           merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
         } 
-        merged.character_breakdown.sort((a, b) => (b.total || 0) - (a.total || 0));
-        return merged;
+         // ── Rebuild the indexes from the assembled scenes ──
+        // These were previously merged per chunk, but a chunk only ever
+        // sees its own scenes, so its counts were local. That is where
+        // "Scenes: 3, 2, 1" came from. Now every chunk is in, so this is
+        // the first moment the numbers can actually be right.
+        // Derived in code, not asked of the model: counting is arithmetic.
+        function labelFor(s) {
+          return (s.scene_number !== null && s.scene_number !== undefined)
+            ? s.scene_number
+            : ('#' + s.scene_index);
+        }
+
+        var charMap = {}, locMap = {};
+
+        merged.scenes.forEach(function (s) {
+          var label = labelFor(s);
+
+          (s.cast || []).forEach(function (c) {
+            var name = String(c || '').trim();
+            if (!name) return;
+            var k = slateKey(name);
+            if (!k) return;
+            if (!charMap[k]) charMap[k] = { character: name, scenes: [] };
+            else charMap[k].character = slateBetterLabel(charMap[k].character, name);
+            if (charMap[k].scenes.indexOf(label) < 0) charMap[k].scenes.push(label);
+          });
+
+          var loc = String(s.location || '').trim();
+          if (loc) {
+            var lk = slateKey(loc);
+            if (!locMap[lk]) locMap[lk] = { set_location: loc, scenes: [] };
+            else locMap[lk].set_location = slateBetterLabel(locMap[lk].set_location, loc);
+            if (locMap[lk].scenes.indexOf(label) < 0) locMap[lk].scenes.push(label);
+          }
+        });
+
+        merged.character_breakdown = Object.keys(charMap).map(function (k) {
+          var c = charMap[k];
+          return { character: c.character, scenes: c.scenes, total: c.scenes.length };
+        }).sort(function (a, b) { return b.total - a.total; });
+
+        merged.outline_schedule = Object.keys(locMap).map(function (k) {
+          var l = locMap[k];
+          return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
+        }).sort(function (a, b) { return b.total - a.total; });
+
+        return merged; 
       }
 
       function wsProgress(pct, label) {
