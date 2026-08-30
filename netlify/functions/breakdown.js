@@ -185,6 +185,11 @@ A new scene begins ONLY at a scene heading (slug line). A slug line contains INT
 - A scene that runs for pages and covers several emotional beats is still ONE scene.
 - NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
 - The number of scenes you return must equal the number of slug lines in the text.
+IGNORE FRONT MATTER:
+A script may open with a title page, episode title, writer credits, a cast list, or an episode synopsis. NONE of these are scenes. Extraction begins at the first slug line and nothing before it.
+- Never create a scene from a synopsis sentence.
+- Never use synopsis wording as a scene description.
+- If a section of text contains no slug line, it contains no scenes. Return an empty scenes array for it.
 
 SCENE NUMBERS:
 Copy the number from the heading EXACTLY as written, as a string. Examples: "12", "47A", "2.01", "00".
