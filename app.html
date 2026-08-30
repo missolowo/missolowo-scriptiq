@@ -1060,7 +1060,8 @@
           + locs.map(function(l) {
             return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
               + '<span style="color:var(--paper,#F4EFE6)">' + (l.set_location || '') + '</span>'
-              + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (l.scenes || []).join(', ') + '</span></div>';
+                            + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (l.scenes || []).join(', ') + '</span>'
+              + '<span style="color:var(--gold,#D4A64A);font-family:var(--font-data);min-width:24px;text-align:right">' + (l.total || (l.scenes || []).length) + '</span></div>';
           }).join('') + '</div>';
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 4 — Production Elements</div>';
         html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
