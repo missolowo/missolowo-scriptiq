@@ -785,7 +785,12 @@
       function splitScriptForProcessing(script, maxChunkSize) {
         const text = script.trim();
         if (text.length <= maxChunkSize) return [text];
-        const sceneBoundary = /\n(?=(?:SCENE\s*\d+|SC\s*\d+|INT\.|EXT\.|I\/E\.|INT\/EXT|INTERIOR[\/\s]|EXTERIOR[\/\s]))/i;
+         // Cut only at scene headings, never mid-scene. A chunk boundary
+        // inside a scene makes the model see two half-scenes and report
+        // them as two, which is where phantom scenes come from.
+        // Covers: "INT. X", "12 EXT. X", "47A. INT. X", "2.01. INT. X",
+        // "2.02.INT. X" (no space), and "SCENE 1  LOCATION  EXT/DAY".
+        const sceneBoundary = /\n(?=[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9]))/i;
         let segments = text.split(sceneBoundary);
         if (segments.length <= 1) {
           segments = splitBySize(text, maxChunkSize);
