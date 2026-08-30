@@ -2005,7 +2005,12 @@
 
         // Layer 1 — standard slug lines: INT. LOCATION - DAY
         // Used across Hollywood, Bollywood and much of Nollywood.
-        var headingRe = /(?:^|\s)(\d+[A-Z]?)?\s*\b(INT\.?|EXT\.?|I\/E\.?|INT\/EXT)[\s.]+(.*)$/i;
+                // Layer 1 — standard slug lines, with the scene number captured.
+        // Must handle decimals ("2.01"), suffixes ("47A", "2.09B") and the
+        // no-space case ("2.02.INT."). The previous pattern expected digits
+        // plus an optional letter, so every episodic number came back empty
+        // and we reported correctly-numbered scripts as unnumbered.
+        var headingRe = /^[ \t]*(?:(?:SCENE|SC)[ \t]*)?([0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \t]*(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b[.\s\/]*(.*)$/i;
 
         // Layer 2 — SCENE n <tab> LOCATION <tab> INT/DAY
         // A standard Nollywood layout. Carries more structure than a slug
