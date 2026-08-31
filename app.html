@@ -1148,6 +1148,29 @@
           }
           wsProgress(92, 'Combining production data...');
           slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+            // Persist the ASSEMBLED breakdown. The server only ever sees one
+          // chunk at a time, so this is the only point where the complete
+          // version exists. Failure here must not lose the user their result,
+          // so it never throws — the breakdown is already on screen.
+          if (!partialFailure && productionId && user) {
+            try {
+              const saveRes = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'breakdown',
+                  production_id: productionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  payload: slateBreakdown
+                })
+              });
+              const saveJson = await saveRes.json();
+              if (!saveJson.saved) console.warn('[Slate] Breakdown not saved:', saveJson.error);
+            } catch (e) {
+              console.warn('[Slate] Breakdown save request failed:', e.message);
+            }
+          }
           try { localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown)); } catch (e) {}
           wsProgress(100, partialFailure ? 'Partial breakdown ready.' : 'Breakdown complete.');
           if (!partialFailure) {
