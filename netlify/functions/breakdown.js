@@ -338,44 +338,6 @@ RULES:
       breakdown.user_role = user.role;
     }
 
-    // ── Persist the hed breakdown ──
-    // Deliberately OUTSIDE the credit block: saving is not billing.
-    // Admins and non-charging paths must still have their work stored.
-       // TEMP DIAGNOSTIC — remove once persistence is confirmed
-    breakdown.save_gate = {
-      isLastChunk: !!isLastChunk,
-      hasUser: !!user,
-      production_id: production_id || null
-    };
-    if (isLastChunk && user && production_id) {
-      try {
-        const saveResult = await supabase.from('breakdowns').upsert({
-          production_id,
-          user_id: user.id,
-          title: breakdown.title || 'Untitled Script',
-          script_language: breakdown.language_detected || language || 'auto',
-          output_language: 'English',
-          scenes: breakdown.scenes || [],
-          character_breakdown: breakdown.character_breakdown || [],
-          outline_schedule: breakdown.outline_schedule || [],
-          production_elements: breakdown.production_elements || {},
-          total_scenes: breakdown.total_scenes || (breakdown.scenes || []).length,
-          created_at: new Date().toISOString()
-        }, { onConflict: 'production_id' });
-
-        if (saveResult && saveResult.error) {
-          breakdown.save_error = saveResult.error.message;
-          breakdown.save_error_details = saveResult.error.details || '';
-        }
-
-        await supabase.from('productions')
-          .update({ title: breakdown.title || 'Untitled Script', updated_at: new Date().toISOString() })
-          .eq('production_id', production_id);
-      } catch (saveErr) {
-        console.error('[Slate] Breakdown save failed:', saveErr.message);
-        breakdown.save_error = saveErr.message;
-      }
-    }
 
     return { statusCode: 200, headers, body: JSON.stringify(breakdown) };
 
