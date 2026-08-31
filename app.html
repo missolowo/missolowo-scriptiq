@@ -1100,6 +1100,7 @@
         var script = extractedScriptText;
         var productionId = (crypto.randomUUID && crypto.randomUUID()) ||
           ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+            window.slateProductionId = productionId;
         generateBtn.disabled = true;
         document.getElementById('wsResults').style.display = 'none';
         try {
