@@ -1241,6 +1241,32 @@
           try { localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule)); } catch (e) {}
           siqTrack('schedule_completed', { total_days: (slateSchedule.schedule || []).length });
           renderWorkspaceSchedule(slateSchedule);
+            // Persist the schedule. Rendered first, so a save failure never
+          // costs the user the result they just paid a credit for.
+          var schedProductionId = (window.slateProductionId || null);
+          if (schedProductionId && user) {
+            try {
+              const schedSave = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'schedule',
+                  production_id: schedProductionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  payload: slateSchedule
+                })
+              });
+              const schedJson = await schedSave.json();
+              if (!schedJson.saved) {
+                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (schedJson.error || 'unknown') + '</div>';
+              }
+            } catch (e) {
+              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
+            }
+          } else {
+            out.innerHTML += '<div style="margin-top:12px;color:var(--warn,#C97E3D);font-size:12px">Save skipped: no production id.</div>';
+          }
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Schedule error') + '</div>';
         } finally {
