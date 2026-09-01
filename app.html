@@ -1335,6 +1335,33 @@
           document.getElementById('wsExportBar').style.display = 'block';
           siqTrack('callsheet_completed', { shoot_day: day });
           renderWorkspaceCallsheet(cs);
+            // Persist this day's call sheet. One row per production per day,
+          // so regenerating a day overwrites it rather than adding a copy.
+          var csProductionId = (window.slateProductionId || null);
+          if (csProductionId && user) {
+            try {
+              const csSave = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'callsheet',
+                  production_id: csProductionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  day_number: day,
+                  payload: cs
+                })
+              });
+              const csJson = await csSave.json();
+              if (!csJson.saved) {
+                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (csJson.error || 'unknown') + '</div>';
+              }
+            } catch (e) {
+              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
+            }
+          } else {
+            out.innerHTML += '<div style="margin-top:12px;color:var(--warn,#C97E3D);font-size:12px">Save skipped: no production id.</div>';
+          } 
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Call sheet error') + '</div>';
         } finally {
