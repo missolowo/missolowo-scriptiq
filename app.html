@@ -1682,7 +1682,7 @@
         var pe = d.production_elements || {};
         var pdf = slateDoc('Script Breakdown');
 
-        pdf.cover(d.title || 'Untitled Production', [
+         pdf.cover((slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Scenes', scenes.length],
           ['Characters', chars.length],
           ['Locations', locs.length]
