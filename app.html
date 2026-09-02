@@ -2289,7 +2289,156 @@
         el.style.display = 'block';
       }
       window.renderHealthPanel = renderHealthPanel;  
-    })(); 
+    })();
+    // ── PRODUCTIONS ──
+      // Lists saved productions and reopens one in full. A filmmaker
+      // returning on day two generates Day 2's call sheet from the
+      // schedule already stored — no re-upload, no second credit.
+ 
+      function prodWhen(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      }
+ 
+      async function loadProductionsList() {
+        var out = document.getElementById('prodListOut');
+        if (!out) return;
+ 
+        var user = getCurrentUser();
+        if (!user) {
+          out.innerHTML = '<div class="prod-note">Sign in to see your saved productions.</div>';
+          return;
+        }
+ 
+        out.innerHTML = '<div class="prod-note">Loading your productions…</div>';
+ 
+        try {
+          var res = await fetch('/.netlify/functions/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'list', user_id: user.id, user_email: user.email })
+          });
+          var data = await res.json();
+ 
+          if (!res.ok) {
+            out.innerHTML = '<div class="prod-note" style="color:var(--error)">' + (data.error || 'Could not load productions.') + '</div>';
+            return;
+          }
+ 
+          var list = data.productions || [];
+          if (!list.length) {
+            out.innerHTML = '<div class="prod-note">No saved productions yet. Break down a script and it will appear here.</div>';
+            return;
+          }
+ 
+          out.innerHTML = '<div class="prod-list">' + list.map(function (p) {
+            var when = prodWhen(p.updated_at || p.created_at);
+            return '<div class="prod-row">'
+              + '<div class="prod-main">'
+              + '<div class="prod-title">' + (p.title || 'Untitled Script') + '</div>'
+              + '<div class="prod-meta">' + (when ? 'Last worked on ' + when : '') + '</div>'
+              + '</div>'
+              + '<button class="prod-open" data-prod="' + p.production_id + '">Open</button>'
+              + '</div>';
+          }).join('') + '</div>';
+ 
+        } catch (e) {
+          out.innerHTML = '<div class="prod-note" style="color:var(--error)">Could not reach the server. Check your connection and try again.</div>';
+        }
+      }
+ 
+      async function openProduction(productionId) {
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+ 
+        var out = document.getElementById('prodListOut');
+        if (out) out.innerHTML = '<div class="prod-note">Opening production…</div>';
+ 
+        try {
+          var res = await fetch('/.netlify/functions/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'open',
+              production_id: productionId,
+              user_id: user.id,
+              user_email: user.email
+            })
+          });
+          var data = await res.json();
+ 
+          if (!res.ok || !data.breakdown) {
+            if (out) out.innerHTML = '<div class="prod-note" style="color:var(--error)">' + (data.error || 'Could not open this production.') + '</div>';
+            return;
+          }
+ 
+          // Restore state. This production becomes the current one, so
+          // anything generated from here saves back to it rather than
+          // starting a new production.
+          window.slateProductionId = data.production.production_id;
+          slateBreakdown = data.breakdown;
+          slateSchedule = data.schedule || null;
+          slateCallsheet = null;
+          if (data.script_text) extractedScriptText = data.script_text;
+ 
+          try {
+            localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown));
+            if (slateSchedule) localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule));
+          } catch (e) {}
+ 
+          // Render into the Production Center
+          var results = document.getElementById('wsResults');
+          if (results) results.style.display = 'block';
+          var upload = document.getElementById('uploadState');
+          if (upload) upload.style.display = 'none';
+          var exportBar = document.getElementById('wsExportBar');
+          if (exportBar) exportBar.style.display = 'block';
+ 
+          if (typeof renderWorkspaceBreakdown === 'function') {
+            renderWorkspaceBreakdown(slateBreakdown);
+          }
+          if (slateSchedule && typeof renderWorkspaceSchedule === 'function') {
+            renderWorkspaceSchedule(slateSchedule);
+          }
+          if (data.start_date) {
+            var sd = document.getElementById('wsStartDate');
+            if (sd) sd.value = data.start_date;
+          }
+          if (data.shoot_days) {
+            var shd = document.getElementById('wsShootDays');
+            if (shd) shd.value = data.shoot_days;
+          }
+ 
+          // Switch to the Production Center where the work lives
+          var target = document.querySelector('[data-view="home"]');
+          if (target) {
+            document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+            target.classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+            var navHome = document.querySelector('.nav-item[href="#home"]');
+            if (navHome) navHome.classList.add('active');
+          }
+          window.scrollTo(0, 0);
+ 
+        } catch (e) {
+          if (out) out.innerHTML = '<div class="prod-note" style="color:var(--error)">Could not reach the server. Check your connection and try again.</div>';
+        }
+      }
+ 
+      // Delegated, so rows added later work without rebinding.
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-prod]');
+        if (!btn) return;
+        openProduction(btn.getAttribute('data-prod'));
+      });
+ 
+      // Refresh the list whenever the Productions view is opened.
+      document.querySelectorAll('.nav-item[href="#productions"]').forEach(function (link) {
+        link.addEventListener('click', function () { setTimeout(loadProductionsList, 0); });
+      });
+     if (location.hash === '#productions') setTimeout(loadProductionsList, 0);
   </script>
 </body>
 </html>
