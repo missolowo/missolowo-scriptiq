@@ -212,6 +212,13 @@ LOCATION vs SET — this distinction drives scheduling, so get it right:
 - Use the SAME location string for every space in the same building, so the whole building can be shot in one visit.
 - If a heading names a place with no interior space, such as "EXT. BUS STOP", repeat the location as the set.
 
+BACKGROUND ACTORS:
+Background actors are performers with no name and no dialogue who populate a scene — passersby, villagers, market traders, mourners, guests, commuters, a crowd.
+- Put them in "background" as a short description in the script's own terms: "Passersby", "Villagers at the coronation", "Market traders".
+- Leave "background" empty when a scene has none.
+- NEVER estimate a number. Only record a count in "background_count" if the script itself states one, e.g. "about twenty villagers". Otherwise leave it null.
+- How many background actors a scene needs is a decision for the producer and director based on budget and location. Our job is to say WHERE background is needed and WHAT KIND, never how many.
+- Named characters with dialogue are cast, not background. Do not list them twice.
 SCREENPLAY:
 ${script.trim()}
 
@@ -233,6 +240,8 @@ Return ONLY valid JSON:
       "set": "Space within that location, in English",
       "description": "One sentence summary, in English",
       "cast": ["Character Name"],
+      "background": "",
+      "background_count": null,
       "props": ["prop item, in English"],
       "costume": ["costume item, in English"],
       "equipment": ["equipment item, in English"],
