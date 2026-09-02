@@ -1784,7 +1784,6 @@
             pdf.gap(1);
             pdf.labelledList('Cast', sc.cast_required || sc.cast);
             pdf.labelledList('Props', sc.props);
-            pdf.labelledList('Pages', [slateEighths(sc).label]);
             pdf.gap(3);
             pdf.rule();
           });
@@ -1794,7 +1793,6 @@
             pdf.gap(4);
           }
           pdf.check(12);
-          pdf.labelledList('Day Pages', [slateTotalEighths(day.scenes)], 15);
         });
 
         if (s.cast_release_schedule && s.cast_release_schedule.length) {
