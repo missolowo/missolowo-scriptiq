@@ -1775,8 +1775,10 @@
           pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || ''));
           (day.scenes || []).forEach(function(sc) {
             pdf.check(24);
-            pdf.sceneNumeral(sc.scene_number);
-            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + (sc.location || sc.set_location || ''));
+              pdf.sceneNumeral(sc.scene_number);
+             // Day header carries the location; the row names the SET —
+            // which room, not which building.
+            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + (sc.set || sc.location || sc.set_location || ''));               
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
