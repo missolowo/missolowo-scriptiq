@@ -117,16 +117,19 @@ exports.handler = async function(event, context) {
         set: s.set || s.location || '',
         description: s.description || '',
         cast: s.cast || [],
+        background: s.background || '',
+        background_count: s.background_count || null,
         props: s.props || [],
         costume: s.costume || []
       };
     });
-
     // Character identity key. "Baale" and "BAALE" are one actor and must
     // never appear as two rows with two call times on a printed sheet.
     // Strips case, accents and punctuation for matching only.
     function castKey(name) {
       return String(name || '')
+        // "Ernest" and "Ernest (V.O.)" are one actor — one row, one call time.
+        .replace(/\s*\((?:V\.?O\.?|O\.?S\.?|O\.?C\.?|CONT'?D|CONTINUED|PRE-?LAP|FILTERED|ON\s+PHONE|OFF)\)\s*/gi, ' ')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toUpperCase()
@@ -134,7 +137,6 @@ exports.handler = async function(event, context) {
         .replace(/\s+/g, ' ')
         .trim();
     }
-
     // Prefer the more readable spelling: mixed case over shouting.
     function betterName(a, b) {
       var A = String(a || ''), B = String(b || '');
