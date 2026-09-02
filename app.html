@@ -1020,7 +1020,24 @@
           merged.total_scenes = merged.scenes.length;
          
           const pe = chunk.production_elements || {};
-          merged.production_elements.all_cast = [...new Set([...merged.production_elements.all_cast, ...(pe.all_cast || [])])];
+          // Cast names need the same normalisation as Report 2, or "Abake"
+          // and "ABAKE" appear as two people in the elements list while
+          // Report 2 correctly shows one.
+          (pe.all_cast || []).forEach(function (name) {
+            var clean = String(name || '').trim();
+            if (!clean) return;
+            var k = slateKey(clean);
+            if (!k) return;
+            var found = -1;
+            for (var ci = 0; ci < merged.production_elements.all_cast.length; ci++) {
+              if (slateKey(merged.production_elements.all_cast[ci]) === k) { found = ci; break; }
+            }
+            if (found >= 0) {
+              merged.production_elements.all_cast[found] = slateBetterLabel(merged.production_elements.all_cast[found], clean);
+            } else {
+              merged.production_elements.all_cast.push(clean);
+            }
+          });
           merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
           merged.production_elements.all_costume = [...new Set([...merged.production_elements.all_costume, ...(pe.all_costume || [])])];
           merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
