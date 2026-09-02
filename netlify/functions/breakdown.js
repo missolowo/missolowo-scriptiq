@@ -164,14 +164,16 @@ exports.handler = async function(event) {
        // Output is ALWAYS English regardless of the script's language (PM ruling,
     // Aug 2026). This also prevents the same place appearing twice under
     // different languages, e.g. "Ile Abake" and "Abake's House".
-        const langInstruction = ((!language || language === 'auto')
+       const langInstruction = ((!language || language === 'auto')
       ? 'The screenplay may be in any language. Detect it for PARSING ONLY. '
       : `The script is in ${language}. Use that for PARSING ONLY. `)
       + 'OUTPUT LANGUAGE IS ALWAYS ENGLISH, whatever language the screenplay is '
-      + 'written in. Every scene description, location name, set name, prop, costume '
-      + 'and equipment item must be written in English. Translate location and set '
-      + 'names to English and use the SAME English name for the same physical place '
-      + 'every time it appears. Keep character names exactly as written in the script.';
+      + 'written in. Every scene description, prop, costume and equipment item '
+      + 'must be written in English. '
+      + 'Do NOT translate names: character names, location names and set names '
+      + 'are proper nouns and must be copied EXACTLY as the script writes them. '
+      + 'If the script says "Baale\'s House", write "Baale\'s House" — never '
+      + '"Chief\'s House". Use the same spelling every time a place appears.';  
     const sectionNote = totalChunks > 1
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
