@@ -945,8 +945,12 @@
            // Real scripts spell names inconsistently — "OWOLABI'S LIVINGROOM",
       // "Owolabi living room", "Owolabi's Living Room" are one place.
       // Match on a normalized key; display the cleanest spelling found.
-       function slateKey(name) {
+      function slateKey(name) {
         return String(name || '')
+          // Strip dialogue modifiers before matching. "Ernest" and
+          // "Ernest (V.O.)" are one actor — on a call sheet they must be
+          // one row with one call time, not two.
+          .replace(/\s*\((?:V\.?O\.?|O\.?S\.?|O\.?C\.?|CONT'?D|CONTINUED|PRE-?LAP|FILTERED|ON\s+PHONE|OFF)\)\s*/gi, ' ')
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
@@ -954,7 +958,7 @@
           .replace(/[^A-Z0-9 ]/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-      }
+      } 
   
       function slateBetterLabel(a, b) {
         var A = String(a || ''), B = String(b || '');
