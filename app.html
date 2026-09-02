@@ -90,6 +90,51 @@
   .status-chip.soon { color: var(--gold-deep); background: var(--gold-tint); border-color: rgba(212,166,74,0.25); }
   .tool-card-action { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 var(--s-4); background: var(--gold); color: var(--ink-0); font-weight: 600; font-size: var(--t-small); border-radius: var(--r-control); text-decoration: none; margin-top: var(--s-2); }
   .tool-card-action:hover { background: var(--gold-bright); }
+  /* ── Productions list ── */
+  .prod-list { display: flex; flex-direction: column; gap: var(--s-3); }
+  .prod-row {
+    background: var(--ink-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-card);
+    padding: var(--s-4) var(--s-6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+  }
+  .prod-row:hover { border-color: var(--line-2); }
+  .prod-main { min-width: 0; }
+  .prod-title {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: var(--t-h3);
+    color: var(--paper);
+    margin-bottom: 2px;
+  }
+  .prod-meta {
+    font-family: var(--font-data);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+  }
+  .prod-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 var(--s-4);
+    background: var(--gold);
+    color: var(--ink-0);
+    font-weight: 600;
+    font-size: var(--t-small);
+    border-radius: var(--r-control);
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .prod-open:hover { background: var(--gold-bright); }
+  .prod-note { color: var(--text-2); font-size: var(--t-small); }
   .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
   .auth-overlay.open { display: flex; }
   .auth-modal { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); width: 100%; max-width: 380px; padding: var(--s-8); position: relative; }
