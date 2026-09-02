@@ -204,13 +204,22 @@ HEADING METADATA — many scripts put production data in the heading. Use it:
 - A story day, e.g. (DAY 1), goes in story_day.
 - (FLASHBACK), (DREAM), (MONTAGE), (INTERCUT) go in scene_type.
 
-LOCATION vs SET — this distinction drives scheduling, so get it right:
-- "location" is the place the crew TRAVELS TO: a building, compound or area. This becomes the call sheet address. Example: "Baale's House".
-- "set" is the specific space INSIDE that location where the scene is shot. Example: "Sitting Room", "Backyard", "Hallway".
-- Some scripts already separate them with a period: "HARMONY COURT. HALLWAY" means location "Harmony Court", set "Hallway". Use that split when it is present rather than guessing.
-- A heading like "INT. BAALE'S SITTING ROOM" means location "Baale's House", set "Sitting Room".
-- Use the SAME location string for every space in the same building, so the whole building can be shot in one visit.
-- If a heading names a place with no interior space, such as "EXT. BUS STOP", repeat the location as the set.
+LOCATION vs SET — read these from the HEADING ONLY:
+The heading is the only source. Never infer a location from dialogue, action or who appears in the scene. If the heading says ABAKE'S SITTING ROOM, the location is Abake's House — even if the characters spend the scene discussing Baale.
+
+- "location" is the place the crew TRAVELS TO: a building, compound or area. This becomes the call sheet address.
+- "set" is the specific space INSIDE that location where the scene is shot.
+
+How to split a heading:
+- "ABAKE'S SITTING ROOM" → location "Abake's House", set "Sitting Room". The possessive names the building; the room is the set.
+- "BAALE'S SITTING ROOM" → location "Baale's House", set "Sitting Room". Same rule, different owner.
+- "BAALE'S HOUSE" → location "Baale's House", set "Baale's House". No room named, so repeat it.
+- "HARMONY COURT. HALLWAY" → location "Harmony Court", set "Hallway". Some scripts already split with a period; use it.
+- "BUS-STOP" → location "Bus-Stop", set "Bus-Stop".
+
+Every room belonging to the same owner shares ONE location, so the whole building shoots in one visit. "Abake's Sitting Room", "Abake's Kitchen" and "Abake's House" are all location "Abake's House".
+
+COPY NAMES EXACTLY. "ABE IGI" stays "Abe Igi" — do not translate it to "Under the Tree". Location and set names are proper nouns, like character names. Fix only capitalisation.
 
 BACKGROUND ACTORS:
 Background actors are performers with no name and no dialogue who populate a scene — passersby, villagers, market traders, mourners, guests, commuters, a crowd.
