@@ -1919,11 +1919,11 @@
         scenes.forEach(function(s) {
           pdf.check(20);
           pdf.sceneNumeral(s.scene_number);
-          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + (s.location || ''));
+          // Location is the address in the header; the row names the SET.
+          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + (s.set || s.location || ''));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
-          if (typeof slateEighths === 'function') pdf.labelledList('Pages', [slateEighths(s).label]);
           pdf.gap(2);
           pdf.rule();
         });
