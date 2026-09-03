@@ -878,7 +878,10 @@
             if (!line) continue;
             if (/^(fade in|fade out|written by|by|screenplay|draft|revision|copyright|\u00a9)/i.test(line)) continue;
             if (line.length < 2 || line.length > 120) continue;
-            window.slateScriptTitle = line.replace(/\s+/g, ' ');
+             window.slateScriptTitle = line
+              .replace(/^(title|script title|episode title)\s*[:\-–]\s*/i, '')
+              .replace(/\s+/g, ' ')
+              .trim();
             break;
           }
         }
