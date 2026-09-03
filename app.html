@@ -2345,16 +2345,14 @@
 
         out.innerHTML = '<div class="prod-note">Function reached. Checking session…</div>';
 
+        // getCurrentUser lives in another scope, so read the session
+        // directly. Same key, same shape.
         var user = null;
-        if (typeof getCurrentUser !== 'function') {
-          out.innerHTML = '<div class="prod-note" style="color:var(--error)">getCurrentUser is not available in this scope.</div>';
-          return;
-        }
         try {
-          user = getCurrentUser();
+          var rawUser = localStorage.getItem('scriptiq_user');
+          user = rawUser ? JSON.parse(rawUser) : null;
         } catch (e) {
-          out.innerHTML = '<div class="prod-note" style="color:var(--error)">Session check failed: ' + e.message + '</div>';
-          return;
+          user = null;
         }
         if (!user) {
           out.innerHTML = '<div class="prod-note">Sign in to see your saved productions.</div>';
