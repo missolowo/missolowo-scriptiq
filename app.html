@@ -2555,6 +2555,23 @@
         link.addEventListener('click', function () { setTimeout(loadProductionsList, 0); });
       });
      if (location.hash === '#productions') setTimeout(loadProductionsList, 0);
+      // New Production — clears the session and returns to the uploader.
+      // Lives here so both the Productions page and the Production Center
+      // can call it; the actual clearing happens in the workspace scope.
+      function slateStartNewProduction() {
+        if (typeof window.slateNewProduction === 'function') {
+          window.slateNewProduction();
+        }
+        var target = document.querySelector('[data-view="home"]');
+        if (target) {
+          document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+          target.classList.add('active');
+          document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+          var navHome = document.querySelector('.nav-item[href="#home"]');
+          if (navHome) navHome.classList.add('active');
+        }
+      }
+      window.slateStartNewProduction = slateStartNewProduction;
   </script>
 </body>
 </html>
