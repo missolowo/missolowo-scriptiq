@@ -868,6 +868,20 @@
         var raw = script.trim();
         var firstHeading = raw.search(/(?:^|\n)[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9])/i);
         const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
+        // The title lives in the front matter we are about to discard, so
+        // take it first. It is normally the first substantial line, skipping
+        // labels like "FADE IN" and any "written by" credit.
+        if (firstHeading > 0) {
+          var frontMatter = raw.slice(0, firstHeading).split(/\r?\n/);
+          for (var fm = 0; fm < frontMatter.length; fm++) {
+            var line = frontMatter[fm].trim();
+            if (!line) continue;
+            if (/^(fade in|fade out|written by|by|screenplay|draft|revision|copyright|\u00a9)/i.test(line)) continue;
+            if (line.length < 2 || line.length > 120) continue;
+            window.slateScriptTitle = line.replace(/\s+/g, ' ');
+            break;
+          }
+        }
         if (text.length <= maxChunkSize) return [text];
          // Cut only at scene headings, never mid-scene. A chunk boundary
         // inside a scene makes the model see two half-scenes and report
