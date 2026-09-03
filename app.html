@@ -982,7 +982,18 @@
       } 
       function mergeBreakdownChunks(chunks) {
         const merged = {
-          title: chunks[0].title || 'Untitled Script',
+           // Front matter is stripped before splitting, so the first chunk
+          // may never see the title page. Take the first real title any
+          // chunk reports rather than assuming chunk zero has it.
+          title: (function () {
+            for (var t = 0; t < chunks.length; t++) {
+              var candidate = chunks[t] && chunks[t].title;
+              if (candidate && String(candidate).trim() && !/^untitled/i.test(candidate)) {
+                return String(candidate).trim();
+              }
+            }
+            return 'Untitled Script';
+          })(), 
           language_detected: chunks[0].language_detected || 'Unknown',
           total_scenes: 0,
           scenes: [],
