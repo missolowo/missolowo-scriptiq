@@ -2413,8 +2413,6 @@
         var out = document.getElementById('prodListOut');
         if (!out) return;
 
-        out.innerHTML = '<div class="prod-note">Function reached. Checking session…</div>';
-
         // getCurrentUser lives in another scope, so read the session
         // directly. Same key, same shape.
         var user = null;
@@ -2428,7 +2426,7 @@
           out.innerHTML = '<div class="prod-note">Sign in to see your saved productions.</div>';
           return;
         }
-        out.innerHTML = '<div class="prod-note">Signed in as ' + (user.email || 'unknown') + ' · id ' + (user.id || 'MISSING') + '. Fetching…</div>';
+           out.innerHTML = '<div class="prod-note">Loading your productions…</div>'; 
  
  
         try {
