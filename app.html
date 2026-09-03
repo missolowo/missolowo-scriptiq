@@ -1288,7 +1288,19 @@
       // SHOOTING SCHEDULE + CALL SHEET — the connected pipeline
       // ============================================================
       var slateSchedule = null;
-            var slateCallsheet = null;
+      var slateCallsheet = null;
+       // Bridge for the Productions view, which lives in a separate script
+      // block and cannot assign to these variables directly.
+      window.slateRestoreProduction = function (data) {
+        slateBreakdown = data.breakdown;
+        slateSchedule = data.schedule || null;
+        slateCallsheet = null;
+        if (data.script_text) extractedScriptText = data.script_text;
+        if (typeof renderWorkspaceResults === 'function') renderWorkspaceResults(slateBreakdown, null, { complete: true });
+        if (slateSchedule && typeof renderWorkspaceSchedule === 'function') renderWorkspaceSchedule(slateSchedule);
+      };
+
+      var slateProductionDetails = {
       var slateProductionDetails = {
         // Operational data the AI cannot know — user-editable (PM Option A).
         // V3 Production Profile will bind to this same object.
