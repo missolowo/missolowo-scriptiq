@@ -2439,10 +2439,13 @@
           // anything generated from here saves back to it rather than
           // starting a new production.
           window.slateProductionId = data.production.production_id;
-          slateBreakdown = data.breakdown;
-          slateSchedule = data.schedule || null;
-          slateCallsheet = null;
-          if (data.script_text) extractedScriptText = data.script_text;
+
+          // Hand the restored data to the workspace scope, which owns
+          // these variables. Assigning them from here would create new
+          // locals instead of updating the real ones.
+          if (typeof window.slateRestoreProduction === 'function') {
+            window.slateRestoreProduction(data);
+          }
  
           try {
             localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown));
@@ -2457,12 +2460,6 @@
           var exportBar = document.getElementById('wsExportBar');
           if (exportBar) exportBar.style.display = 'block';
  
-          if (typeof renderWorkspaceBreakdown === 'function') {
-            renderWorkspaceBreakdown(slateBreakdown);
-          }
-          if (slateSchedule && typeof renderWorkspaceSchedule === 'function') {
-            renderWorkspaceSchedule(slateSchedule);
-          }
           if (data.start_date) {
             var sd = document.getElementById('wsStartDate');
             if (sd) sd.value = data.start_date;
