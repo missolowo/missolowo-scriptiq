@@ -1328,7 +1328,42 @@
         if (typeof renderWorkspaceResults === 'function') renderWorkspaceResults(slateBreakdown, null, { complete: true });
         if (slateSchedule && typeof renderWorkspaceSchedule === 'function') renderWorkspaceSchedule(slateSchedule);
       };
+      // Close the current production and return to a clean uploader.
+      // Everything is already saved, so nothing is lost — this just
+      // clears the session so a new script can be started.
+      window.slateNewProduction = function () {
+        slateBreakdown = null;
+        slateSchedule = null;
+        slateCallsheet = null;
+        extractedScriptText = '';
+        window.slateProductionId = null;
+        window.slateScriptTitle = null;
 
+        try {
+          localStorage.removeItem('slate_breakdown');
+          localStorage.removeItem('slate_schedule');
+        } catch (e) {}
+
+        var results = document.getElementById('wsResults');
+        if (results) { results.innerHTML = ''; results.style.display = 'none'; }
+        var exportBar = document.getElementById('wsExportBar');
+        if (exportBar) exportBar.style.display = 'none';
+        var schedOut = document.getElementById('wsScheduleOut');
+        if (schedOut) schedOut.innerHTML = '';
+        var csOut = document.getElementById('wsCallsheetOut');
+        if (csOut) csOut.innerHTML = '';
+        var upload = document.getElementById('uploadState');
+        if (upload) upload.style.display = 'block';
+
+        var fileMeta = document.getElementById('fileMeta');
+        if (fileMeta) { fileMeta.textContent = ''; fileMeta.classList.remove('error'); }
+        var health = document.getElementById('wsHealthPanel');
+        if (health) health.innerHTML = '';
+        var generateBtn = document.getElementById('generateBtn');
+        if (generateBtn) generateBtn.classList.remove('ready');
+
+        window.scrollTo(0, 0);
+      };
       var slateProductionDetails = {
         // Operational data the AI cannot know — user-editable (PM Option A).
         // V3 Production Profile will bind to this same object.
