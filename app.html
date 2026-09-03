@@ -504,6 +504,10 @@
         view.classList.add('active');
         document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
         this.classList.add('active');
+         // Load the Productions list when its view becomes active.
+        if (target === 'productions' && typeof loadProductionsList === 'function') {
+          loadProductionsList();
+        }
       });
     });
   </script>
