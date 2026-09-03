@@ -1432,9 +1432,7 @@
             } catch (e) {
               out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
             }
-          } else {
-            out.innerHTML += '<div style="margin-top:12px;color:var(--warn,#C97E3D);font-size:12px">Save skipped: no production id.</div>';
-          }
+           }
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Schedule error') + '</div>';
         } finally {
@@ -1527,9 +1525,7 @@
             } catch (e) {
               out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
             }
-          } else {
-            out.innerHTML += '<div style="margin-top:12px;color:var(--warn,#C97E3D);font-size:12px">Save skipped: no production id.</div>';
-          } 
+          }
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Call sheet error') + '</div>';
         } finally {
