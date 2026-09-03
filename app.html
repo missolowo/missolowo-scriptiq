@@ -835,7 +835,7 @@
 
       generateBtn.addEventListener('click', function() {
         if (!extractedScriptText) return;
-        var user = getCurrentUser();
+         var user = getCurrentUser();
         if (!user) { openAuthModal('login'); return; }
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var hasCredits = isAdmin || (user.credits_remaining || 0) > 0;
