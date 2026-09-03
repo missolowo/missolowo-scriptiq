@@ -2395,11 +2395,13 @@
           out.innerHTML = '<div class="prod-note" style="color:var(--error)">Could not reach the server. Check your connection and try again.</div>';
         }
       }
- 
-      async function openProduction(productionId) {
-        var user = getCurrentUser();
+          async function openProduction(productionId) {
+        var user = null;
+        try {
+          var rawU = localStorage.getItem('scriptiq_user');
+          user = rawU ? JSON.parse(rawU) : null;
+        } catch (e) { user = null; }
         if (!user) { openAuthModal('login'); return; }
- 
         var out = document.getElementById('prodListOut');
         if (out) out.innerHTML = '<div class="prod-note">Opening production…</div>';
  
