@@ -149,7 +149,7 @@ exports.handler = async function(event) {
       }
     }
 
-    // ── Register production on first chunk (idempotent — safe if retried) ──
+   // ── Register production on first chunk (idempotent — safe if retried) ──
     if (isFirstChunk && production_id && user) {
       await supabase.from('productions')
         .upsert({
@@ -158,22 +158,80 @@ exports.handler = async function(event) {
           status: 'processing',
           created_at: new Date().toISOString()
         }, { onConflict: 'production_id', ignoreDuplicates: true });
-    }
+    } 
 
     // ── Build prompt ──
-    const langInstruction = (!language || language === 'auto')
-      ? 'Auto-detect the script language.'
-      : `The script is in ${language}.`;
-
+       // Output is ALWAYS English regardless of the script's language (PM ruling,
+    // Aug 2026). This also prevents the same place appearing twice under
+    // different languages, e.g. "Ile Abake" and "Abake's House".
+       const langInstruction = ((!language || language === 'auto')
+      ? 'The screenplay may be in any language. Detect it for PARSING ONLY. '
+      : `The script is in ${language}. Use that for PARSING ONLY. `)
+      + 'OUTPUT LANGUAGE IS ALWAYS ENGLISH, whatever language the screenplay is '
+      + 'written in. Every scene description, prop, costume and equipment item '
+      + 'must be written in English. '
+      + 'Do NOT translate names: character names, location names and set names '
+      + 'are proper nouns and must be copied EXACTLY as the script writes them. '
+      + 'If the script says "Baale\'s House", write "Baale\'s House" — never '
+      + '"Chief\'s House". Use the same spelling every time a place appears.';  
     const sectionNote = totalChunks > 1
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
 
-    const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
+      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
 ${langInstruction}
 
+SCENE BOUNDARIES — the most important rule in this task:
+A new scene begins ONLY at a scene heading (slug line). A slug line contains INT or EXT (or an equivalent), a location, and usually a time of day, and may be preceded by a scene number.
+- NEVER start a new scene because the mood changes, a new character speaks, an argument begins, or a long scene feels like two.
+- A scene that runs for pages and covers several emotional beats is still ONE scene.
+- NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
+- The number of scenes you return must equal the number of slug lines in the text.
+IGNORE FRONT MATTER:
+A script may open with a title page, episode title, writer credits, a cast list, or an episode synopsis. NONE of these are scenes. Extraction begins at the first slug line and nothing before it.
+- Never create a scene from a synopsis sentence.
+- Never use synopsis wording as a scene description.
+- If a section of text contains no slug line, it contains no scenes. Return an empty scenes array for it.
+
+SCENE NUMBERS:
+Copy the number from the heading EXACTLY as written, as a string. Examples: "12", "47A", "2.01", "00".
+- Do not renumber, do not convert to integers, do not fill gaps, do not correct mistakes.
+- If a heading carries no number, use null.
+- Crews work from the script's own numbering. Our documents must match their pages.
+
+HEADING METADATA — many scripts put production data in the heading. Use it:
+- A parenthesised cast list, e.g. (BIMPE, REX), lists the characters in that scene. When present, USE IT as the cast. Only infer cast from dialogue when the heading gives none.
+- A story day, e.g. (DAY 1), goes in story_day.
+- (FLASHBACK), (DREAM), (MONTAGE), (INTERCUT) go in scene_type.
+
+LOCATION vs SET — read these from the HEADING ONLY:
+The heading is the only source. Never infer a location from dialogue, action or who appears in the scene. If the heading says ABAKE'S SITTING ROOM, the location is Abake's House — even if the characters spend the scene discussing Baale.
+
+- "location" is the place the crew TRAVELS TO: a building, compound or area. This becomes the call sheet address.
+- "set" is the specific space INSIDE that location where the scene is shot.
+
+How to split a heading:
+- "ABAKE'S SITTING ROOM" → location "Abake's House", set "Sitting Room". The possessive names the building; the room is the set.
+- "BAALE'S SITTING ROOM" → location "Baale's House", set "Sitting Room". Same rule, different owner.
+- "BAALE'S HOUSE" → location "Baale's House", set "Baale's House". No room named, so repeat it.
+- "HARMONY COURT. HALLWAY" → location "Harmony Court", set "Hallway". Some scripts already split with a period; use it.
+- "BUS-STOP" → location "Bus-Stop", set "Bus-Stop".
+
+Every room belonging to the same owner shares ONE location, so the whole building shoots in one visit. "Abake's Sitting Room", "Abake's Kitchen" and "Abake's House" are all location "Abake's House".
+
+COPY NAMES EXACTLY. "ABE IGI" stays "Abe Igi" — do not translate it to "Under the Tree". Location and set names are proper nouns, like character names. Fix only capitalisation.
+
+BACKGROUND ACTORS:
+Background actors are performers with no name and no dialogue who populate a scene — passersby, villagers, market traders, mourners, guests, commuters, a crowd.
+- Put them in "background" as a short description in the script's own terms: "Passersby", "Villagers at the coronation", "Market traders".
+- Leave "background" empty when a scene has none.
+- NEVER estimate a number. Only record a count in "background_count" if the script itself states one, e.g. "about twenty villagers". Otherwise leave it null.
+- How many background actors a scene needs is a decision for the producer and director based on budget and location. Our job is to say WHERE background is needed and WHAT KIND, never how many.
+- Named characters with dialogue are cast, not background. Do not list them twice.
 SCREENPLAY:
 ${script.trim()}
+
+REMINDER: write every description, location, set, prop, costume and equipment value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
 
 Return ONLY valid JSON:
 {
@@ -182,24 +240,29 @@ Return ONLY valid JSON:
   "total_scenes": 2,
   "scenes": [
     {
-      "scene_number": 1,
+      "scene_number": "2.01",
+      "scene_type": "",
+      "story_day": "",
       "int_ext": "INT",
-      "time_of_day": "DAY",
-      "location": "Location name",
-      "description": "One sentence summary",
+      "time_of_day": "NIGHT",
+      "location": "Travel destination, in English",
+      "set": "Space within that location, in English",
+      "description": "One sentence summary, in English",
       "cast": ["Character Name"],
-      "props": ["prop item"],
-      "costume": ["costume item"],
-      "equipment": ["equipment item"],
-      "production_notes": "Notes"
+      "background": "",
+      "background_count": null,
+      "props": ["prop item, in English"],
+      "costume": ["costume item, in English"],
+      "equipment": ["equipment item, in English"],
+      "production_notes": "Notes, in English"
     }
   ],
   "character_breakdown": [
     { "character": "CHARACTER NAME", "scenes": [1], "total": 1 }
   ],
   "outline_schedule": [
-    { "set_location": "Location Name", "scenes": [1], "total": 1 }
-  ],
+    { "set_location": "Location Name, in English", "scenes": [1], "total": 1 }
+  ],  
   "production_elements": {
     "all_cast": ["Character Name"],
     "all_props": ["prop item"],
@@ -223,9 +286,15 @@ RULES:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 16000,
-        temperature: 0.3,
+        temperature: 0.1,
         response_format: { type: "json_object" },
-        messages: [{ role: 'user', content: prompt }]
+              messages: [
+          {
+            role: 'system',
+            content: 'You are a professional film script breakdown supervisor. You read screenplays in any language, but you ALWAYS write your output in English. Scene descriptions, location names, set names, props, costume and equipment are written in English every time, without exception, even when the screenplay is in Yoruba, Igbo, Hausa, French, Arabic or any other language. Never copy or paraphrase the screenplay in its original language. Character names are the only exception: keep those exactly as written. This rule applies to every scene in the output, including the last one.'
+          },
+          { role: 'user', content: prompt }
+        ]
       })
     });
 
@@ -265,7 +334,7 @@ RULES:
           credits_used: (user.credits_used || 0) + 1
         }).eq('id', user.id);
 
-        // Mark production charged + completed (idempotency record)
+                // Mark production charged + completed (idempotency record)
         if (production_id) {
           await supabase.from('productions').upsert({
             production_id,
@@ -273,7 +342,8 @@ RULES:
             status: 'completed',
             charged_at: new Date().toISOString()
           }, { onConflict: 'production_id' });
-        }
+        } 
+        
 
         breakdown.credits_remaining = finalCredits;
       } else {
@@ -287,6 +357,7 @@ RULES:
       breakdown.credits_remaining = user.credits_remaining;
       breakdown.user_role = user.role;
     }
+
 
     return { statusCode: 200, headers, body: JSON.stringify(breakdown) };
 

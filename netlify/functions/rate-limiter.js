@@ -42,7 +42,6 @@ async function checkRateLimit(ip, functionName, maxRequests, supabaseSecret, use
       .eq('id', existing.id);
 
     return { allowed: true, remaining: maxRequests - (existing.count + 1), resetAt: getResetTime() };
-
   } catch (err) {
     console.error('[RateLimit] Error:', err.message);
     return { allowed: true, remaining: 99, resetAt: getResetTime() };
@@ -68,8 +67,22 @@ function rateLimitResponse(resetAt, functionName) {
   const resetTime = new Date(resetAt).toLocaleTimeString('en-US', {
     hour: '2-digit', minute: '2-digit', hour12: true
   });
+
   return {
     statusCode: 429,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS'
+    },
+    body: JSON.stringify({
+      error: 'Rate limit reached',
+      message: `You've reached the hourly limit for this action. Please try again after ${resetTime}.`,
+      function: functionName,
+      resetAt
+    })
+  };
+}
+
+module.exports = { checkRateLimit, getClientIP, rateLimitResponse, getResetTime };

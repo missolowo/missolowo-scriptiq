@@ -1,0 +1,2575 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Missolowo Slate — Production Workspace</title>
+<link rel="stylesheet" href="tokens.css">
+<script>
+  // jsPDF loader with fallbacks — mobile networks drop CDN requests
+  // often enough that a single source isn't reliable.
+  (function () {
+    var sources = [
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'
+    ];
+    var i = 0;
+    function tryNext() {
+      if (i >= sources.length) {
+        console.warn('[Slate] PDF library could not be loaded from any source.');
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = sources[i++];
+      s.onerror = tryNext; 
+  document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+</script>  
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>  
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ink-0); color: var(--paper); font-family: var(--font-text); font-size: var(--t-body); line-height: var(--t-body-lh); min-height: 100vh; display: flex; }
+  a { color: inherit; text-decoration: none; }
+  .sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--ink-1); border-right: 1px solid var(--line-1); display: flex; flex-direction: column; padding: var(--s-6) 0; min-height: 100vh; }
+  .sidebar-logo { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-6) var(--s-8); }
+  .sidebar-logo img { height: 28px; width: auto; }
+  .account-strip { padding: 0 var(--s-6) var(--s-6); font-size: var(--t-small); }
+  .account-name { color: var(--paper); font-weight: 600; }
+  .account-credits { color: var(--gold); font-family: var(--font-data); font-size: var(--t-slug); margin-top: 2px; }
+  .account-signin { color: var(--text-2); font-size: var(--t-small); }
+  .account-signin a { color: var(--gold); font-weight: 600; }
+  .nav-section-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-slug-tracking); text-transform: uppercase; color: var(--text-3); padding: var(--s-4) var(--s-6) var(--s-2); }
+  .nav-item { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-6); color: var(--text-2); font-size: var(--t-small); font-weight: 500; cursor: pointer; border-left: 2px solid transparent; transition: background var(--fast) var(--ease), color var(--fast) var(--ease); }
+  .nav-item:hover { background: var(--ink-2); color: var(--paper); }
+  .nav-item.active { background: var(--gold-tint); color: var(--gold-bright); border-left: 2px solid var(--gold); font-weight: 600; }
+  .nav-item svg { flex-shrink: 0; width: 18px; height: 18px; stroke: currentColor; }
+  .nav-item.soon { cursor: default; color: var(--text-3); opacity: 0.85; }
+  .nav-item.soon:hover { background: transparent; color: var(--text-3); }
+  .soon-chip { margin-left: auto; font-family: var(--font-data); font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-deep); background: var(--gold-tint); border: 1px solid rgba(212,166,74,0.25); border-radius: var(--r-control); padding: 2px 7px; white-space: nowrap; }
+  .sidebar-footer { margin-top: auto; padding-top: var(--s-6); border-top: 1px solid var(--line-1); margin-left: var(--s-6); margin-right: var(--s-6); }
+  .main { flex: 1; padding: var(--s-8) var(--s-8); max-width: calc(var(--layout-max) + var(--s-16)); }
+  .sync-mark { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); }
+  .sync-mark .rule { width: var(--sync-rule-w); height: var(--sync-rule-h); background: var(--gold); }
+  .sync-mark .label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); }
+  .page-title { font-family: var(--font-display); font-weight: 600; font-size: var(--t-h1); line-height: var(--t-h1-lh); color: var(--paper); margin-bottom: var(--s-8); }
+  .empty-state { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-16) var(--s-8); text-align: center; max-width: 560px; margin: var(--s-8) auto 0; }
+  .empty-icon { width: 56px; height: 56px; margin: 0 auto var(--s-6); color: var(--text-3); }
+  .empty-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h2); line-height: var(--t-h2-lh); color: var(--paper); margin-bottom: var(--s-3); }
+  .empty-body { color: var(--text-2); font-size: var(--t-small); max-width: 380px; margin: 0 auto var(--s-8); }
+  .btn-primary { display: inline-flex; align-items: center; gap: var(--s-2); height: var(--btn-h); padding: 0 var(--s-6); background: var(--gold); color: var(--ink-0); font-weight: 600; font-size: var(--t-small); border: none; border-radius: var(--r-control); cursor: pointer; transition: background var(--fast) var(--ease); }
+  .btn-primary:hover { background: var(--gold-bright); }
+  .btn-primary:active { background: var(--gold-deep); }
+  .btn-primary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+  @media (max-width: 768px) {
+    body { flex-direction: column; }
+    .sidebar { width: 100%; min-width: 0; flex-direction: row; overflow-x: auto; padding: var(--s-3); min-height: auto; }
+    .sidebar-logo { display: none; }
+    .nav-section-label { display: none; }
+    .nav-item { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; }
+    .nav-item.active { border-left: none; border-bottom: 2px solid var(--gold); }
+    .sidebar-footer { display: none; }
+    .main { padding: var(--s-6) var(--s-4); }
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-6); }
+  .tool-card { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-6); display: flex; flex-direction: column; gap: var(--s-3); }
+  .tool-card-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); }
+  .tool-card-desc { color: var(--text-2); font-size: var(--t-small); line-height: var(--t-body-lh); flex: 1; }
+  .status-chip { align-self: flex-start; font-family: var(--font-data); font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase; border-radius: var(--r-control); padding: 3px 8px; border: 1px solid; }
+  .status-chip.live { color: var(--ok); background: rgba(127,174,126,0.12); border-color: rgba(127,174,126,0.3); }
+  .status-chip.soon { color: var(--gold-deep); background: var(--gold-tint); border-color: rgba(212,166,74,0.25); }
+  .tool-card-action { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 var(--s-4); background: var(--gold); color: var(--ink-0); font-weight: 600; font-size: var(--t-small); border-radius: var(--r-control); text-decoration: none; margin-top: var(--s-2); }
+  .tool-card-action:hover { background: var(--gold-bright); }
+  /* ── Productions list ── */
+  .prod-list { display: flex; flex-direction: column; gap: var(--s-3); }
+  .prod-row {
+    background: var(--ink-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-card);
+    padding: var(--s-4) var(--s-6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+  }
+  .prod-row:hover { border-color: var(--line-2); }
+  .prod-main { min-width: 0; }
+  .prod-title {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: var(--t-h3);
+    color: var(--paper);
+    margin-bottom: 2px;
+  }
+  .prod-meta {
+    font-family: var(--font-data);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+  }
+  .prod-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 var(--s-4);
+    background: var(--gold);
+    color: var(--ink-0);
+    font-weight: 600;
+    font-size: var(--t-small);
+    border-radius: var(--r-control);
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .prod-open:hover { background: var(--gold-bright); }
+  .prod-note { color: var(--text-2); font-size: var(--t-small); }
+  .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
+  .auth-overlay.open { display: flex; }
+  .auth-modal { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); width: 100%; max-width: 380px; padding: var(--s-8); position: relative; }
+  .auth-close { position: absolute; top: var(--s-4); right: var(--s-4); background: none; border: none; color: var(--text-2); font-size: 20px; cursor: pointer; line-height: 1; }
+  .auth-close:hover { color: var(--paper); }
+  .auth-tabs { display: flex; gap: var(--s-2); margin-bottom: var(--s-6); border-bottom: 1px solid var(--line-1); }
+  .auth-tab { background: none; border: none; color: var(--text-3); font-family: var(--font-text); font-size: var(--t-small); font-weight: 600; padding: var(--s-2) 0 var(--s-3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .auth-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .auth-form { display: none; flex-direction: column; gap: var(--s-4); }
+  .auth-form.active { display: flex; }
+  .auth-field label { display: block; font-size: var(--t-small); color: var(--text-2); margin-bottom: var(--s-2); }
+  .auth-field input { width: 100%; height: 40px; background: var(--ink-3); border: 1px solid var(--line-1); border-radius: var(--r-control); color: var(--paper); font-family: var(--font-text); font-size: var(--t-small); padding: 0 var(--s-4); }
+  .auth-field input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+  .auth-submit { height: var(--btn-h); background: var(--gold); color: var(--ink-0); font-weight: 600; font-size: var(--t-small); border: none; border-radius: var(--r-control); cursor: pointer; margin-top: var(--s-2); }
+  .auth-submit:hover { background: var(--gold-bright); }
+  .auth-note { color: var(--text-3); font-size: var(--t-small); margin-top: var(--s-4); text-align: center; }
+  .auth-error { color: var(--error); font-size: var(--t-small); min-height: 0; }
+  .upload-panel { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-8); max-width: 640px; margin: var(--s-8) auto 0; }
+  .lang-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); margin-bottom: var(--s-3); }
+  .lang-row { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-8); }
+  .lang-chip { background: var(--ink-3); border: 1px solid var(--line-1); border-radius: var(--r-control); color: var(--text-2); font-size: var(--t-small); padding: var(--s-2) var(--s-4); cursor: pointer; }
+  .lang-chip:hover { border-color: var(--line-2); color: var(--paper); }
+  .lang-chip.active { background: var(--gold-tint); border-color: var(--gold); color: var(--gold-bright); font-weight: 600; }
+  .dropzone { border: 2px dashed var(--line-2); border-radius: var(--r-card); padding: var(--s-16) var(--s-8); text-align: center; cursor: pointer; transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease); }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--gold); background: var(--gold-tint); }
+  .dropzone-icon { width: 48px; height: 48px; margin: 0 auto var(--s-4); color: var(--text-3); }
+  .dropzone-title { font-family: var(--font-display); font-weight: 500; font-size: var(--t-h3); color: var(--paper); margin-bottom: var(--s-2); }
+  .dropzone-sub { color: var(--text-3); font-size: var(--t-small); }
+  .dropzone input[type="file"] { display: none; }
+  .file-selected { display: none; align-items: center; gap: var(--s-4); padding: var(--s-4); background: var(--ink-3); border: 1px solid var(--line-1); border-radius: var(--r-control); }
+  .file-selected.active { display: flex; }
+  .file-icon { width: 32px; height: 32px; color: var(--gold); flex-shrink: 0; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { color: var(--paper); font-weight: 600; font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-meta { font-family: var(--font-data); color: var(--text-3); font-size: var(--t-slug); margin-top: 2px; }
+  .file-change { background: none; border: none; color: var(--gold); font-size: var(--t-small); font-weight: 600; cursor: pointer; }
+  .file-meta.error { color: var(--error); }
+  .generate-btn { display: none; width: 100%; margin-top: var(--s-6); justify-content: center; }
+  .generate-btn.ready { display: inline-flex; }
+  .credit-warning { display: none; margin-top: var(--s-4); padding: var(--s-4); background: rgba(217,106,87,0.1); border: 1px solid rgba(217,106,87,0.3); border-radius: var(--r-control); color: var(--error); font-size: var(--t-small); text-align: center; }
+  .credit-warning.active { display: block; }
+</style>
+</head>
+<body>
+
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <img src="slate-mark-gold.svg" alt="Missolowo Slate">
+    </div>
+    <div class="account-strip" id="accountStrip">
+      <div class="account-signin">Checking session…</div>
+    </div>
+
+    <div class="nav-section-label">Workspace</div>
+    <a class="nav-item active" href="#home">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-3v-5H7v5H4a1 1 0 0 1-1-1V9.5Z" stroke-linejoin="round"/></svg>
+      Home
+    </a>
+    <a class="nav-item" href="#productions">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M2 6a1 1 0 0 1 1-1h4l1.5 2H17a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6Z" stroke-linejoin="round"/></svg>
+      Productions
+    </a>
+    <a class="nav-item" href="#center">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
+      Production Center
+    </a>
+      <!-- Hidden until built. A nav item that leads nowhere is a bug, not a
+         roadmap — the Coming Soon cards are how we show what is planned.
+         Restore these when the Scripts and Exports views exist.
+    <a class="nav-item" href="#scripts">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M5 2h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke-linejoin="round"/><path d="M7 9h6M7 12h6M7 6h3" stroke-linecap="round"/></svg>
+      Scripts
+    </a>
+    <a class="nav-item" href="#exports">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M10 3v9m0 0-3-3m3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" stroke-linecap="round"/></svg>
+      Exports
+    </a>
+   -->
+      <a class="nav-item" href="#home">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="4" width="14" height="13" rx="1"/><path d="M3 8h14M7 2v4M13 2v4" stroke-linecap="round"/></svg>
+      Scheduling
+    </a>
+    <a class="nav-item" href="#home">
+      <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="1"/><path d="M7 7h6M7 10h6M7 13h3" stroke-linecap="round"/></svg>
+      Call Sheets
+    </a>
+
+    <div class="nav-section-label" style="margin-top: var(--s-4)">Coming Soon</div>
+    <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M4 15V8l6-4 6 4v7" stroke-linejoin="round"/><path d="M8 15v-4h4v4" /></svg>Budgeting<span class="soon-chip">Soon</span></div>
+    <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><circle cx="7.5" cy="8" r="2"/><path d="M11 7h3M11 10h3M5 13.5c.5-1.5 2-2 2.5-2s2 .5 2.5 2" stroke-linecap="round"/></svg>Crew Management<span class="soon-chip">Soon</span></div>
+    <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="7" cy="7" r="2.2"/><circle cx="14" cy="8" r="1.8"/><path d="M3 16c0-2.5 2-4 4-4s4 1.5 4 4M12 16c.2-1.8 1.6-3 3-3s3 1 3 3" stroke-linecap="round"/></svg>Crew Network<span class="soon-chip">Soon</span></div>
+    <div class="nav-item soon"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M4 16l1-4 9-9 3 3-9 9-4 1Z" stroke-linejoin="round"/><path d="M12.5 4.5l3 3" /></svg>Script Generator<span class="soon-chip">Soon</span></div>
+
+    <div class="sidebar-footer">
+      <a class="nav-item" style="padding-left:0" href="#roadmap">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M3 17V4l4 2 4-2 4 2 2-1v11l-2 1-4-2-4 2-4-2Z" stroke-linejoin="round"/></svg>
+        Roadmap
+      </a>
+      <a class="nav-item" style="padding-left:0" href="#billing">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="2" y="5" width="16" height="11" rx="1.5"/><path d="M2 9h16" /></svg>
+        Billing
+      </a>
+      <a class="nav-item" style="padding-left:0" href="#settings">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="2.5"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5 5l1.4 1.4M13.6 13.6 15 15M15 5l-1.4 1.4M6.4 13.6 5 15" stroke-linecap="round"/></svg>
+        Settings
+      </a>
+      <a class="nav-item" style="padding-left:0" href="#help">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M7.8 8a2.2 2.2 0 1 1 3.1 2c-.7.5-1 .9-1 1.7" stroke-linecap="round"/><circle cx="10" cy="14" r="0.4" fill="currentColor"/></svg>
+        Help
+      </a>
+      <a class="nav-item" style="padding-left:0" href="#logout">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="4" y="3" width="8" height="14" rx="1"/><path d="M11 10h6M14 7l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Log Out
+      </a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <section class="view active" data-view="home">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Workspace</div>
+      </div>
+      <h1 class="page-title">Production Workspace</h1>
+      <div id="uploadState" style="display:none">
+        <div class="upload-panel">
+          <div class="lang-label">Script Language</div>
+          <div class="lang-row" id="langRow">
+            <button class="lang-chip active" data-lang="auto">🔍 Auto-detect</button>
+            <button class="lang-chip" data-lang="en">🇬🇧 English</button>
+            <button class="lang-chip" data-lang="yo">🇳🇬 Yorùbá</button>
+            <button class="lang-chip" data-lang="fr">🇫🇷 Français</button>
+            <button class="lang-chip" data-lang="ig">🇳🇬 Igbo</button>
+            <button class="lang-chip" data-lang="ha">🇳🇬 Hausa</button>
+            <button class="lang-chip" data-lang="sw">🇰🇪 Kiswahili</button>
+            <button class="lang-chip" data-lang="am">🇪🇹 አማርኛ</button>
+            <button class="lang-chip" data-lang="zu">🇿🇦 isiZulu</button>
+            <button class="lang-chip" data-lang="es">🇪🇸 Español</button>
+            <button class="lang-chip" data-lang="pt">🇵🇹 Português</button>
+            <button class="lang-chip" data-lang="de">🇩🇪 Deutsch</button>
+            <button class="lang-chip" data-lang="ar">🇸🇦 العربية</button>
+            <button class="lang-chip" data-lang="hi">🇮🇳 हिन्दी</button>
+            <button class="lang-chip" data-lang="zh">🇨🇳 中文</button>
+            <button class="lang-chip" data-lang="ja">🇯🇵 日本語</button>
+            <button class="lang-chip" data-lang="ko">🇰🇷 한국어</button>
+          </div>
+          <div class="dropzone" id="dropzone">
+            <svg class="dropzone-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M24 6v24m0 0-8-8m8 8 8-8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8 32v6a2 2 0 0 0 2 2h28a2 2 0 0 0 2-2v-6" stroke-linecap="round"/>
+            </svg>
+            <div class="dropzone-title">Drop your screenplay here</div>
+            <div class="dropzone-sub">or click to browse — PDF, DOCX or TXT</div>
+            <input type="file" id="scriptFileInput" accept=".pdf,.docx,.txt">
+          </div>
+          <div class="file-selected" id="fileSelected" style="margin-top: var(--s-6)">
+            <svg class="file-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 3h11l5 5v19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke-linejoin="round"/>
+              <path d="M19 3v5h5" stroke-linejoin="round"/>
+            </svg>
+            <div class="file-info">
+              <div class="file-name" id="fileName">—</div>
+              <div class="file-meta" id="fileMeta">—</div>
+            </div>
+            <button class="file-change" id="fileChangeBtn">Change</button>
+          </div>
+          <button class="btn-primary generate-btn" id="generateBtn">Start Scene Breakdown</button>
+          <div class="credit-warning" id="creditWarning">You're out of credits. Please contact support to add more while billing is being finalized.</div>
+        </div>
+      </div>
+      <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
+      <div id="wsHealthPanel" style="display:none;margin:24px 0;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden"></div>
+      <div id="wsProgressWrap" style="display:none;margin:24px 0">
+        <div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-bottom:8px" id="wsProgressLabel">Preparing...</div>
+        <div style="height:4px;background:var(--ink-3,#25282F);border-radius:2px;overflow:hidden">
+          <div id="wsProgressBar" style="height:100%;width:0%;background:var(--gold,#D4A64A);transition:width .4s"></div>
+        </div>
+      </div>
+      <div id="wsResults" style="display:none;margin-top:32px"></div>
+            <div id="wsExportBar" style="display:none;margin-top:24px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A)">
+        <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Export</div>
+        <button class="btn-primary" onclick="slateExportBreakdown()">↓ Breakdown PDF</button>
+         <button class="btn-primary" onclick="slateExportSchedule()" style="margin-left:8px">↓ Schedule PDF</button>
+        <button class="btn-primary" onclick="slateExportCallsheet()" style="margin-left:8px">↓ Call Sheet PDF</button> 
+         <a href="#" onclick="slateStartNewProduction(); return false;" style="margin-left:16px;color:var(--text-2);font-size:var(--t-small);text-decoration:underline">Start a new production</a>
+      </div>
+      <div class="empty-state" id="authRequiredState" style="display:none">
+        <svg class="empty-icon" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="16" y="24" width="24" height="20" rx="2"/>
+          <path d="M22 24v-6a6 6 0 0 1 12 0v6" />
+        </svg>
+        <div class="empty-title">Sign in to get started</div>
+        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with 3 free credits.</div>
+        <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
+        <div class="auth-note"><a href="#" onclick="openAuthModal('login'); return false;" style="color:var(--gold); font-weight:600">Already have an account? Sign in</a></div>
+      </div>
+    </section>
+
+    <section class="view" data-view="center">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Overview</div>
+      </div>
+      <h1 class="page-title">Production Center</h1>
+           <div class="card-grid">
+        <div class="tool-card">
+          <span class="status-chip live">Live</span>
+          <div class="tool-card-title">Script Breakdown</div>
+          <div class="tool-card-desc">Turn any screenplay into a complete production breakdown — scenes, characters, locations, props and more.</div>
+          <a class="tool-card-action" href="#home">Open</a>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip live">Live</span>
+          <div class="tool-card-title">Shooting Schedule Generator</div>
+          <div class="tool-card-desc">Automatically generate a shooting schedule from your breakdown — scene order, days and locations organized for production.</div>
+          <a class="tool-card-action" href="#home">Open</a>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip live">Live</span>
+          <div class="tool-card-title">Call Sheet Generator</div>
+          <div class="tool-card-desc">Create daily call sheets straight from your schedule — cast, crew, times and locations in one document.</div>
+          <a class="tool-card-action" href="#home">Open</a>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Budget Estimator</div>
+          <div class="tool-card-desc">Estimate production costs directly from your breakdown data — cast, crew, locations and equipment.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Crew Management</div>
+          <div class="tool-card-desc">Manage crew members, roles, departments and contact information for each production.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Crew Network</div>
+          <div class="tool-card-desc">Discover and connect with filmmakers and crew across the industry.</div>
+        </div>
+        <div class="tool-card">
+          <span class="status-chip soon">Coming Soon</span>
+          <div class="tool-card-title">Script Generator</div>
+          <div class="tool-card-desc">Generate original screenplay drafts and scene ideas with Missolowo's AI writing tools.</div>
+        </div>
+      </div>
+    </section>
+  <section class="view" data-view="productions">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Saved Work</div>
+      </div>
+          <h1 class="page-title">Productions</h1>
+      <div style="margin-bottom: var(--s-6)">
+        <button class="prod-open" onclick="slateStartNewProduction()">+ New Production</button>
+      </div>
+      <div id="prodListOut">
+      
+        <div class="prod-note">Loading your productions…</div>
+      </div>
+    </section>
+  </main>
+
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-modal">
+      <button class="auth-close" onclick="closeAuthModal()">×</button>
+      <div class="auth-tabs">
+        <button class="auth-tab" id="tabLogin" onclick="switchAuthTab('login')">Sign In</button>
+        <button class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')">Create Account</button>
+      </div>
+      <form class="auth-form" id="formLogin" onsubmit="handleLoginInline(); return false;">
+        <div class="auth-field">
+          <label for="loginEmail2">Email</label>
+          <input type="email" id="loginEmail2" placeholder="you@email.com">
+        </div>
+        <div class="auth-field">
+          <label for="loginPassword2">Password</label>
+          <input type="password" id="loginPassword2" placeholder="••••••••">
+        </div>
+        <div class="auth-error" id="loginError2"></div>
+        <button type="submit" class="auth-submit" id="loginSubmitBtn">Sign In</button>
+      </form>
+      <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
+        <div class="auth-field">
+          <label for="signupName2">Full Name</label>
+          <input type="text" id="signupName2" placeholder="Elizabeth Olalere">
+        </div>
+        <div class="auth-field">
+          <label for="signupEmail2">Email</label>
+          <input type="email" id="signupEmail2" placeholder="you@email.com">
+        </div>
+        <div class="auth-field">
+          <label for="signupPassword2">Password</label>
+          <input type="password" id="signupPassword2" placeholder="8+ characters">
+        </div>
+                <div class="auth-field">
+          <label for="signupRole2">Your role in production</label>
+          <select id="signupRole2" style="width:100%;padding:11px 12px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit;font-size:14px">
+            <option value="">Select your role</option>
+            <optgroup label="Production">
+              <option>Producer</option>
+              <option>Executive Producer</option>
+              <option>Line Producer</option>
+              <option>Production Manager</option>
+              <option>Production Coordinator</option>
+              <option>Production Accountant</option>
+            </optgroup>
+            <optgroup label="Direction">
+              <option>Director</option>
+              <option>Assistant Director</option>
+              <option>Script Supervisor</option>
+            </optgroup>
+            <optgroup label="Writing">
+              <option>Screenwriter</option>
+            </optgroup>
+            <optgroup label="Camera &amp; Lighting">
+              <option>Cinematographer / DoP</option>
+              <option>Camera Operator</option>
+              <option>Gaffer</option>
+              <option>Grip</option>
+            </optgroup>
+            <optgroup label="Art &amp; Wardrobe">
+              <option>Production Designer</option>
+              <option>Art Director</option>
+              <option>Costume Designer</option>
+              <option>Makeup Artist</option>
+              <option>Hair Stylist</option>
+            </optgroup>
+            <optgroup label="Sound">
+              <option>Sound Recordist</option>
+              <option>Boom Operator</option>
+            </optgroup>
+            <optgroup label="Post Production">
+              <option>Editor</option>
+              <option>Colorist</option>
+              <option>VFX Artist</option>
+              <option>Animator</option>
+            </optgroup>
+            <optgroup label="Cast &amp; Casting">
+              <option>Actor</option>
+              <option>Casting Director</option>
+            </optgroup>
+            <optgroup label="Locations">
+              <option>Location Manager</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option>Investor</option>
+              <option>Film Student</option>
+              <option>Film School</option>
+              <option>Other</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="auth-error" id="signupError2"></div>
+        <button type="submit" class="auth-submit" id="signupSubmitBtn">Create Free Account</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll('.nav-item[href^="#"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var target = this.getAttribute('href').slice(1);
+        var view = document.querySelector('[data-view="' + target + '"]');
+        if (!view) return;
+        e.preventDefault();
+        document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
+        view.classList.add('active');
+        document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+        this.classList.add('active');
+         // Load the Productions list when its view becomes active.
+        if (target === 'productions' && typeof loadProductionsList === 'function') {
+          loadProductionsList();
+        }
+      });
+    });
+  </script>
+
+  <script>
+    (function() {
+      var ADMIN_EMAILS = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+      var strip = document.getElementById('accountStrip');
+
+      function renderAccount() {
+        var raw = localStorage.getItem('scriptiq_user');
+        if (!raw) {
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
+          return;
+        }
+        try {
+          var user = JSON.parse(raw);
+          var isAdmin = user.role === 'admin' || ADMIN_EMAILS.indexOf(user.email) !== -1;
+          var credits = isAdmin ? '∞' : (user.credits_remaining != null ? user.credits_remaining : 0);
+          var name = user.name || (user.email ? user.email.split('@')[0] : 'Filmmaker');
+          strip.innerHTML =
+            '<div class="account-name">' + name + '</div>' +
+            '<div class="account-credits">' + credits + ' credits</div>';
+        } catch (e) {
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
+        }
+      }
+
+      renderAccount();
+      gateHomeView();
+
+      function gateHomeView() {
+        var raw = localStorage.getItem('scriptiq_user');
+        var uploadState = document.getElementById('uploadState');
+        var authState = document.getElementById('authRequiredState');
+        if (raw) {
+          uploadState.style.display = '';
+          authState.style.display = 'none';
+        } else {
+          uploadState.style.display = 'none';
+          authState.style.display = '';
+        }
+      }
+
+      window.openAuthModal = function(tab) {
+        document.getElementById('authOverlay').classList.add('open');
+        switchAuthTab(tab || 'login');
+      };
+      window.closeAuthModal = function() {
+        document.getElementById('authOverlay').classList.remove('open');
+      };
+      window.switchAuthTab = function(tab) {
+        var isLogin = tab === 'login';
+        document.getElementById('tabLogin').classList.toggle('active', isLogin);
+        document.getElementById('tabSignup').classList.toggle('active', !isLogin);
+        document.getElementById('formLogin').classList.toggle('active', isLogin);
+        document.getElementById('formSignup').classList.toggle('active', !isLogin);
+      };
+
+      var logoutLink = document.querySelector('a[href="#logout"]');
+      if (logoutLink) {
+        logoutLink.addEventListener('click', function(e) {
+          e.preventDefault();
+          if (confirm('Log out of Missolowo Slate?')) {
+            localStorage.removeItem('scriptiq_user');
+            renderAccount();
+            gateHomeView();
+          }
+        });
+      }
+
+      var SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
+      var SUPABASE_KEY = 'sb_publishable_gHRl7TnHyYYR4OnSubjXBA_n8pshdwH';
+
+      function fetchProfileAndFinish(accessToken, userId, email) {
+        return fetch(SUPABASE_URL + '/rest/v1/users?id=eq.' + userId + '&select=*', {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + accessToken }
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(rows) {
+          var row = rows && rows[0];
+          var user = {
+            email: email,
+            name: (row && row.full_name) || email.split('@')[0],
+            role: (row && row.role) || 'free',
+            credits_remaining: row ? row.credits_remaining : 3,
+            id: userId
+          };
+          localStorage.setItem('scriptiq_user', JSON.stringify(user));
+          closeAuthModal();
+          renderAccount();
+          gateHomeView();
+        });
+      }
+
+      window.handleSignupInline = function() {
+        var name = document.getElementById('signupName2').value.trim();
+        var email = document.getElementById('signupEmail2').value.trim();
+         var roleEl = document.getElementById('signupRole2');
+        var filmRole = roleEl ? roleEl.value : ''; 
+        var password = document.getElementById('signupPassword2').value;
+        var errEl = document.getElementById('signupError2');
+        var btn = document.getElementById('signupSubmitBtn');
+        errEl.textContent = '';
+        if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+        btn.textContent = 'Creating account…';
+        btn.disabled = true;
+        fetch(SUPABASE_URL + '/auth/v1/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({ email: email, password: password, data: { full_name: name, film_role: filmRole } })
+        })
+        .then(function(res) { return res.json().then(function(data) { return { res: res, data: data }; }); })
+        .then(function(result) {
+          var res = result.res, data = result.data;
+          if (!res.ok || data.error || data.error_code || data.msg) {
+            errEl.textContent = data.msg || (data.error && data.error.message) || 'Signup failed. Password must be 8+ characters with uppercase, lowercase, and a number.';
+            btn.textContent = 'Create Free Account';
+            btn.disabled = false;
+            return;
+          }
+          var token = data.access_token || (data.session && data.session.access_token);
+          var userId = data.user ? data.user.id : (data.id || null);
+          if (!token || !userId) {
+            errEl.textContent = 'Account created — please sign in.';
+            btn.textContent = 'Create Free Account';
+            btn.disabled = false;
+            switchAuthTab('login');
+            return;
+          }
+          fetchProfileAndFinish(token, userId, email);
+        })
+        .catch(function() {
+          errEl.textContent = 'Signup failed. Please try again.';
+          btn.textContent = 'Create Free Account';
+          btn.disabled = false;
+        });
+      };
+
+      window.handleLoginInline = function() {
+        var email = document.getElementById('loginEmail2').value.trim();
+        var password = document.getElementById('loginPassword2').value;
+        var errEl = document.getElementById('loginError2');
+        var btn = document.getElementById('loginSubmitBtn');
+        errEl.textContent = '';
+        if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+        btn.textContent = 'Signing in…';
+        btn.disabled = true;
+        fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({ email: email, password: password })
+        })
+        .then(function(res) { return res.json().then(function(data) { return { res: res, data: data }; }); })
+        .then(function(result) {
+          var res = result.res, data = result.data;
+          if (!res.ok || data.error) {
+            errEl.textContent = (data.error_description || data.msg || (data.error && data.error.message) || 'Invalid email or password.');
+            btn.textContent = 'Sign In';
+            btn.disabled = false;
+            return;
+          }
+          var token = data.access_token || (data.session && data.session.access_token);
+          var userId = data.user ? data.user.id : null;
+          if (!token || !userId) {
+            errEl.textContent = 'Sign in failed. Please try again.';
+            btn.textContent = 'Sign In';
+            btn.disabled = false;
+            return;
+          }
+          fetchProfileAndFinish(token, userId, email);
+        })
+        .catch(function() {
+          errEl.textContent = 'Sign in failed. Please try again.';
+          btn.textContent = 'Sign In';
+          btn.disabled = false;
+        });
+      };
+    })();
+  </script>
+
+  <script>
+    (function() {
+      var selectedFile = null;
+      var selectedLang = 'auto';
+
+      var langRow = document.getElementById('langRow');
+      if (langRow) {
+        langRow.querySelectorAll('.lang-chip').forEach(function(chip) {
+          chip.addEventListener('click', function() {
+            langRow.querySelectorAll('.lang-chip').forEach(function(c) { c.classList.remove('active'); });
+            chip.classList.add('active');
+            selectedLang = chip.getAttribute('data-lang');
+          });
+        });
+      }
+
+      var dropzone = document.getElementById('dropzone');
+      var fileInput = document.getElementById('scriptFileInput');
+      var fileSelected = document.getElementById('fileSelected');
+      var fileName = document.getElementById('fileName');
+      var fileMeta = document.getElementById('fileMeta');
+      var fileChangeBtn = document.getElementById('fileChangeBtn');
+      var generateBtn = document.getElementById('generateBtn');
+      var creditWarning = document.getElementById('creditWarning');
+
+      function showFile(file) {
+        selectedFile = file;
+        var sizeKb = Math.round(file.size / 1024);
+        fileName.textContent = file.name;
+        fileMeta.textContent = sizeKb + ' KB';
+        fileSelected.classList.add('active');
+        dropzone.style.display = 'none';
+      }
+
+      function resetFile() {
+        selectedFile = null;
+        fileInput.value = '';
+        fileSelected.classList.remove('active');
+        dropzone.style.display = '';
+        generateBtn.classList.remove('ready');
+        creditWarning.classList.remove('active');
+      }
+
+      if (dropzone) {
+        dropzone.addEventListener('click', function() { fileInput.click(); });
+        dropzone.addEventListener('dragover', function(e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', function(e) {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            processSelectedFile(e.dataTransfer.files[0]);
+          }
+        });
+      }
+      if (fileInput) {
+        fileInput.addEventListener('change', function() {
+          if (fileInput.files && fileInput.files[0]) processSelectedFile(fileInput.files[0]);
+        });
+      }
+      if (fileChangeBtn) {
+        fileChangeBtn.addEventListener('click', function(e) { e.stopPropagation(); resetFile(); });
+      }
+
+      var extractedScriptText = '';
+
+      async function extractTextFromPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          let lastY = -1;
+          let pageText = "";
+          for (const item of textContent.items) {
+            if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 5) {
+              pageText += "\n";
+            }
+            pageText += item.str;
+            lastY = item.transform[5];
+          }
+          fullText += pageText + "\n\n--- PAGE BREAK ---\n\n";
+        }
+        return fullText.trim();
+      }
+
+      async function extractTextFromDOCX(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+        if (result.value) { return result.value; }
+        throw new Error("No readable text found inside this Word document.");
+      }
+
+      function extractTextFromTXT(file) {
+        return new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function(e) { resolve(e.target.result); };
+          reader.onerror = function() { reject(new Error("Unable to read text file.")); };
+          reader.readAsText(file);
+        });
+      }
+
+      async function processSelectedFile(file) {
+        showFile(file);
+        fileMeta.classList.remove('error');
+        fileMeta.textContent = 'Reading file contents…';
+        var lowerName = file.name.toLowerCase();
+        try {
+          var text;
+          if (lowerName.endsWith('.pdf')) {
+            text = await extractTextFromPDF(file);
+          } else if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
+            text = await extractTextFromDOCX(file);
+          } else if (lowerName.endsWith('.txt')) {
+            text = await extractTextFromTXT(file);
+          } else {
+            throw new Error('Unsupported format. Please upload a .pdf, .docx, or .txt screenplay.');
+          }
+          if (!text || text.trim().length < 50) {
+            throw new Error('This file has very little readable text. Please check the file and try again.');
+          }
+          extractedScriptText = text;
+          var sizeKb = Math.round(file.size / 1024);
+          fileMeta.textContent = sizeKb + ' KB · ' + text.length.toLocaleString() + ' characters — ready';
+          generateBtn.classList.add('ready');
+          renderHealthPanel(text); 
+        } catch (err) {
+          extractedScriptText = '';
+          fileMeta.classList.add('error');
+          fileMeta.textContent = err.message || 'Could not read this file. Please try again.';
+          generateBtn.classList.remove('ready');
+        }
+      }
+
+      function getCurrentUser() {
+        var raw = localStorage.getItem('scriptiq_user');
+        if (!raw) return null;
+        try { return JSON.parse(raw); } catch (e) { return null; }
+      }
+
+      var ADMIN_EMAILS_UPLOAD = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+
+      generateBtn.addEventListener('click', function() {
+        if (!extractedScriptText) return;
+         var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
+        var hasCredits = isAdmin || (user.credits_remaining || 0) > 0;
+        if (!hasCredits) {
+          creditWarning.classList.add('active');
+          return;
+        }
+        creditWarning.classList.remove('active');
+        runWorkspaceBreakdown(user);
+      });
+     // ============================================================
+      // MISSOLOWO SLATE — WORKSPACE BREAKDOWN ENGINE (Phase 3b)
+      // Faithful port of the battle-tested V1 engine (index.html):
+      // same chunking, merge (chunkOffset fixes), oversize slicing,
+      // diagnostics. Adapted to Workspace auth + UI hooks only.
+      // ============================================================
+      var CHUNK_SIZE = 3000; // Tuned Jul 2026: ~6-13s/section, safe under Netlify ceiling
+      var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
+
+      function siqTrack(name, params) {
+        try { if (typeof gtag === 'function') gtag('event', name, params || {}); } catch (e) {}
+      }
+
+      function splitScriptForProcessing(script, maxChunkSize) {
+          // Discard everything before the first scene heading. Title pages,
+        // writer credits and episode synopses are not scenes, and asking
+        // the model to ignore them does not reliably work — given a section
+        // containing only a synopsis, it would rather invent a scene than
+        // return nothing. So it never sees them.
+        var raw = script.trim();
+        var firstHeading = raw.search(/(?:^|\n)[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9])/i);
+        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
+        // The title lives in the front matter we are about to discard, so
+        // take it first. It is normally the first substantial line, skipping
+        // labels like "FADE IN" and any "written by" credit.
+        if (firstHeading > 0) {
+          var frontMatter = raw.slice(0, firstHeading).split(/\r?\n/);
+          for (var fm = 0; fm < frontMatter.length; fm++) {
+            var line = frontMatter[fm].trim();
+            if (!line) continue;
+            if (/^(fade in|fade out|written by|by|screenplay|draft|revision|copyright|\u00a9)/i.test(line)) continue;
+            if (line.length < 2 || line.length > 120) continue;
+             window.slateScriptTitle = line
+              .replace(/^(title|script title|episode title)\s*[:\-–]\s*/i, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            break;
+          }
+        }
+        if (text.length <= maxChunkSize) return [text];
+         // Cut only at scene headings, never mid-scene. A chunk boundary
+        // inside a scene makes the model see two half-scenes and report
+        // them as two, which is where phantom scenes come from.
+        // Covers: "INT. X", "12 EXT. X", "47A. INT. X", "2.01. INT. X",
+        // "2.02.INT. X" (no space), and "SCENE 1  LOCATION  EXT/DAY".
+        const sceneBoundary = /\n(?=[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9]))/i;
+        let segments = text.split(sceneBoundary);
+        if (segments.length <= 1) {
+          segments = splitBySize(text, maxChunkSize);
+        }
+        const chunks = [];
+        let currentChunk = '';
+        for (const seg of segments) {
+          if ((currentChunk + seg).length > maxChunkSize && currentChunk.length > 0) {
+            chunks.push(currentChunk.trim());
+            currentChunk = seg;
+          } else {
+            currentChunk += (currentChunk ? '\n' : '') + seg;
+          }
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk.trim());
+        return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+      }
+
+      function splitBySize(text, maxChunkSize) {
+        const paragraphs = text.split(/\n\s*\n/);
+        const out = [];
+        let buffer = '';
+        for (const p of paragraphs) {
+          if ((buffer + p).length > maxChunkSize && buffer.length > 0) {
+            out.push(buffer);
+            buffer = p;
+          } else {
+            buffer += (buffer ? '\n\n' : '') + p;
+          }
+        }
+        if (buffer) out.push(buffer);
+        const final = [];
+        for (const piece of out) {
+          if (piece.length <= maxChunkSize) {
+            final.push(piece);
+          } else {
+            for (let i = 0; i < piece.length; i += maxChunkSize) {
+              final.push(piece.substring(i, i + maxChunkSize));
+            }
+          }
+        }
+        return final;
+      }
+
+      async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId) {
+        try {
+          const response = await fetch('/.netlify/functions/breakdown', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              script: chunkText,
+              language: language,
+              user_email: user && user.email,
+              user_id: user && user.id,
+              chunk_index: chunkIndex,
+              total_chunks: totalChunks,
+              production_id: productionId
+            })
+          });
+          if (response.status === 402) {
+            var cw = document.getElementById('creditWarning');
+            if (cw) cw.classList.add('active');
+            return { error: true, message: 'No credits remaining' };
+          }
+          const rawText = await response.text();
+          if (rawText.trim().startsWith('<')) {
+            return { error: true, message: 'This section took too long. Please try a shorter script section.' };
+          }
+          if (!response.ok) {
+            let errMsg = 'Processing error';
+            try { errMsg = JSON.parse(rawText).error || errMsg; } catch (e) {}
+            return { error: true, message: errMsg };
+          }
+          return JSON.parse(rawText);
+        } catch (err) {
+          return { error: true, message: err.message };
+        }
+      }
+
+           // Real scripts spell names inconsistently — "OWOLABI'S LIVINGROOM",
+      // "Owolabi living room", "Owolabi's Living Room" are one place.
+      // Match on a normalized key; display the cleanest spelling found.
+      function slateKey(name) {
+        return String(name || '')
+          // Strip dialogue modifiers before matching. "Ernest" and
+          // "Ernest (V.O.)" are one actor — on a call sheet they must be
+          // one row with one call time, not two.
+          .replace(/\s*\((?:V\.?O\.?|O\.?S\.?|O\.?C\.?|CONT'?D|CONTINUED|PRE-?LAP|FILTERED|ON\s+PHONE|OFF)\)\s*/gi, ' ')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .replace(/[''`]/g, '')
+          .replace(/[^A-Z0-9 ]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      } 
+  
+      function slateBetterLabel(a, b) {
+        var A = String(a || ''), B = String(b || '');
+        var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
+        var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
+        if (mixedA && !mixedB) return A;
+        if (mixedB && !mixedA) return B;
+        return A.length >= B.length ? A : B;
+      } 
+      function mergeBreakdownChunks(chunks) {
+        const merged = {
+           // Front matter is stripped before splitting, so the first chunk
+          // may never see the title page. Take the first real title any
+          // chunk reports rather than assuming chunk zero has it.
+          title: (function () {
+            if (window.slateScriptTitle) return window.slateScriptTitle;
+            for (var t = 0; t < chunks.length; t++) {
+              var candidate = chunks[t] && chunks[t].title;
+              if (candidate && String(candidate).trim() && !/^untitled/i.test(candidate)) {
+                return String(candidate).trim();
+              }
+            }
+            return 'Untitled Script';
+          })(), 
+          language_detected: chunks[0].language_detected || 'Unknown',
+          total_scenes: 0,
+          scenes: [],
+          character_breakdown: [],
+          outline_schedule: [],
+          production_elements: {
+            all_cast: [], all_props: [], all_costume: [],
+            all_equipment: [], special_requirements: []
+          }
+        };
+               let sceneOffset = 0;
+        for (const chunk of chunks) {
+          const scenes = chunk.scenes || [];
+           // Collapse duplicates that arrive WITHIN a single chunk — the AI
+          // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
+          function slateDedupe(list, nameField) {
+            var out = [];
+            (list || []).forEach(function (item) {
+              var hit = out.find(function (o) { return slateKey(o[nameField]) === slateKey(item[nameField]); });
+              if (hit) {
+                hit[nameField] = slateBetterLabel(hit[nameField], item[nameField]);
+                hit.scenes = [...new Set([...(hit.scenes || []), ...(item.scenes || [])])];
+              } else {
+                out.push({ ...item, scenes: [...new Set(item.scenes || [])] });
+              }
+            });
+            return out;
+          }
+          chunk.character_breakdown = slateDedupe(chunk.character_breakdown, 'character');
+          chunk.outline_schedule = slateDedupe(chunk.outline_schedule, 'set_location');
+          // Scene numbers are LABELS, not numbers. "2.01", "47A" and "00"
+          // are all valid and none survive Number(). Converting them was
+          // producing NaN rows and collapsing 2.10 into 2.1.
+          // Preserve exactly what the script says; null where it says nothing.
+          for (const scene of scenes) {
+            var label = scene.scene_number;
+            if (label === undefined || label === null || String(label).trim() === '') {
+              label = null;
+            } else {
+              label = String(label).trim();
+            }
+            merged.scenes.push({
+              ...scene,
+              scene_number: label,
+              // Position in the assembled script. This is the stable identity
+              // the schedule and call sheet look up by; scene_number is what
+              // the crew reads on their pages.
+              scene_index: merged.scenes.length + 1
+            });
+          }
+          merged.total_scenes = merged.scenes.length;
+         
+          const pe = chunk.production_elements || {};
+          // Cast names need the same normalisation as Report 2, or "Abake"
+          // and "ABAKE" appear as two people in the elements list while
+          // Report 2 correctly shows one.
+          (pe.all_cast || []).forEach(function (name) {
+            var clean = String(name || '').trim();
+            if (!clean) return;
+            var k = slateKey(clean);
+            if (!k) return;
+            var found = -1;
+            for (var ci = 0; ci < merged.production_elements.all_cast.length; ci++) {
+              if (slateKey(merged.production_elements.all_cast[ci]) === k) { found = ci; break; }
+            }
+            if (found >= 0) {
+              merged.production_elements.all_cast[found] = slateBetterLabel(merged.production_elements.all_cast[found], clean);
+            } else {
+              merged.production_elements.all_cast.push(clean);
+            }
+          });
+          merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
+          merged.production_elements.all_costume = [...new Set([...merged.production_elements.all_costume, ...(pe.all_costume || [])])];
+          merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
+          merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
+        } 
+         // ── Rebuild the indexes from the assembled scenes ──
+        // These were previously merged per chunk, but a chunk only ever
+        // sees its own scenes, so its counts were local. That is where
+        // "Scenes: 3, 2, 1" came from. Now every chunk is in, so this is
+        // the first moment the numbers can actually be right.
+        // Derived in code, not asked of the model: counting is arithmetic.
+        function labelFor(s) {
+          return (s.scene_number !== null && s.scene_number !== undefined)
+            ? s.scene_number
+            : ('#' + s.scene_index);
+        }
+
+        var charMap = {}, locMap = {};
+
+        merged.scenes.forEach(function (s) {
+          var label = labelFor(s);
+
+          (s.cast || []).forEach(function (c) {
+            var name = String(c || '').trim();
+            if (!name) return;
+            var k = slateKey(name);
+            if (!k) return;
+            if (!charMap[k]) charMap[k] = { character: name, scenes: [] };
+            else charMap[k].character = slateBetterLabel(charMap[k].character, name);
+            if (charMap[k].scenes.indexOf(label) < 0) charMap[k].scenes.push(label);
+          });
+
+          var loc = String(s.location || '').trim();
+          if (loc) {
+            var lk = slateKey(loc);
+            if (!locMap[lk]) locMap[lk] = { set_location: loc, scenes: [] };
+            else locMap[lk].set_location = slateBetterLabel(locMap[lk].set_location, loc);
+            if (locMap[lk].scenes.indexOf(label) < 0) locMap[lk].scenes.push(label);
+          }
+        });
+
+        merged.character_breakdown = Object.keys(charMap).map(function (k) {
+          var c = charMap[k];
+          return { character: c.character, scenes: c.scenes, total: c.scenes.length };
+        }).sort(function (a, b) { return b.total - a.total; });
+
+        merged.outline_schedule = Object.keys(locMap).map(function (k) {
+          var l = locMap[k];
+          return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
+        }).sort(function (a, b) { return b.total - a.total; });
+
+        return merged; 
+      }
+
+      function wsProgress(pct, label) {
+        var wrap = document.getElementById('wsProgressWrap');
+        var bar = document.getElementById('wsProgressBar');
+        var lab = document.getElementById('wsProgressLabel');
+        if (wrap) wrap.style.display = 'block';
+        if (bar) bar.style.width = pct + '%';
+        if (lab) lab.textContent = label || '';
+      }
+
+      function updateCreditsAfterRun(user, isAdmin) {
+        if (isAdmin) return;
+        try {
+          user.credits_remaining = Math.max(0, (user.credits_remaining || 0) - 1);
+          localStorage.setItem('scriptiq_user', JSON.stringify(user));
+          ['sidebarCredits', 'creditsNum', 'navCreditsCount'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = user.credits_remaining;
+          });
+        } catch (e) {}
+      }
+
+      function renderWorkspaceResults(data, partial, streaming) {
+        var box = document.getElementById('wsResults');
+        if (!box) return;
+        var scenes = data.scenes || [];
+        var chars = data.character_breakdown || [];
+        var locs = data.outline_schedule || [];
+        var pe = data.production_elements || {};
+        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
+        var html = '';
+        if (partial) {
+          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">Partial result: processing stopped at section ' + partial.failedSection + ' of ' + partial.totalSections + '. Showing everything completed so far — you can retry to attempt the full script.</div>';
+        }
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">'
+          + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
+          + chip(locs.length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
+        html += scenes.map(function(s) {
+          return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || 'INT') + '. ' + (s.location || s.set_location || '') + ' — ' + (s.time_of_day || 'DAY') + '</span></div>'
+            + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
+            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join('') + '</div>' : '')
+            + '</div>';
+        }).join('');
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 2 — Character Scene Breakdown</div>';
+        html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
+          + chars.map(function(c) {
+            return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
+              + '<span style="color:var(--paper,#F4EFE6);font-weight:600">' + c.character + '</span>'
+              + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (c.scenes || []).join(', ') + '</span>'
+              + '<span style="color:var(--gold,#D4A64A);font-family:monospace">' + (c.total || (c.scenes || []).length) + '</span></div>';
+          }).join('') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
+        html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
+          + locs.map(function(l) {
+            return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
+              + '<span style="color:var(--paper,#F4EFE6)">' + (l.set_location || '') + '</span>'
+                            + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (l.scenes || []).join(', ') + '</span>'
+              + '<span style="color:var(--gold,#D4A64A);font-family:var(--font-data);min-width:24px;text-align:right">' + (l.total || (l.scenes || []).length) + '</span></div>';
+          }).join('') + '</div>';
+        html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 4 — Production Elements</div>';
+        html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
+          + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
+          + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Costume</div><div>' + (pe.all_costume || []).map(chip).join('') + '</div>';
+      if (streaming && !streaming.complete) {
+          html += '<div style="margin-top:32px;padding:14px 16px;border:1px dashed var(--line-1,#2E323A);border-radius:8px;color:var(--text-2,#B5AFA3);font-size:13px">Still reading your screenplay — section ' + streaming.done + ' of ' + streaming.total + '. Scenes appear here as they are analysed.</div>';
+        } else {
+          html += '<div style="margin-top:40px;padding-top:28px;border-top:1px solid var(--line-1,#2E323A)">'
+            + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:8px">Next Production Steps</div>'
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-bottom:18px">Your breakdown is ready. Continue the production workflow:</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">'
+            + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Start date<br><input type="date" id="wsStartDate" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+            + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Shoot days<br><input type="number" id="wsShootDays" min="1" max="90" value="10" style="margin-top:6px;width:90px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+            + '<button class="btn-primary" id="wsScheduleBtn">Generate Shooting Schedule</button>'
+            + '</div>'
+            + '<div style="margin-top:12px;font-size:12px;color:var(--text-3,#7D786E)">Uses 1 credit. Your Call Sheet is generated from the schedule once it is ready.</div>'
+      + '<div id="wsScheduleOut" style="margin-top:28px"></div>'
+            + '</div>';
+        }
+        box.innerHTML = html;
+        box.style.display = 'block';
+        var schedBtn = document.getElementById('wsScheduleBtn');
+        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);      
+      }
+
+      async function runWorkspaceBreakdown(user) {
+        var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
+        var script = extractedScriptText;
+        var productionId = (crypto.randomUUID && crypto.randomUUID()) ||
+          ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+            window.slateProductionId = productionId;
+        generateBtn.disabled = true;
+        document.getElementById('wsResults').style.display = 'none';
+        try {
+          wsProgress(5, 'Reading screenplay...');
+          const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
+          // Oversize policy (Jul 17 fix): never reject — slice.
+          for (let ci = 0; ci < chunks.length; ci++) {
+            if (chunks[ci].length > CHUNK_SIZE * 2) {
+              const oversized = chunks[ci];
+              const pieces = [];
+              for (let p = 0; p < oversized.length; p += CHUNK_SIZE) {
+                pieces.push(oversized.slice(p, p + CHUNK_SIZE));
+              }
+              chunks.splice(ci, 1, ...pieces);
+              ci += pieces.length - 1;
+            }
+          }
+          const totalChunks = chunks.length;
+          siqTrack('breakdown_started', { script_size_chars: script.length, total_sections: totalChunks, production_id: productionId });
+          let completedChunks = [];
+          let partialFailure = null;
+          for (let i = 0; i < totalChunks; i++) {
+            const sectionStart = Date.now();
+            wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
+            const result = await sendChunkToBackend(user, chunks[i], (typeof selectedLang !== 'undefined' ? selectedLang : 'English'), i, totalChunks, productionId);
+            const chunkDuration = Date.now() - sectionStart;
+            if (result.error) {
+              console.error('[Slate Diagnostics]', JSON.stringify({
+                production_id: productionId, section: i + 1, total_sections: totalChunks,
+                script_size_chars: script.length, section_size_chars: chunks[i].length,
+                error_type: result.message, duration_ms: chunkDuration, completed_sections: completedChunks.length
+              }));
+              siqTrack('breakdown_failed', { section_number: i + 1, duration_ms: chunkDuration, failure_reason: result.message, production_id: productionId });
+              partialFailure = { failedSection: i + 1, totalSections: totalChunks };
+              break;
+            }
+            siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
+            completedChunks.push(result);
+            // Progressive reveal (PM-approved Aug 14) — show what's done so far
+            var soFar = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+            renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
+          }
+          
+          if (completedChunks.length === 0) {
+            throw new Error('Could not process the script. Please try again.');
+          }
+          wsProgress(92, 'Combining production data...');
+          slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+            // Persist the ASSEMBLED breakdown. The server only ever sees one
+          // chunk at a time, so this is the only point where the complete
+          // version exists. Failure here must not lose the user their result,
+          // so it never throws — the breakdown is already on screen.
+          if (!partialFailure && productionId && user) {
+            try {
+              const saveRes = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'breakdown',
+                  production_id: productionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  payload: slateBreakdown
+                })
+              });
+              const saveJson = await saveRes.json();
+              if (!saveJson.saved) console.warn('[Slate] Breakdown not saved:', saveJson.error);
+            } catch (e) {
+              console.warn('[Slate] Breakdown save request failed:', e.message);
+            }
+          }
+          try { localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown)); } catch (e) {}
+          wsProgress(100, partialFailure ? 'Partial breakdown ready.' : 'Breakdown complete.');
+          if (!partialFailure) {
+            siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
+            updateCreditsAfterRun(user, isAdmin);
+          }
+          renderWorkspaceResults(slateBreakdown, partialFailure, { complete: true });
+          document.getElementById('wsExportBar').style.display = 'block';
+        } catch (err) {
+          wsProgress(100, err.message || 'Could not process the script. Please try again.');
+          console.error('[Slate] Breakdown error:', err);
+        } finally {
+          generateBtn.disabled = false;
+        }
+      } // ============================================================
+      // SHOOTING SCHEDULE + CALL SHEET — the connected pipeline
+      // ============================================================
+      var slateSchedule = null;
+      var slateCallsheet = null;
+       // Bridge for the Productions view, which lives in a separate script
+      // block and cannot assign to these variables directly.
+      window.slateRestoreProduction = function (data) {
+        slateBreakdown = data.breakdown;
+        slateSchedule = data.schedule || null;
+        slateCallsheet = null;
+        if (data.script_text) extractedScriptText = data.script_text;
+        if (typeof renderWorkspaceResults === 'function') renderWorkspaceResults(slateBreakdown, null, { complete: true });
+        if (slateSchedule && typeof renderWorkspaceSchedule === 'function') renderWorkspaceSchedule(slateSchedule);
+      };
+      // Close the current production and return to a clean uploader.
+      // Everything is already saved, so nothing is lost — this just
+      // clears the session so a new script can be started.
+      window.slateNewProduction = function () {
+        slateBreakdown = null;
+        slateSchedule = null;
+        slateCallsheet = null;
+        extractedScriptText = '';
+        window.slateProductionId = null;
+        window.slateScriptTitle = null;
+
+        try {
+          localStorage.removeItem('slate_breakdown');
+          localStorage.removeItem('slate_schedule');
+        } catch (e) {}
+
+        var results = document.getElementById('wsResults');
+        if (results) { results.innerHTML = ''; results.style.display = 'none'; }
+        var exportBar = document.getElementById('wsExportBar');
+        if (exportBar) exportBar.style.display = 'none';
+        var schedOut = document.getElementById('wsScheduleOut');
+        if (schedOut) schedOut.innerHTML = '';
+        var csOut = document.getElementById('wsCallsheetOut');
+        if (csOut) csOut.innerHTML = '';
+        var upload = document.getElementById('uploadState');
+        if (upload) upload.style.display = 'block';
+
+        var fileMeta = document.getElementById('fileMeta');
+        if (fileMeta) { fileMeta.textContent = ''; fileMeta.classList.remove('error'); }
+        var health = document.getElementById('wsHealthPanel');
+        if (health) health.innerHTML = '';
+        var generateBtn = document.getElementById('generateBtn');
+        if (generateBtn) generateBtn.classList.remove('ready');
+
+        window.scrollTo(0, 0);
+      };
+      var slateProductionDetails = {
+        // Operational data the AI cannot know — user-editable (PM Option A).
+        // V3 Production Profile will bind to this same object.
+        locations: [], weather_high: '', weather_low: '', precipitation: '',
+        humidity_wind: '', sunrise_sunset: '', forecast_note: '',
+        hospital: '', base_camp: '', base_camp_maps: '',
+        director: '', producer: '', first_ad: '', line_producer: '',
+        emergency_contacts: [], department_timeline: [], crew: [],
+        cast_hotel: '', crew_hotel: '', quote_of_day: '',
+        safety_notes: [
+          'No flip-flops or open-toe footwear on set at any time.',
+          'No alcohol during working hours — before or during the shoot day.',
+          'No photography or recording of any kind without written permission from Production.',
+          'This is a closed set. All confidentiality agreements remain in effect.',
+          'Meal break no later than 6 hours from general crew call, per standard practice.',
+          'All crew to sign in with the 2nd AD on arrival.'
+        ]
+      };
+
+      async function runWorkspaceSchedule() {
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        if (!slateBreakdown) return;
+        var btn = document.getElementById('wsScheduleBtn');
+        var out = document.getElementById('wsScheduleOut');
+        var startDate = (document.getElementById('wsStartDate') || {}).value || '';
+        var shootDays = parseInt((document.getElementById('wsShootDays') || {}).value, 10) || 10;
+        btn.disabled = true; btn.textContent = 'Building schedule...';
+        out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Grouping scenes by location and time of day...</div>';
+        try {
+          var res = await fetch('/.netlify/functions/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              breakdown: slateBreakdown, start_date: startDate, shoot_days: shootDays,
+              user_email: user.email, user_id: user.id
+            })
+          });
+          var raw = await res.text();
+          if (res.status === 402) { out.innerHTML = '<div style="color:var(--warn,#C97E3D);font-size:13px">No credits remaining for scheduling.</div>'; return; }
+          if (raw.trim().startsWith('<') || !res.ok) {
+            var msg = 'Could not build the schedule. Please try again.';
+            try { msg = JSON.parse(raw).error || msg; } catch (e) {}
+            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + msg + '</div>';
+            return;
+          }
+          slateSchedule = JSON.parse(raw);
+          try { localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule)); } catch (e) {}
+          siqTrack('schedule_completed', { total_days: (slateSchedule.schedule || []).length });
+          renderWorkspaceSchedule(slateSchedule);
+            // Persist the schedule. Rendered first, so a save failure never
+          // costs the user the result they just paid a credit for.
+          var schedProductionId = (window.slateProductionId || null);
+          if (schedProductionId && user) {
+            try {
+              const schedSave = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'schedule',
+                  production_id: schedProductionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  payload: slateSchedule
+                })
+              });
+              const schedJson = await schedSave.json();
+              if (!schedJson.saved) {
+                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (schedJson.error || 'unknown') + '</div>';
+              }
+            } catch (e) {
+              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
+            }
+           }
+        } catch (err) {
+          out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Schedule error') + '</div>';
+        } finally {
+          btn.disabled = false; btn.textContent = 'Regenerate Shooting Schedule';
+        }
+      }
+
+      function renderWorkspaceSchedule(sched) {
+        var out = document.getElementById('wsScheduleOut');
+        if (!out) return;
+        var days = sched.schedule || [];
+        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + ' days</div>';
+        html += days.map(function(d) {
+          return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || '') + '</span></div>'
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return s.scene_number; }).join(', ') + '</div>'
+            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
+            + '</div>';
+        }).join('');
+        html += '<div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--line-1,#2E323A)">'
+          + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Call Sheet</div>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">'
+          + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">Shoot day<br><select id="wsDaySelect" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit">'
+          + days.map(function(d) { return '<option value="' + d.day + '">Day ' + d.day + (d.location ? ' — ' + d.location : '') + '</option>'; }).join('')
+          + '</select></label>'
+          + '<label style="font-size:12px;color:var(--text-2,#B5AFA3)">General call<br><input type="time" id="wsGeneralCall" value="07:00" style="margin-top:6px;padding:9px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit"></label>'
+          + '<button class="btn-primary" id="wsCallsheetBtn">Generate Call Sheet</button>'
+          + '</div><div id="wsCallsheetOut" style="margin-top:24px"></div></div>';
+        out.innerHTML = html;
+        var cb = document.getElementById('wsCallsheetBtn');
+        if (cb) cb.addEventListener('click', runWorkspaceCallsheet);
+         renderProductionDetailsPanel();
+      }
+
+      async function runWorkspaceCallsheet() {
+        var user = getCurrentUser();
+        if (!user) { openAuthModal('login'); return; }
+        if (!slateBreakdown || !slateSchedule) return;
+        var btn = document.getElementById('wsCallsheetBtn');
+        var out = document.getElementById('wsCallsheetOut');
+        var day = parseInt((document.getElementById('wsDaySelect') || {}).value, 10) || 1;
+        var call = (document.getElementById('wsGeneralCall') || {}).value || '07:00';
+        var dayData = (slateSchedule.schedule || []).find(function(d) { return Number(d.day) === day; }) || {};
+        btn.disabled = true; btn.textContent = 'Building call sheet...';
+        out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Preparing call times for day ' + day + '...</div>';
+        try {
+          var res = await fetch('/.netlify/functions/callsheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              breakdown: slateBreakdown, schedule: slateSchedule, schedule_day: day,
+              shoot_date: dayData.date || '', general_call: call,
+              user_email: user.email, user_id: user.id
+            })
+          });
+          var raw = await res.text();
+          if (res.status === 402) { out.innerHTML = '<div style="color:var(--warn,#C97E3D);font-size:13px">No credits remaining for call sheets.</div>'; return; }
+          if (raw.trim().startsWith('<') || !res.ok) {
+            var msg = 'Could not build the call sheet. Please try again.';
+            try { msg = JSON.parse(raw).error || msg; } catch (e) {}
+            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + msg + '</div>';
+            return;
+          }
+          var cs = JSON.parse(raw);
+           slateCallsheet = cs;
+          document.getElementById('wsExportBar').style.display = 'block';
+          siqTrack('callsheet_completed', { shoot_day: day });
+          renderWorkspaceCallsheet(cs);
+            // Persist this day's call sheet. One row per production per day,
+          // so regenerating a day overwrites it rather than adding a copy.
+          var csProductionId = (window.slateProductionId || null);
+          if (csProductionId && user) {
+            try {
+              const csSave = await fetch('/.netlify/functions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'callsheet',
+                  production_id: csProductionId,
+                  user_id: user.id,
+                  user_email: user.email,
+                  day_number: day,
+                  payload: cs
+                })
+              });
+              const csJson = await csSave.json();
+              if (!csJson.saved) {
+                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (csJson.error || 'unknown') + '</div>';
+              }
+            } catch (e) {
+              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
+            }
+          }
+        } catch (err) {
+          out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Call sheet error') + '</div>';
+        } finally {
+          btn.disabled = false; btn.textContent = 'Generate Call Sheet';
+        }
+      }
+
+      function renderWorkspaceCallsheet(cs) {
+        var out = document.getElementById('wsCallsheetOut');
+        if (!out) return;
+        var scenes = cs.scenes_today || [];
+        var cast = cs.cast_call_times || [];
+        // Paper mode — documents are square, per the design system
+        var html = '<div style="background:var(--doc-bg,#F4EFE6);color:var(--doc-ink,#0D0E10);padding:24px;border-radius:0">'
+          + '<div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Call Sheet · Day ' + (cs.shoot_day || '') + '</div>'
+          + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
+          + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
+          + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '')
+            + (cs.location_address
+                ? ' — ' + cs.location_address
+                : ' <span style="color:#9C7A2F">— address required</span>') + '</div>'
+          + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Scenes</div>'
+          + scenes.map(function(s) {
+               // Row names the SET (Sitting Room), not the location —
+              // the location is the address in the header above.
+              var setName = s.set || s.location || '';
+               // Background is flagged, never counted. How many is a
+              // producer and director decision.
+              var bg = s.background
+                ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + s.background + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
+                : '';
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_number == null ? '—' : s.scene_number) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
+          + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
+          + cast.map(function(c) {
+              return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
+            }).join('')
+          + (cs.production_notes && cs.production_notes.length ? '<div style="margin-top:18px;font-size:12px;color:#4A463D">' + cs.production_notes.join('<br>') + '</div>' : '')
+          + '</div>';
+        out.innerHTML = html;
+      }
+           // ============================================================
+      // MISSOLOWO SLATE — DOCUMENT EXPORT FRAMEWORK
+      // Shared engine + per-document definitions. New production
+      // documents plug in here rather than spawning new generators.
+      // Night Shoot paper mode: warm white, grayscale-safe gold.
+      // ============================================================
+      var SLATE_PAPER = [244, 239, 230];   // --doc-bg
+      var SLATE_INK   = [13, 14, 16];      // --doc-ink
+      var SLATE_LINE  = [201, 194, 180];   // --doc-line
+      var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
+      var SLATE_MUTED = [120, 115, 105];
+
+      function slateDoc(documentLabel) {
+              if (!window.jspdf || !window.jspdf.jsPDF) {
+          alert('The PDF library is still loading, or your connection blocked it. Please check your network and try again in a moment.');
+          throw new Error('jsPDF unavailable');
+        }
+        var jsPDF = window.jspdf.jsPDF;
+        var doc = new jsPDF();
+        var y = 0;
+
+        function paintPage() {
+          doc.setFillColor.apply(doc, SLATE_PAPER);
+          doc.rect(0, 0, 210, 297, 'F');
+        }
+        function footer() {
+          var pg = doc.internal.getCurrentPageInfo().pageNumber;
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(15, 285, 195, 285);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text('MISSOLOWO SLATE  ·  ' + documentLabel + '  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
+          doc.text('Page ' + pg, 195, 291, { align: 'right' });
+        }
+        function newPage() { doc.addPage(); paintPage(); footer(); y = 24; }
+        function check(n) { if (y + (n || 20) > 278) newPage(); }
+
+        function cover(title, meta) {
+          paintPage();
+          doc.setFillColor.apply(doc, SLATE_GOLD);
+          doc.rect(0, 0, 210, 2, 'F');
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.text('MISSOLOWO SLATE — FILM PRODUCTION OPERATING SYSTEM', 20, 40);
+          doc.setDrawColor.apply(doc, SLATE_GOLD);
+          doc.setLineWidth(0.6);
+          doc.line(20, 46, 44, 46);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(26);
+          doc.setFont('helvetica', 'bold');
+          doc.text(documentLabel.toUpperCase(), 20, 66);
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(20, 96, 190, 96);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('PROJECT TITLE', 20, 110);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(18);
+          doc.text(title, 20, 122);
+          var mx = 20;
+          (meta || []).forEach(function(pair) {
+            doc.setTextColor.apply(doc, SLATE_MUTED);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'bold');
+            doc.text(pair[0].toUpperCase(), mx, 145);
+            doc.setTextColor.apply(doc, SLATE_GOLD);
+            doc.setFontSize(20);
+            doc.text(String(pair[1]), mx, 158);
+            mx += 45;
+          });
+          doc.line(20, 172, 190, 172);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.text('Generated ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), 20, 182);
+          footer();
+        }
+
+        function sectionHeader(label) {
+          newPage();
+          doc.setFillColor.apply(doc, SLATE_GOLD);
+          doc.rect(15, y - 4, 20, 1.2, 'F');
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text(label.toUpperCase(), 15, y + 6);
+          y += 18;
+        }
+
+        // Scene numeral — PM-approved hierarchy: 15pt bold gold, widened zone
+        function sceneNumeral(num) {
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(15);
+          doc.setFont('helvetica', 'bold');
+          doc.text(String(num).padStart(2, '0'), 15, y + 4);
+        }
+
+        function slugline(text, x) {
+         doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFontSize(9);
+          doc.setFont('courier', 'bold');
+          doc.text(text, x || 34, y + 4);
+        }
+
+        function body(text, x, width) {
+          doc.setTextColor.apply(doc,SLATE_INK);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          var lines = doc.splitTextToSize(text, width || 160);
+          doc.text(lines, x || 34, y);
+          y += lines.length * 4;
+        }
+
+        function labelledList(label, items, x) {
+          var arr = Array.isArray(items) ? items.filter(Boolean) : [];
+          if (!arr.length) return;
+          check(8);
+          doc.setTextColor.apply(doc, SLATE_GOLD);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text(label.toUpperCase() + ':', x || 34, y);
+          doc.setTextColor.apply(doc, SLATE_INK);
+          doc.setFont('helvetica', 'normal');
+          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);
+          doc.text(lines, (x || 34) + 26, y);
+          y += lines.length * 4 + 1;
+        }
+        // Reusable table — used by Breakdown, Schedule and Call Sheet.
+        // cols: [{ label, width, align }]  rows: [[cell, cell, ...]]
+        function table(cols, rows) {
+          var x0 = 15;
+          function header() {
+            check(14);
+            doc.setFillColor(237, 230, 216);
+            doc.rect(x0, y - 4, 180, 8, 'F');
+            doc.setTextColor.apply(doc, SLATE_MUTED);
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'bold');
+            var cx = x0 + 2;
+            cols.forEach(function (c) {
+              doc.text(String(c.label).toUpperCase(), c.align === 'right' ? cx + c.width - 4 : cx, y + 1,
+                c.align === 'right' ? { align: 'right' } : undefined);
+              cx += c.width;
+            });
+            y += 10;
+          }
+          header();
+          rows.forEach(function (row, ri) {
+            var heights = cols.map(function (c, i) {
+              doc.setFontSize(9);
+              return doc.splitTextToSize(String(row[i] == null ? '' : row[i]), c.width - 4).length;
+            });
+            var lines = Math.max.apply(null, heights);
+             var rowH = Math.max(9, lines * 4.5 + 4);
+            if (y + rowH > 278) { newPage(); header(); }
+            if (ri % 2 === 0) {
+              doc.setFillColor(248, 245, 238);
+              doc.rect(x0, y - 4, 180, rowH, 'F');
+            }
+            var cx = x0 + 2;
+            cols.forEach(function (c, i) {
+              var val = String(row[i] == null ? '' : row[i]);
+              if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
+              else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
+              else { doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 58, 54); }
+              doc.setFontSize(9);
+              var txt = doc.splitTextToSize(val, c.width - 4);
+              doc.text(txt, c.align === 'right' ? cx + c.width - 4 : cx, y,
+                c.align === 'right' ? { align: 'right' } : undefined);
+              cx += c.width;
+            });
+            y += rowH;
+            doc.setDrawColor.apply(doc, SLATE_LINE);
+            doc.setLineWidth(0.15);
+            doc.line(x0, y - 3, x0 + 180, y - 3);
+          });
+          y += 6;
+        }
+        
+        function rule() {
+          doc.setDrawColor.apply(doc, SLATE_LINE);
+          doc.setLineWidth(0.2);
+          doc.line(15, y, 195, y);
+          y += 6;
+        }
+
+        return {
+          doc: doc,
+          cover: cover,
+          sectionHeader: sectionHeader,
+          sceneNumeral: sceneNumeral,
+          slugline: slugline,
+          body: body,
+          labelledList: labelledList,
+          rule: rule,
+           table: table, 
+          check: check,
+          gap: function(n) { y += (n || 6); },
+          getY: function() { return y; },
+          setY: function(v) { y = v; },
+          save: function(name) { doc.save(name); }
+        };
+      }
+
+      // ── DOCUMENT: SCRIPT BREAKDOWN ──
+      function slateExportBreakdown() {
+        if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
+        var d = slateBreakdown;
+        var scenes = d.scenes || [];
+        var chars = d.character_breakdown || [];
+        var locs = d.outline_schedule || [];
+        var pe = d.production_elements || {};
+        var pdf = slateDoc('Script Breakdown');
+
+         pdf.cover((slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
+          ['Scenes', scenes.length],
+          ['Characters', chars.length],
+          ['Locations', locs.length]
+        ]);
+
+        pdf.sectionHeader('Report 1 — Scene Breakdown');
+        scenes.forEach(function(s) {
+          pdf.check(28);
+          pdf.sceneNumeral(s.scene_number);
+          pdf.slugline((s.int_ext || 'INT') + '. ' + (s.location || 'LOCATION') + ' — ' + (s.time_of_day || 'DAY'));
+          pdf.gap(9);
+          if (s.description) pdf.body(s.description, 34, 158);
+          pdf.gap(2);
+          pdf.labelledList('Cast', s.cast);
+          pdf.labelledList('Props', s.props);
+          pdf.labelledList('Costume', s.costume);
+          pdf.labelledList('Equipment', s.equipment);
+          pdf.gap(3);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Report 2 — Character Scene Breakdown');
+                pdf.table(
+          [{ label: 'Character', width: 60, bold: true },
+           { label: 'Scene Numbers', width: 95 },
+           { label: 'Total', width: 25, align: 'right', gold: true }],
+          chars.map(function (c) {
+            return [c.character || '', (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
+          })
+        );
+
+        pdf.sectionHeader('Report 3 — Locations');
+                pdf.table(
+          [{ label: 'Set / Location', width: 70, bold: true },
+           { label: 'Scene Numbers', width: 85 },
+           { label: 'Total', width: 25, align: 'right', gold: true }],
+          locs.map(function (l) {
+            return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
+          })
+        );
+
+        pdf.sectionHeader('Report 4 — Production Elements');
+        pdf.labelledList('All Cast', pe.all_cast, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Props', pe.all_props, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Costume', pe.all_costume, 15);
+        pdf.gap(4);
+        pdf.labelledList('All Equipment', pe.all_equipment, 15);
+
+        siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
+        pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
+      }
+      
+      // ── Page eighths — production-standard page math (V2 launch scope) ──
+      function slateEighths(scene) {
+        var text = ((scene.description || '') + ' ' + (scene.production_notes || '')).trim();
+        var eighths = Math.max(1, Math.round(text.length / 160));
+        var pages = Math.floor(eighths / 8);
+        var rem = eighths % 8;
+        return { total: eighths, label: (pages > 0 ? pages + ' ' : '') + rem + '/8' };
+      }
+
+      function slateTotalEighths(scenes) {
+        var t = 0;
+        (scenes || []).forEach(function(s) { t += slateEighths(s).total; });
+        var pages = Math.floor(t / 8);
+        var rem = t % 8;
+        return pages + ' ' + rem + '/8';
+      }
+
+      // ── DOCUMENT: SHOOTING SCHEDULE ──
+      function slateExportSchedule() {
+        if (!slateSchedule) { alert('Generate a shooting schedule first.'); return; }
+        var s = slateSchedule;
+        var days = s.schedule || [];
+        var allScenes = [];
+        days.forEach(function(d) { (d.scenes || []).forEach(function(sc) { allScenes.push(sc); }); });
+        var locations = {};
+        days.forEach(function(d) { if (d.location) locations[d.location] = true; });
+
+        var pdf = slateDoc('Shooting Schedule');
+        pdf.cover(s.title || (slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
+          ['Shoot Days', days.length],
+          ['Scenes', allScenes.length],
+          ['Locations', Object.keys(locations).length]
+        ]);
+
+        days.forEach(function(day, di) {
+          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || ''));
+          (day.scenes || []).forEach(function(sc) {
+            pdf.check(24);
+              pdf.sceneNumeral(sc.scene_number);
+             // Day header carries the location; the row names the SET —
+            // which room, not which building.
+            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + (sc.set || sc.location || sc.set_location || ''));               
+            pdf.gap(9);
+            if (sc.description) pdf.body(sc.description, 34, 130);
+            pdf.gap(1);
+            pdf.labelledList('Cast', sc.cast_required || sc.cast);
+            pdf.labelledList('Props', sc.props);
+            pdf.gap(3);
+            pdf.rule();
+          });
+          if (day.production_notes) {
+            pdf.check(14);
+            pdf.labelledList('Day Notes', [day.production_notes], 15);
+            pdf.gap(4);
+          }
+          pdf.check(12);
+        });
+
+        if (s.cast_release_schedule && s.cast_release_schedule.length) {
+          pdf.sectionHeader('Cast Release Schedule');
+          s.cast_release_schedule.forEach(function(c) {
+            pdf.check(12);
+            pdf.slugline(c.character || '', 15);
+            pdf.gap(6);
+            pdf.body('Days required: ' + (c.days_required || []).join(', ') + '   ·   Release: Day ' + (c.release_day || '—'), 15, 175);
+            pdf.gap(2);
+            pdf.rule();
+          });
+        }
+
+        siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
+        pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
+      }
+      
+      // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
+      function slateExportCallsheet() {
+        if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        var cs = slateCallsheet;
+        var pd = slateProductionDetails || {};
+        var scenes = cs.scenes_today || [];
+        var cast = cs.cast_call_times || [];
+        var pdf = slateDoc('Call Sheet');
+        var d = pdf.doc;
+
+        pdf.cover(cs.title || 'Untitled Production', [
+          ['Shoot Day', String(cs.shoot_day || 1).padStart(2, '0')],
+          ['General Call', cs.general_call || '—'],
+          ['Est. Wrap', cs.wrap_estimate || '—']
+        ]);
+
+        function labelValue(label, value, x, width) {
+          d.setTextColor(120, 115, 105);
+          d.setFontSize(6.5);
+          d.setFont('helvetica', 'bold');
+          d.text(label.toUpperCase(), x, pdf.getY());
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(9);
+          d.setFont('courier', 'normal');
+          var lines = d.splitTextToSize(String(value || '—'), width || 55);
+          d.text(lines, x, pdf.getY() + 5);
+          return lines.length;
+        }
+
+        function fourUp(items) {
+          pdf.check(18);
+          var startY = pdf.getY();
+          var maxLines = 1;
+          items.forEach(function(it, i) {
+            pdf.setY(startY);
+            var n = labelValue(it[0], it[1], 15 + (i * 45), 42);
+            if (n > maxLines) maxLines = n;
+          });
+          pdf.setY(startY + 8 + (maxLines - 1) * 4);
+        }
+
+        pdf.sectionHeader('Locations');
+        var locs = (pd.locations && pd.locations.length) ? pd.locations : [cs.location_address || cs.location || '—'];
+        fourUp(locs.slice(0, 4).map(function(l, i) { return ['Location ' + (i + 1), l]; }));
+
+        pdf.sectionHeader('Weather & Logistics');
+        fourUp([
+          ['High / Low', (pd.weather_high || '—') + ' / ' + (pd.weather_low || '—')],
+          ['Precipitation', pd.precipitation],
+          ['Humidity / Wind', pd.humidity_wind],
+          ['Sunrise / Sunset', pd.sunrise_sunset]
+        ]);
+        if (pd.forecast_note) { pdf.body(pd.forecast_note, 15, 175); pdf.gap(4); }
+        fourUp([
+          ['Nearest Hospital', pd.hospital],
+          ['Base Camp', pd.base_camp],
+          ['Base Camp — Maps', pd.base_camp_maps],
+          ['', '']
+        ]);
+
+        pdf.sectionHeader('Key Contacts');
+        fourUp([
+          ['Director', pd.director],
+          ['Producer', pd.producer],
+          ['1st AD', pd.first_ad],
+          ['Line Producer', pd.line_producer]
+        ]);
+
+        if (pd.emergency_contacts && pd.emergency_contacts.length) {
+          pdf.check(14 + pd.emergency_contacts.length * 6);
+          var eY = pdf.getY();
+          d.setFillColor(13, 14, 16);
+          d.rect(15, eY - 4, 180, 10 + pd.emergency_contacts.length * 6, 'F');
+          d.setTextColor(212, 166, 74);
+          d.setFontSize(6.5);
+          d.setFont('helvetica', 'bold');
+          d.text('EMERGENCY CONTACTS', 19, eY + 2);
+          pd.emergency_contacts.forEach(function(c, i) {
+            d.setTextColor(244, 239, 230);
+            d.setFontSize(8);
+            d.setFont('courier', 'normal');
+            d.text(String(c.role || '') + ' — ' + String(c.name || ''), 19, eY + 9 + (i * 6));
+            d.setTextColor(212, 166, 74);
+            d.text(String(c.phone || ''), 191, eY + 9 + (i * 6), { align: 'right' });
+          });
+          pdf.setY(eY + 12 + pd.emergency_contacts.length * 6);
+        }
+
+        if (pd.department_timeline && pd.department_timeline.length) {
+          pdf.sectionHeader('Department Call Timeline');
+          pd.department_timeline.forEach(function(t) {
+            pdf.check(8);
+            d.setTextColor(156, 122, 47);
+            d.setFontSize(10);
+            d.setFont('courier', 'bold');
+            d.text(String(t.time || ''), 15, pdf.getY());
+            d.setTextColor(13, 14, 16);
+            d.setFontSize(8);
+            d.setFont('helvetica', 'normal');
+            d.text(String(t.label || ''), 45, pdf.getY());
+            pdf.gap(7);
+          });
+        }
+
+        pdf.sectionHeader("Today's Scene Schedule");
+        scenes.forEach(function(s) {
+          pdf.check(20);
+          pdf.sceneNumeral(s.scene_number);
+          // Location is the address in the header; the row names the SET.
+          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + (s.set || s.location || ''));
+          pdf.gap(9);
+          if (s.description) pdf.body(s.description, 34, 130);
+          pdf.labelledList('Cast', s.cast);
+          pdf.gap(2);
+          pdf.rule();
+        });
+
+        pdf.sectionHeader('Cast');
+        cast.forEach(function(c) {
+          pdf.check(14);
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(9);
+          d.setFont('helvetica', 'bold');
+          d.text(String(c.character || ''), 15, pdf.getY());
+          d.setFont('courier', 'normal');
+          d.setFontSize(8);
+          d.setTextColor(120, 115, 105);
+          d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—') + '   ·   Scenes ' + (c.scenes || []).join(', '), 15, pdf.getY() + 5);
+          pdf.gap(11);
+          pdf.rule();
+        });
+
+        if (pd.crew && pd.crew.length) {
+          pdf.sectionHeader('Full Crew List');
+          pd.crew.forEach(function(m) {
+            pdf.check(8);
+            d.setTextColor(120, 115, 105);
+            d.setFontSize(7);
+            d.setFont('helvetica', 'normal');
+            d.text(String(m.role || ''), 15, pdf.getY());
+            d.setTextColor(13, 14, 16);
+            d.setFontSize(8.5);
+            d.setFont('helvetica', 'bold');
+            d.text(String(m.name || ''), 75, pdf.getY());
+            d.setFont('courier', 'normal');
+            d.setFontSize(8);
+            d.text(String(m.phone || ''), 191, pdf.getY(), { align: 'right' });
+            pdf.gap(6);
+          });
+        }
+
+        if (pd.cast_hotel || pd.crew_hotel) {
+          pdf.sectionHeader('Hotels');
+          fourUp([['Cast Hotel', pd.cast_hotel], ['Crew Hotel', pd.crew_hotel], ['', ''], ['', '']]);
+        }
+
+        if (cs.production_notes && cs.production_notes.length) {
+          pdf.sectionHeader('Production Notes');
+          cs.production_notes.forEach(function(n) {
+            pdf.check(8);
+            pdf.body('•  ' + n, 15, 175);
+            pdf.gap(3);
+          });
+        }
+
+        if (pd.quote_of_day) {
+          pdf.check(16);
+          d.setDrawColor(156, 122, 47);
+          d.setLineWidth(0.8);
+          d.line(15, pdf.getY() - 3, 15, pdf.getY() + 6);
+          d.setTextColor(13, 14, 16);
+          d.setFontSize(10);
+          d.setFont('helvetica', 'italic');
+          d.text('"' + pd.quote_of_day + '"', 20, pdf.getY() + 2);
+          pdf.gap(12);
+        }
+
+        pdf.sectionHeader('Standard Notes & Safety');
+        (pd.safety_notes || []).forEach(function(n) {
+          pdf.check(8);
+          pdf.body('•  ' + n, 15, 175);
+          pdf.gap(3);
+        });
+
+        siqTrack('pdf_export', { document_type: 'callsheet', shoot_day: cs.shoot_day });
+        pdf.save(((cs.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-call-sheet-day-' + (cs.shoot_day || 1) + '.pdf');
+      }
+     
+      // ── PRODUCTION DETAILS — operational data the AI cannot know ──
+      // Saves to slateProductionDetails (read by the Call Sheet export) and
+      // persists locally. V3's Production Profile binds to this same object.
+      function loadProductionDetails() {
+        try {
+          var saved = localStorage.getItem('slate_production_details');
+          if (saved) {
+            var p = JSON.parse(saved);
+            Object.keys(p).forEach(function(k) { slateProductionDetails[k] = p[k]; });
+          }
+        } catch (e) {}
+      }
+
+      function saveProductionDetails() {
+        var g = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        var pd = slateProductionDetails;
+        pd.weather_high = g('pdWeatherHigh');
+        pd.weather_low = g('pdWeatherLow');
+        pd.precipitation = g('pdPrecip');
+        pd.humidity_wind = g('pdHumidityWind');
+        pd.sunrise_sunset = g('pdSunriseSunset');
+        pd.forecast_note = g('pdForecast');
+        pd.hospital = g('pdHospital');
+        pd.base_camp = g('pdBaseCamp');
+        pd.base_camp_maps = g('pdBaseCampMaps');
+        pd.director = g('pdDirector');
+        pd.producer = g('pdProducer');
+        pd.first_ad = g('pdFirstAd');
+        pd.line_producer = g('pdLineProducer');
+        pd.cast_hotel = g('pdCastHotel');
+        pd.crew_hotel = g('pdCrewHotel');
+        pd.quote_of_day = g('pdQuote');
+        pd.locations = g('pdLocations').split('\n').filter(Boolean);
+        pd.emergency_contacts = g('pdEmergency').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { role: (parts[0] || '').trim(), name: (parts[1] || '').trim(), phone: (parts[2] || '').trim() };
+        });
+        pd.department_timeline = g('pdTimeline').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { time: (parts[0] || '').trim(), label: (parts[1] || '').trim() };
+        });
+        pd.crew = g('pdCrew').split('\n').filter(Boolean).map(function(line) {
+          var parts = line.split('|');
+          return { role: (parts[0] || '').trim(), name: (parts[1] || '').trim(), phone: (parts[2] || '').trim() };
+        });
+        var notes = g('pdSafety');
+        if (notes) pd.safety_notes = notes.split('\n').filter(Boolean);
+        try { localStorage.setItem('slate_production_details', JSON.stringify(pd)); } catch (e) {}
+        var status = document.getElementById('pdSaveStatus');
+        if (status) {
+          status.textContent = 'Saved — these details will appear on your call sheet.';
+          setTimeout(function() { status.textContent = ''; }, 4000);
+        }
+      }
+
+      function renderProductionDetailsPanel() {
+        var host = document.getElementById('wsCallsheetOut');
+        if (!host || document.getElementById('pdPanel')) return;
+        loadProductionDetails();
+        var pd = slateProductionDetails;
+        var inputCss = 'width:100%;margin-top:5px;padding:8px 10px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px;box-sizing:border-box';
+        var labelCss = 'font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-2,#B5AFA3)';
+        function field(id, label, value, placeholder) {
+          return '<label style="' + labelCss + '">' + label
+            + '<input id="' + id + '" value="' + (value || '').replace(/"/g, '&quot;') + '" placeholder="' + (placeholder || '') + '" style="' + inputCss + '"></label>';
+        }
+        function area(id, label, value, placeholder, rows) {
+          return '<label style="' + labelCss + '">' + label
+            + '<textarea id="' + id + '" rows="' + (rows || 3) + '" placeholder="' + (placeholder || '') + '" style="' + inputCss + ';resize:vertical">' + (value || '') + '</textarea></label>';
+        }
+        function group(title, inner, cols) {
+          return '<div style="margin-bottom:22px">'
+            + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:10px">' + title + '</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(' + (cols || 200) + 'px,1fr));gap:12px">' + inner + '</div></div>';
+        }
+
+        var panel = document.createElement('div');
+        panel.id = 'pdPanel';
+        panel.style.cssText = 'margin-bottom:24px;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden';
+        panel.innerHTML =
+          '<div id="pdToggle" style="padding:14px 18px;background:var(--ink-2,#1B1D22);cursor:pointer;display:flex;justify-content:space-between;align-items:center">'
+          + '<div><div style="font-size:14px;font-weight:600;color:var(--paper,#F4EFE6)">Production Details</div>'
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">Weather, contacts, crew and logistics — the information only you can provide.</div></div>'
+          + '<div id="pdChevron" style="color:var(--gold,#D4A64A);font-size:18px">▾</div></div>'
+          + '<div id="pdBody" style="display:none;padding:20px 18px;background:var(--ink-1,#141519)">'
+          + group('Locations', area('pdLocations', 'One per line', (pd.locations || []).join('\n'), 'Danfo Motor Park, Ikorodu Rd, Lagos', 3), 320)
+          + group('Weather &amp; Logistics',
+              field('pdWeatherHigh', 'High', pd.weather_high, '31°C')
+            + field('pdWeatherLow', 'Low', pd.weather_low, '24°C')
+            + field('pdPrecip', 'Precipitation', pd.precipitation, '20% chance')
+            + field('pdHumidityWind', 'Humidity / Wind', pd.humidity_wind, '78% · 11 km/h')
+            + field('pdSunriseSunset', 'Sunrise / Sunset', pd.sunrise_sunset, '06:42 / 18:58')
+            + field('pdForecast', 'Forecast note', pd.forecast_note, 'Light showers possible after 4 PM'))
+          + group('Base &amp; Safety',
+              field('pdHospital', 'Nearest hospital', pd.hospital, 'Lagos Island Gen. — 0803 000 0000')
+            + field('pdBaseCamp', 'Base camp', pd.base_camp, 'Gate B, Ikorodu Rd')
+            + field('pdBaseCampMaps', 'Maps link', pd.base_camp_maps, 'maps.app.goo.gl/...'))
+          + group('Key Contacts',
+              field('pdDirector', 'Director', pd.director, 'Name · 0803 000 0000')
+            + field('pdProducer', 'Producer', pd.producer, 'Name · 0803 000 0000')
+            + field('pdFirstAd', '1st AD', pd.first_ad, 'Name · 0803 000 0000')
+            + field('pdLineProducer', 'Line producer', pd.line_producer, 'Name · 0803 000 0000'))
+          + group('Emergency Contacts', area('pdEmergency', 'One per line — Role | Name | Phone',
+              (pd.emergency_contacts || []).map(function(c) { return [c.role, c.name, c.phone].join(' | '); }).join('\n'),
+              'Set Medic | Dr. Ade Fashola | 0803 555 6666', 3), 320)
+          + group('Department Call Timeline', area('pdTimeline', 'One per line — Time | Label',
+              (pd.department_timeline || []).map(function(t) { return [t.time, t.label].join(' | '); }).join('\n'),
+              '05:00 | Crew departs basecamp\n07:00 | Art dept call\n08:00 | Wardrobe call', 5), 320)
+          + group('Crew List', area('pdCrew', 'One per line — Role | Name | Phone',
+              (pd.crew || []).map(function(m) { return [m.role, m.name, m.phone].join(' | '); }).join('\n'),
+              'DP | Segun Adewale | 0803 000 1111\n1st AC | Yemi Kolawole | 0803 222 4444', 6), 320)
+          + group('Hotels',
+              field('pdCastHotel', 'Cast hotel', pd.cast_hotel, 'Name, address')
+            + field('pdCrewHotel', 'Crew hotel', pd.crew_hotel, 'Name, address'))
+          + group('Notes', field('pdQuote', 'Quote of the day', pd.quote_of_day, 'Optional'), 320)
+          + group('Standard Notes &amp; Safety', area('pdSafety', 'One per line — pre-filled with standard set rules',
+              (pd.safety_notes || []).join('\n'), '', 6), 320)
+          + '<div style="display:flex;align-items:center;gap:14px;margin-top:6px">'
+          + '<button class="btn-primary" id="pdSaveBtn">Save Production Details</button>'
+          + '<span id="pdSaveStatus" style="font-size:12px;color:var(--ok,#7FAE7E)"></span></div>'
+          + '</div>';
+        host.parentNode.insertBefore(panel, host);
+
+        document.getElementById('pdToggle').addEventListener('click', function() {
+          var body = document.getElementById('pdBody');
+          var chev = document.getElementById('pdChevron');
+          var open = body.style.display !== 'none';
+          body.style.display = open ? 'none' : 'block';
+          chev.textContent = open ? '▾' : '▴';
+        });
+        document.getElementById('pdSaveBtn').addEventListener('click', saveProductionDetails);
+      }
+     
+      // Export functions live inside this closure — expose them so the
+      // onclick handlers in the export bar can reach them.
+      window.slateExportBreakdown = slateExportBreakdown;
+      window.slateExportSchedule = slateExportSchedule;
+      window.slateExportCallsheet = slateExportCallsheet;
+      
+      // ── SCRIPT HEALTH CHECK — runs in the browser before processing ──
+      // Advisory only. Real scripts legitimately contain 47A/47B scenes and
+      // unnumbered montages, so gaps are weighted lightly.
+      function slateHealthCheck(text) {
+        var findings = [];
+        var lines = String(text || '').split(/\r?\n/);
+
+        // Layer 1 — standard slug lines: INT. LOCATION - DAY
+        // Used across Hollywood, Bollywood and much of Nollywood.
+                // Layer 1 — standard slug lines, with the scene number captured.
+        // Must handle decimals ("2.01"), suffixes ("47A", "2.09B") and the
+        // no-space case ("2.02.INT."). The previous pattern expected digits
+        // plus an optional letter, so every episodic number came back empty
+        // and we reported correctly-numbered scripts as unnumbered.
+        var headingRe = /^[ \t]*(?:(?:SCENE|SC)[ \t]*)?([0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \t]*(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b[.\s\/]*(.*)$/i;
+
+        // Layer 2 — SCENE n <tab> LOCATION <tab> INT/DAY
+        // A standard Nollywood layout. Carries more structure than a slug
+        // line: the scene number is explicit and INT/EXT is already split
+        // from the time of day.
+        var sceneRe = /^\s*SCENE\s+(\d+[A-Za-z]?)\s+(.+?)\s+(INT|EXT|I\/E|INT\/EXT)\s*[\/\-—–]\s*(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\s*$/i;
+
+        var scenes = [];
+        var format = 'standard';
+
+        lines.forEach(function (line, i) {
+          var m = line.match(headingRe);
+          if (!m) return;
+          scenes.push({
+            line: i + 1,
+            number: m[1] || null,
+            rest: (m[3] || '').trim(),
+            raw: line.trim()
+          });
+        });
+
+        // Only try layer 2 if layer 1 found nothing, so a standard script
+        // can never be misread by the looser pattern.
+        if (!scenes.length) {
+          lines.forEach(function (line, i) {
+            var m = line.match(sceneRe);
+            if (!m) return;
+            format = 'scene-numbered';
+            scenes.push({
+              line: i + 1,
+              number: m[1] || null,
+              // Rebuilt as LOCATION - TIME so every check below works unchanged
+              rest: m[2].trim() + ' - ' + m[4].toUpperCase(),
+              raw: line.trim()
+            });
+          });
+        }
+        
+
+               if (!scenes.length) {
+          return {
+            score: 0,
+            band: 'red',
+            sceneCount: 0,
+            findings: [{ level: 'high', title: 'No scene headings found',
+              detail: 'We could not find scene headings in a format we recognise yet. Your script can still be broken down — scenes will be detected from the text.' }]
+          };
+        }
+        // Duplicate scene numbers
+        var seen = {}, dupes = [];
+        scenes.forEach(function (s) {
+          if (!s.number) return;
+          var k = String(s.number).toUpperCase();
+          if (seen[k]) { if (dupes.indexOf(k) < 0) dupes.push(k); } else { seen[k] = true; }
+        });
+        if (dupes.length) {
+          findings.push({ level: 'high', title: dupes.length + ' duplicate scene number' + (dupes.length > 1 ? 's' : ''),
+            detail: 'Scene ' + dupes.slice(0, 6).join(', ') + (dupes.length > 6 ? '…' : '') + ' appear more than once.' });
+        }
+
+        // Unnumbered headings
+        var unnumbered = scenes.filter(function (s) { return !s.number; });
+        if (unnumbered.length) {
+          findings.push({ level: unnumbered.length > scenes.length * 0.3 ? 'high' : 'low',
+            title: unnumbered.length + ' scene' + (unnumbered.length > 1 ? 's' : '') + ' without a number',
+            detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
+        }
+
+        // Missing time of day
+        var noTod = scenes.filter(function (s) { return !/\b(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\b/i.test(s.rest); });
+        if (noTod.length) {
+          findings.push({ level: 'medium', title: noTod.length + ' heading' + (noTod.length > 1 ? 's' : '') + ' missing DAY or NIGHT',
+            detail: 'Scheduling separates day and night shoots, so this affects your shooting schedule.' });
+        }
+
+        // Inconsistent location naming
+        function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+        var byKey = {};
+        scenes.forEach(function (s) {
+          var loc = s.rest.split(/[-—–]/)[0].replace(/^(INT|EXT|I\/E|INT\/EXT)\.?\s*/i, '').trim();
+          if (!loc) return;
+          var k = key(loc);
+          if (!byKey[k]) byKey[k] = [];
+          if (byKey[k].indexOf(loc) < 0) byKey[k].push(loc);
+        });
+        var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
+        if (inconsistent.length) {
+          findings.push({ level: 'medium', title: inconsistent.length + ' location' + (inconsistent.length > 1 ? 's' : '') + ' written inconsistently',
+            detail: 'e.g. ' + byKey[inconsistent[0]].slice(0, 3).join(' / ') + '. Consistent naming groups scenes correctly.' });
+        }
+
+        // Score — weighted so well-formed scripts land green
+        var score = 100;
+        findings.forEach(function (f) {
+          score -= f.level === 'high' ? 20 : f.level === 'medium' ? 8 : 3;
+        });
+        score = Math.max(0, Math.min(100, Math.round(score)));
+        var band = score >= 85 ? 'green' : score >= 60 ? 'amber' : 'red';
+
+        return { score: score, band: band, sceneCount: scenes.length, findings: findings };
+      }
+      window.slateHealthCheck = slateHealthCheck;
+    
+      function renderHealthPanel(text) {
+        var el = document.getElementById('wsHealthPanel');
+        if (!el) return;
+        var r = slateHealthCheck(text);
+        var colours = { green: '#7FAE7E', amber: '#C97E3D', red: '#D96A57' };
+        var labels = { green: 'Ready to break down', amber: 'A few things to check', red: 'Needs attention' };
+        var c = colours[r.band];
+
+        var html = '<div style="padding:18px 20px;background:var(--ink-2,#1B1D22);display:flex;align-items:center;gap:18px">'
+          + '<div style="width:62px;height:62px;border-radius:50%;border:3px solid ' + c + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+          + '<span style="font-size:18px;font-weight:600;color:' + c + '">' + r.score + '</span></div>'
+          + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Script Health Check</div>'
+          + '<div style="font-size:15px;font-weight:600;color:var(--paper,#F4EFE6);margin-top:4px">' + labels[r.band] + '</div>'
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">' + r.sceneCount + ' scene headings found</div>'
+          + '</div></div>';
+
+        if (r.findings.length) {
+          html += '<div style="padding:16px 20px;background:var(--ink-1,#141519)">';
+          r.findings.forEach(function (f) {
+            var dot = f.level === 'high' ? '#D96A57' : f.level === 'medium' ? '#C97E3D' : '#8A857C';
+            html += '<div style="display:flex;gap:10px;margin-bottom:12px">'
+              + '<span style="width:7px;height:7px;border-radius:50%;background:' + dot + ';margin-top:6px;flex-shrink:0"></span>'
+              + '<div><div style="font-size:13px;color:var(--paper,#F4EFE6)">' + f.title + '</div>'
+              + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">' + f.detail + '</div></div></div>';
+          });
+          html += '<div style="font-size:11px;color:var(--text-2,#B5AFA3);font-style:italic;margin-top:4px">These are notes, not blockers — you can continue whenever you are ready.</div>';
+          html += '</div>';
+        }
+
+        el.innerHTML = html;
+        el.style.display = 'block';
+      }
+      window.renderHealthPanel = renderHealthPanel;  
+    })();
+    // ── PRODUCTIONS ──
+      // Lists saved productions and reopens one in full. A filmmaker
+      // returning on day two generates Day 2's call sheet from the
+      // schedule already stored — no re-upload, no second credit.
+ 
+      function prodWhen(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      }
+ 
+      async function loadProductionsList() {
+        var out = document.getElementById('prodListOut');
+        if (!out) return;
+
+        // getCurrentUser lives in another scope, so read the session
+        // directly. Same key, same shape.
+        var user = null;
+        try {
+          var rawUser = localStorage.getItem('scriptiq_user');
+          user = rawUser ? JSON.parse(rawUser) : null;
+        } catch (e) {
+          user = null;
+        }
+        if (!user) {
+          out.innerHTML = '<div class="prod-note">Sign in to see your saved productions.</div>';
+          return;
+        }
+           out.innerHTML = '<div class="prod-note">Loading your productions…</div>'; 
+ 
+ 
+        try {
+          var res = await fetch('/.netlify/functions/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'list', user_id: user.id, user_email: user.email })
+          });
+          var data = await res.json();
+ 
+          if (!res.ok) {
+            out.innerHTML = '<div class="prod-note" style="color:var(--error)">' + (data.error || 'Could not load productions.') + '</div>';
+            return;
+          }
+ 
+          var list = data.productions || [];
+          if (!list.length) {
+            out.innerHTML = '<div class="prod-note">No saved productions yet. Break down a script and it will appear here.</div>';
+            return;
+          }
+ 
+          out.innerHTML = '<div class="prod-list">' + list.map(function (p) {
+            var when = prodWhen(p.updated_at || p.created_at);
+            return '<div class="prod-row">'
+              + '<div class="prod-main">'
+              + '<div class="prod-title">' + (p.title || 'Untitled Script') + '</div>'
+              + '<div class="prod-meta">' + (when ? 'Last worked on ' + when : '') + '</div>'
+              + '</div>'
+              + '<button class="prod-open" data-prod="' + p.production_id + '">Open</button>'
+              + '</div>';
+          }).join('') + '</div>';
+ 
+        } catch (e) {
+          out.innerHTML = '<div class="prod-note" style="color:var(--error)">Could not reach the server. Check your connection and try again.</div>';
+        }
+      }
+          async function openProduction(productionId) {
+        var user = null;
+        try {
+          var rawU = localStorage.getItem('scriptiq_user');
+          user = rawU ? JSON.parse(rawU) : null;
+        } catch (e) { user = null; }
+        if (!user) { openAuthModal('login'); return; }
+        var out = document.getElementById('prodListOut');
+        if (out) out.innerHTML = '<div class="prod-note">Opening production…</div>';
+ 
+        try {
+          var res = await fetch('/.netlify/functions/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'open',
+              production_id: productionId,
+              user_id: user.id,
+              user_email: user.email
+            })
+          });
+          var data = await res.json();
+ 
+          if (!res.ok || !data.breakdown) {
+            if (out) out.innerHTML = '<div class="prod-note" style="color:var(--error)">' + (data.error || 'Could not open this production.') + '</div>';
+            return;
+          }
+ 
+          // Restore state. This production becomes the current one, so
+          // anything generated from here saves back to it rather than
+          // starting a new production.
+          window.slateProductionId = data.production.production_id;
+
+          // Hand the restored data to the workspace scope, which owns
+          // these variables. Assigning them from here would create new
+          // locals instead of updating the real ones.
+          if (typeof window.slateRestoreProduction === 'function') {
+            window.slateRestoreProduction(data);
+          }
+ 
+          try {
+            localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown));
+            if (slateSchedule) localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule));
+          } catch (e) {}
+ 
+          // Render into the Production Center
+          var results = document.getElementById('wsResults');
+          if (results) results.style.display = 'block';
+          var upload = document.getElementById('uploadState');
+          if (upload) upload.style.display = 'none';
+          var exportBar = document.getElementById('wsExportBar');
+          if (exportBar) exportBar.style.display = 'block';
+ 
+          if (data.start_date) {
+            var sd = document.getElementById('wsStartDate');
+            if (sd) sd.value = data.start_date;
+          }
+          if (data.shoot_days) {
+            var shd = document.getElementById('wsShootDays');
+            if (shd) shd.value = data.shoot_days;
+          }
+ 
+          // Switch to the Production Center where the work lives
+          var target = document.querySelector('[data-view="home"]');
+          if (target) {
+            document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+            target.classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+            var navHome = document.querySelector('.nav-item[href="#home"]');
+            if (navHome) navHome.classList.add('active');
+          }
+          window.scrollTo(0, 0);
+ 
+        } catch (e) {
+          if (out) out.innerHTML = '<div class="prod-note" style="color:var(--error)">Could not reach the server. Check your connection and try again.</div>';
+        }
+      }
+ 
+      // Delegated, so rows added later work without rebinding.
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-prod]');
+        if (!btn) return;
+        openProduction(btn.getAttribute('data-prod'));
+      });
+ 
+      // Refresh the list whenever the Productions view is opened.
+      document.querySelectorAll('.nav-item[href="#productions"]').forEach(function (link) {
+        link.addEventListener('click', function () { setTimeout(loadProductionsList, 0); });
+      });
+     if (location.hash === '#productions') setTimeout(loadProductionsList, 0);
+      // New Production — clears the session and returns to the uploader.
+      // Lives here so both the Productions page and the Production Center
+      // can call it; the actual clearing happens in the workspace scope.
+      function slateStartNewProduction() {
+        if (typeof window.slateNewProduction === 'function') {
+          window.slateNewProduction();
+        }
+        var target = document.querySelector('[data-view="home"]');
+        if (target) {
+          document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+          target.classList.add('active');
+          document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+          var navHome = document.querySelector('.nav-item[href="#home"]');
+          if (navHome) navHome.classList.add('active');
+        }
+      }
+      window.slateStartNewProduction = slateStartNewProduction;
+  </script>
+</body>
+</html>
