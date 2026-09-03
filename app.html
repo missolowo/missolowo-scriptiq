@@ -1000,6 +1000,7 @@
           // may never see the title page. Take the first real title any
           // chunk reports rather than assuming chunk zero has it.
           title: (function () {
+            if (window.slateScriptTitle) return window.slateScriptTitle;
             for (var t = 0; t < chunks.length; t++) {
               var candidate = chunks[t] && chunks[t].title;
               if (candidate && String(candidate).trim() && !/^untitled/i.test(candidate)) {
