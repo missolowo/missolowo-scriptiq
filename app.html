@@ -2251,8 +2251,8 @@
       // unnumbered montages, so gaps are weighted lightly.
       function slateHealthCheck(text) {
         var findings = [];
-        var lines = String(text || '').split(/\r?\n/);
- 
+         var lines = String(text || '').split(/\r?\n/);
+
         // ── Two heading formats, tried in order of strictness ──
         //
         // Layer 2 is checked FIRST even though it is numbered second,
@@ -2316,6 +2316,7 @@
           });
         }
  
+
         if (!scenes.length) {
           return {
             score: 0,
@@ -2329,6 +2330,8 @@
         // Duplicate scene numbers
         var seen = {}, dupes = [];
         scenes.forEach(function (s) {
+
+
           if (!s.number) return;
           var k = String(s.number).toUpperCase();
           if (seen[k]) { if (dupes.indexOf(k) < 0) dupes.push(k); } else { seen[k] = true; }
