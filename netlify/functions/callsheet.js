@@ -117,7 +117,10 @@ exports.handler = async function(event, context) {
         set: s.set || s.location || '',
         description: s.description || '',
         cast: s.cast || [],
-        background: s.background || '',
+        // The model returns this as a string or an array depending on the
+        // scene. Accept both — an array would render as raw JSON on a
+        // printed call sheet.
+        background: Array.isArray(s.background) ? s.background.join(', ') : (s.background || ''),
         background_count: s.background_count || null,
         props: s.props || [],
         costume: s.costume || []

@@ -1558,8 +1558,9 @@
               var setName = s.set || s.location || '';
                // Background is flagged, never counted. How many is a
               // producer and director decision.
-              var bg = s.background
-                ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + s.background + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
+              var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+              var bg = bgText
+                ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
                 : '';
               return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_number == null ? '—' : s.scene_number) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
@@ -2251,7 +2252,7 @@
       function slateHealthCheck(text) {
         var findings = [];
          var lines = String(text || '').split(/\r?\n/);
- 
+
         // ── Two heading formats, tried in order of strictness ──
         //
         // Layer 2 is checked FIRST even though it is numbered second,
@@ -2316,6 +2317,21 @@
         }
  
 
+        if (!scenes.length) {
+          return {
+            score: 0,
+            band: 'red',
+            sceneCount: 0,
+            findings: [{ level: 'high', title: 'No scene headings found',
+              detail: 'We could not find scene headings in a format we recognise yet. Your script can still be broken down — scenes will be detected from the text.' }]
+          };
+        }
+ 
+        // Duplicate scene numbers
+        var seen = {}, dupes = [];
+        scenes.forEach(function (s) {
+
+
           if (!s.number) return;
           var k = String(s.number).toUpperCase();
           if (seen[k]) { if (dupes.indexOf(k) < 0) dupes.push(k); } else { seen[k] = true; }
@@ -2324,7 +2340,7 @@
           findings.push({ level: 'high', title: dupes.length + ' duplicate scene number' + (dupes.length > 1 ? 's' : ''),
             detail: 'Scene ' + dupes.slice(0, 6).join(', ') + (dupes.length > 6 ? '…' : '') + ' appear more than once.' });
         }
-
+ 
         // Unnumbered headings
         var unnumbered = scenes.filter(function (s) { return !s.number; });
         if (unnumbered.length) {
@@ -2332,14 +2348,14 @@
             title: unnumbered.length + ' scene' + (unnumbered.length > 1 ? 's' : '') + ' without a number',
             detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
         }
-
+ 
         // Missing time of day
         var noTod = scenes.filter(function (s) { return !/\b(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\b/i.test(s.rest); });
         if (noTod.length) {
           findings.push({ level: 'medium', title: noTod.length + ' heading' + (noTod.length > 1 ? 's' : '') + ' missing DAY or NIGHT',
             detail: 'Scheduling separates day and night shoots, so this affects your shooting schedule.' });
         }
-
+ 
         // Inconsistent location naming
         function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
         var byKey = {};
@@ -2355,7 +2371,7 @@
           findings.push({ level: 'medium', title: inconsistent.length + ' location' + (inconsistent.length > 1 ? 's' : '') + ' written inconsistently',
             detail: 'e.g. ' + byKey[inconsistent[0]].slice(0, 3).join(' / ') + '. Consistent naming groups scenes correctly.' });
         }
-
+ 
         // Score — weighted so well-formed scripts land green
         var score = 100;
         findings.forEach(function (f) {
@@ -2363,9 +2379,9 @@
         });
         score = Math.max(0, Math.min(100, Math.round(score)));
         var band = score >= 85 ? 'green' : score >= 60 ? 'amber' : 'red';
-
+ 
         return { score: score, band: band, sceneCount: scenes.length, findings: findings };
-      }
+     }
       window.slateHealthCheck = slateHealthCheck;
     
       function renderHealthPanel(text) {
