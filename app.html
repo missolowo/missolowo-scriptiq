@@ -1558,8 +1558,9 @@
               var setName = s.set || s.location || '';
                // Background is flagged, never counted. How many is a
               // producer and director decision.
-              var bg = s.background
-                ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + s.background + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
+              var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+              var bg = bgText
+                ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
                 : '';
               return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_number == null ? '—' : s.scene_number) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
