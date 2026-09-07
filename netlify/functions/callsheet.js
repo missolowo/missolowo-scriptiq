@@ -117,7 +117,7 @@ exports.handler = async function(event, context) {
         set: s.set || s.location || '',
         description: s.description || '',
         cast: s.cast || [],
-        background: s.background || '',
+        background: Array.isArray(s.background) ? s.background.join(', ') : (s.background || ''),
         background_count: s.background_count || null,
         props: s.props || [],
         costume: s.costume || []
