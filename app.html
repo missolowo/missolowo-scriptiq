@@ -2260,9 +2260,11 @@
         // no-space case ("2.02.INT."). The previous pattern expected digits
         // plus an optional letter, so every episodic number came back empty
         // and we reported correctly-numbered scripts as unnumbered.
-        var headingRe = /^[ \t]*(?:(?:SCENE|SC)[ \t]*)?([0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \t]*(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b[.\s\/]*(.*)$/i;
-
-        // Layer 2 — SCENE n <tab> LOCATION <tab> INT/DAY
+        // Handles I.E. and INT.EXT. with dots as well as slashes — some
+        // scripts write "I.E. CAR/ROAD - NIGHT". Longer alternatives come
+        // first so INT does not match before INT/EXT is considered.
+        var headingRe = /^[ \t]*(?:(?:SCENE|SC)[ \t]*)?([0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \t]*(INT\.?\/?EXT\.?|I\.?\/?E\.?|INT|EXT|INTERIOR|EXTERIOR)\b[.\s\/]*(.*)$/i;    
+       // Layer 2 — SCENE n <tab> LOCATION <tab> INT/DAY
         // A standard Nollywood layout. Carries more structure than a slug
         // line: the scene number is explicit and INT/EXT is already split
         // from the time of day.
