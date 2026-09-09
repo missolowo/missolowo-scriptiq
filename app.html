@@ -1873,8 +1873,9 @@
       }
 
       // ── DOCUMENT: SCRIPT BREAKDOWN ──
-      function slateExportBreakdown() {
+      async function slateExportBreakdown() {
         if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateBreakdown);
         var d = slateBreakdown;
         var scenes = d.scenes || [];
         var chars = d.character_breakdown || [];
