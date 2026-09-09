@@ -1956,8 +1956,9 @@
       }
 
       // ── DOCUMENT: SHOOTING SCHEDULE ──
-      function slateExportSchedule() {
+      async function slateExportSchedule() {
         if (!slateSchedule) { alert('Generate a shooting schedule first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateSchedule);
         var s = slateSchedule;
         var days = s.schedule || [];
         var allScenes = [];
@@ -2013,8 +2014,9 @@
       }
       
       // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
-      function slateExportCallsheet() {
+      async function slateExportCallsheet() {
         if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};
         var scenes = cs.scenes_today || [];
