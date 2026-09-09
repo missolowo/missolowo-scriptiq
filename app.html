@@ -1560,6 +1560,7 @@
                // Row names the SET (Sitting Room), not the location —
               // the location is the address in the header above.
               var setName = s.set || s.location || '';
+              if (!setName || setName === 'null' || setName === 'undefined') setName = '—';
                // Background is flagged, never counted. How many is a
               // producer and director decision.
               var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
