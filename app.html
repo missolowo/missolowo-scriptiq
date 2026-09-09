@@ -1275,6 +1275,10 @@
           }
           wsProgress(92, 'Combining production data...');
           slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+         // Single-chunk scripts skip the merge, so the title captured from
+          // the front matter has to be applied here too.
+          if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
+
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
