@@ -1598,16 +1598,19 @@
       // are large (Devanagari 642KB, Korean 10MB), so we load one only when
       // a script actually needs it, never on an ordinary export.
       var SLATE_FONTS = {
-        devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' }
-        // Korean, Chinese and Japanese to follow — same shape, larger files.
+         devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' },
+        // Subset to Hangul + Latin: 4.5MB rather than 9.9MB for the full
+        // font, which carries Chinese characters modern screenplays don't use.
+        korean:     { file: '/NotoSansKR.ttf',         name: 'NotoKR'  }
+        // Chinese and Japanese to follow — same shape.
       };
- 
       var slateFontCache = {};   // script → base64, fetched once per session
  
       // Which script does this text need? Latin needs nothing.
-      function slateDetectScript(text) {
+       function slateDetectScript(text) {
         var s = String(text || '');
         if (/[\u0900-\u097F]/.test(s)) return 'devanagari';
+        if (/[\uAC00-\uD7A3\u1100-\u11FF]/.test(s)) return 'korean';
         return null;
       }
  
