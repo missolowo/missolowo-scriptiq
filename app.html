@@ -1678,16 +1678,21 @@
         }
         var jsPDF = window.jspdf.jsPDF;
         var doc = new jsPDF();
-       // If a non-Latin font was loaded for this export, register it and
-        // use it throughout. Noto covers Latin too, so one font keeps the
-        // whole document consistent rather than switching mid-line.
+         // If a non-Latin font was loaded, register it under its own name AND
+        // override the built-in helvetica and courier aliases. Every existing
+        // setFont call then resolves to the Unicode font without needing to
+        // change dozens of call sites across three export functions.
         var slateBodyFont = 'helvetica';
         if (window.slateActiveScript && slateFontCache[window.slateActiveScript]) {
           try {
             var cfg = SLATE_FONTS[window.slateActiveScript];
-            doc.addFileToVFS(cfg.name + '.ttf', slateFontCache[window.slateActiveScript]);
-            doc.addFont(cfg.name + '.ttf', cfg.name, 'normal');
-            doc.addFont(cfg.name + '.ttf', cfg.name, 'bold');
+            var fontB64 = slateFontCache[window.slateActiveScript];
+            doc.addFileToVFS(cfg.name + '.ttf', fontB64);
+            ['normal', 'bold', 'italic'].forEach(function (style) {
+              doc.addFont(cfg.name + '.ttf', cfg.name, style);
+              doc.addFont(cfg.name + '.ttf', 'helvetica', style);
+              doc.addFont(cfg.name + '.ttf', 'courier', style);
+            });
             slateBodyFont = cfg.name;
           } catch (e) {
             console.warn('[Slate] Font registration failed:', e.message);
