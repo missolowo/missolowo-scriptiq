@@ -183,13 +183,22 @@ exports.handler = async function(event, context) {
       });
       closeDay();
 
-      // Spread whatever is left across the days with most room, smallest
-      // day first, so the overflow lands where there is capacity.
+      // Place whatever is left. Prefer a day already going to that location —
+      // returning to a place you have wrapped means travelling back, which is
+      // the cost the whole grouping exists to avoid. Only when no such day
+      // exists does it go to the emptiest one.
       overflow.forEach(function (p) {
-        var target = days.reduce(function (a, b) {
+        if (!days.length) {
+          days.push({ scenes: p.scenes.slice(), locations: [p.location] });
+          return;
+        }
+        var sameLocation = days.filter(function (d) {
+          return d.locations.indexOf(p.location) >= 0;
+        });
+        var pool = sameLocation.length ? sameLocation : days;
+        var target = pool.reduce(function (a, b) {
           return a.scenes.length <= b.scenes.length ? a : b;
-        }, days[0]);
-        if (!target) { days.push({ scenes: p.scenes.slice(), locations: [p.location] }); return; }
+        });
         if (target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
         p.scenes.forEach(function (s) { target.scenes.push(s); });
       });
