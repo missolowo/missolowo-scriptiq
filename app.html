@@ -2449,7 +2449,7 @@
               var stop = (k + 1 < marks.length) ? marks[k + 1].idx : line.length;
               var rest = line.slice(mk.end, stop).trim();
               // Trim to the time of day where present — the rest is action.
-              var tod = rest.match(/^(.*?\b(?:DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\b)/i);
+              var tod = rest.match(/^(.*?(?:\b(?:DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b|[昼夜朝夕晩]|아침|낮|저녁|밤|새벽|दिन|रात|सुबह|शाम))/i);
               scenes.push({
                 line: i + 1,
                 number: mk.number,
