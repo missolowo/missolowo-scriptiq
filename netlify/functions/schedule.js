@@ -94,7 +94,10 @@ exports.handler = async function(event, context) {
         ie: s.int_ext || 'INT',
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',
-        cast: (s.cast || []).slice(0, 8)
+        set: s.set || '',
+        cast: (s.cast || []).slice(0, 8),
+        // Flagged, never counted — how many is a producer decision.
+        bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
       };
     });
 
@@ -196,13 +199,15 @@ exports.handler = async function(event, context) {
             location: d.locations.join(' · '),
             locations: d.locations.slice(),
             company_move: d.locations.length > 1,
-            scenes: d.scenes.map(function (s) {
+           scenes: d.scenes.map(function (s) {
               return {
                 scene_number: s.n,
                 int_ext: s.ie,
                 time_of_day: s.tod,
+                set: s.set || '',
                 description: '',
                 cast_required: s.cast || [],
+                background: s.bg || '',
                 props: []
               };
             }),
