@@ -162,9 +162,17 @@ exports.handler = async function(event, context) {
         }
       });
 
-      // Then pack pieces together, so small locations share a day rather
-      // than each taking one to themselves.
+       // Pack pieces into days, so small locations share rather than each
+      // taking a day to itself.
+      var overflow = [];
       pieces.forEach(function (p) {
+        // Once every day is spoken for, hold the rest back rather than
+        // dumping them all into the final day — twenty scenes across
+        // seventeen locations is not a day anyone can shoot.
+        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
+          overflow.push(p);
+          return;
+        }
         if (current.scenes.length &&
             current.scenes.length + p.scenes.length > perDay &&
             days.length < dayCount - 1) {
@@ -175,6 +183,16 @@ exports.handler = async function(event, context) {
       });
       closeDay();
 
+      // Spread whatever is left across the days with most room, smallest
+      // day first, so the overflow lands where there is capacity.
+      overflow.forEach(function (p) {
+        var target = days.reduce(function (a, b) {
+          return a.scenes.length <= b.scenes.length ? a : b;
+        }, days[0]);
+        if (!target) { days.push({ scenes: p.scenes.slice(), locations: [p.location] }); return; }
+        if (target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
+        p.scenes.forEach(function (s) { target.scenes.push(s); });
+      });
       // Scene order within a day. PMs read call sheets in ascending scene
       // order; 47A sorts after 47 and before 48.
       function bySceneNumber(a, b) {
