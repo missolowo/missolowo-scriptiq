@@ -2003,6 +2003,10 @@
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
             pdf.labelledList('Cast', sc.cast_required || sc.cast);
+            // Background is flagged, never counted — how many is a producer
+            // and director decision.
+            var schBg = Array.isArray(sc.background) ? sc.background.join(', ') : (sc.background || '');
+            if (schBg && schBg !== 'null') pdf.labelledList('Background', [schBg]);
             pdf.labelledList('Props', sc.props);
             pdf.gap(3);
             pdf.rule();
