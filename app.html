@@ -1991,12 +1991,16 @@
         var allScenes = [];
         days.forEach(function(d) { (d.scenes || []).forEach(function(sc) { allScenes.push(sc); }); });
         var locations = {};
-        days.forEach(function(d) { if (d.location) locations[d.location] = true; });
-
+        days.forEach(function (d) {
+          // Count individual locations, not the joined header string —
+          // "Garden · Lounge · Road" is three places, not one.
+          (d.locations && d.locations.length ? d.locations : (d.location ? [d.location] : []))
+            .forEach(function (l) { if (l) locations[l] = true; });
+        });
         var pdf = slateDoc('Shooting Schedule');
         pdf.cover(s.title || (slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Shoot Days', days.length],
-          ['Scenes', allScenes.length],
+          ['Scenes', (s.total_scenes || allScenes.length)],
           ['Locations', Object.keys(locations).length]
         ]);
 
