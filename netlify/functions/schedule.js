@@ -126,11 +126,15 @@ exports.handler = async function(event, context) {
       // Group scenes by location, keeping day and night separate
       const groups = {};
       slimScenes.forEach(function (s) {
-        const key = normKey(s.loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
-        if (!groups[key]) groups[key] = { location: s.loc || 'Unspecified', night: key.endsWith('|N'), scenes: [] };
+        // A scene with no location is not a place to travel to. Group it,
+        // but leave the location blank so it never appears on a call sheet
+        // header as somewhere the crew should go.
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        const key = normKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
         groups[key].scenes.push(s);
       });
-
       // Largest groups first so big locations aren't split across days
       const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
         .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
@@ -178,7 +182,7 @@ exports.handler = async function(event, context) {
             days.length < dayCount - 1) {
           closeDay();
         }
-        if (current.locations.indexOf(p.location) < 0) current.locations.push(p.location);
+        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
         p.scenes.forEach(function (s) { current.scenes.push(s); });
       });
       closeDay();
@@ -189,7 +193,7 @@ exports.handler = async function(event, context) {
       // exists does it go to the emptiest one.
       overflow.forEach(function (p) {
         if (!days.length) {
-          days.push({ scenes: p.scenes.slice(), locations: [p.location] });
+        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
           return;
         }
         var sameLocation = days.filter(function (d) {
@@ -199,7 +203,7 @@ exports.handler = async function(event, context) {
         var target = pool.reduce(function (a, b) {
           return a.scenes.length <= b.scenes.length ? a : b;
         });
-        if (target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
+      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
         p.scenes.forEach(function (s) { target.scenes.push(s); });
       });
       // Scene order within a day. PMs read call sheets in ascending scene
