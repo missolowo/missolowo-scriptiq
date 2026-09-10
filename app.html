@@ -1773,16 +1773,24 @@
           footer();
         }
 
-        function sectionHeader(label) {
-          newPage();
+         function sectionHeader(label) {
+          // Only start a fresh page if this one has content. Calling
+          // newPage() unconditionally left a blank page between sections.
+          if (y > 24) {
+            check(40);
+            if (y > 24) newPage();
+          } else {
+            paintPage();
+            footer();
+          }
           doc.setFillColor.apply(doc, SLATE_GOLD);
           doc.rect(15, y - 4, 20, 1.2, 'F');
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(8);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(slateBodyFont, 'bold');
           doc.text(label.toUpperCase(), 15, y + 6);
           y += 18;
-        }
+        }  
 
         // Scene numeral — PM-approved hierarchy: 15pt bold gold, widened zone
         function sceneNumeral(num) {
