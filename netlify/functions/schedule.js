@@ -148,23 +148,30 @@ exports.handler = async function(event, context) {
         current = { scenes: [], locations: [] };
       }
 
+    
+      // Split each location into evenly-sized pieces first. A location with
+      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
+      // three-scene day still costs a full crew, so an even spread is both
+      // cheaper and more realistic to shoot.
+      var pieces = [];
       ordered.forEach(function (g) {
-        // Keep a location's scenes together where possible: if the whole
-        // group won't fit in the day we've started, begin a fresh day
-        // rather than splitting the location across two.
+        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
+        var size = Math.ceil(g.scenes.length / needed);
+        for (var i = 0; i < g.scenes.length; i += size) {
+          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
+        }
+      });
+
+      // Then pack pieces together, so small locations share a day rather
+      // than each taking one to themselves.
+      pieces.forEach(function (p) {
         if (current.scenes.length &&
-            (current.scenes.length + g.scenes.length) > perDay &&
+            current.scenes.length + p.scenes.length > perDay &&
             days.length < dayCount - 1) {
           closeDay();
         }
-        g.scenes.forEach(function (s) {
-          // Hard split only when one location has more scenes than a day holds
-          if (current.scenes.length >= perDay && days.length < dayCount - 1) {
-            closeDay();
-          }
-          if (current.locations.indexOf(g.location) < 0) current.locations.push(g.location);
-          current.scenes.push(s);
-        });
+        if (current.locations.indexOf(p.location) < 0) current.locations.push(p.location);
+        p.scenes.forEach(function (s) { current.scenes.push(s); });
       });
       closeDay();
 
