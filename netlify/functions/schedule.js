@@ -212,11 +212,23 @@ exports.handler = async function(event, context) {
         return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
       }
       const baseDate = start_date || 'Monday 30 June 2026';
+      // Count distinct scene numbers. A script with a duplicate — two
+      // different scenes both numbered 67 — would otherwise report one
+      // more scene than the breakdown found.
+      var uniqueScenes = {};
+      slimScenes.forEach(function (s) { uniqueScenes[String(s.n)] = true; });
 
+      // Warn when a day carries more locations than a crew could realistically
+      // move between. We do not silently produce an impossible day.
+      var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
+      
       schedule = {
         title: breakdown.title || 'Untitled Production',
         total_shoot_days: days.length,
-        total_scenes: slimScenes.length,
+        total_scenes: Object.keys(uniqueScenes).length,
+        schedule_warning: crowdedDays
+          ? crowdedDays + ' day' + (crowdedDays > 1 ? 's have' : ' has') + ' more than three locations. Consider adding shoot days — company moves cost time and money.'
+          : '',
         schedule: days.map(function (d, i) {
           return {
             day: i + 1,
