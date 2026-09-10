@@ -1457,8 +1457,15 @@
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
             + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || '') + '</span></div>'
             + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return s.scene_number; }).join(', ') + '</div>'
-            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
-            + '</div>';
+          + (function () {
+                var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
+                if (!bgScenes.length) return '';
+                return '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
+                  + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
+                  + '</div>';
+              })()
+           + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
+           + '</div>';
         }).join('');
         html += '<div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--line-1,#2E323A)">'
           + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Call Sheet</div>'
