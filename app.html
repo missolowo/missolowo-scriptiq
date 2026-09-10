@@ -1275,6 +1275,10 @@
           }
           wsProgress(92, 'Combining production data...');
           slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+         // Single-chunk scripts skip the merge, so the title captured from
+          // the front matter has to be applied here too.
+          if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
+
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
@@ -1556,6 +1560,7 @@
                // Row names the SET (Sitting Room), not the location —
               // the location is the address in the header above.
               var setName = s.set || s.location || '';
+              if (!setName || setName === 'null' || setName === 'undefined') setName = '—';
                // Background is flagged, never counted. How many is a
               // producer and director decision.
               var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
@@ -1583,13 +1588,105 @@
       var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
       var SLATE_MUTED = [120, 115, 105];
 
-      function slateDoc(documentLabel) {
+      // ── Unicode fonts for PDF export ──
+      // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
+      // Devanagari, Arabic, Chinese — exports as corrupted characters,
+      // which is worse than blank: it is visible garbage on a document a
+      // filmmaker hands to their crew.
+      //
+      // The fix is to embed a font that contains those glyphs. These files
+      // are large (Devanagari 642KB, Korean 10MB), so we load one only when
+      // a script actually needs it, never on an ordinary export.
+      var SLATE_FONTS = {
+        devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' }
+        // Korean, Chinese and Japanese to follow — same shape, larger files.
+      };
+ 
+      var slateFontCache = {};   // script → base64, fetched once per session
+ 
+      // Which script does this text need? Latin needs nothing.
+      function slateDetectScript(text) {
+        var s = String(text || '');
+        if (/[\u0900-\u097F]/.test(s)) return 'devanagari';
+        return null;
+      }
+ 
+      // Scan a breakdown for any non-Latin text we would have to render.
+      function slateScriptForExport(data) {
+        if (!data) return null;
+        var sample = JSON.stringify(data).slice(0, 200000);
+        return slateDetectScript(sample);
+      }
+ 
+      // Fetch and cache the font. Returns null if it cannot be loaded —
+      // the export then proceeds in Latin rather than failing outright.
+      async function slateLoadFont(script) {
+        if (!script || !SLATE_FONTS[script]) return null;
+        if (slateFontCache[script]) return slateFontCache[script];
+ 
+        try {
+          var res = await fetch(SLATE_FONTS[script].file);
+          if (!res.ok) return null;
+          var buf = await res.arrayBuffer();
+ 
+          // Chunked so a large font does not blow the call stack
+          var bytes = new Uint8Array(buf);
+          var binary = '';
+          var chunk = 8192;
+          for (var i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+          }
+          slateFontCache[script] = btoa(binary);
+          return slateFontCache[script];
+        } catch (e) {
+          console.warn('[Slate] Could not load ' + script + ' font:', e.message);
+          return null;
+        }
+      }
+ 
+      // Called before an export. Loads the font if the content needs one,
+      // and shows the user why the wait is happening.
+      async function slatePrepareFont(data) {
+        var script = slateScriptForExport(data);
+        if (!script) return null;
+        if (slateFontCache[script]) return script;
+ 
+        var note = document.getElementById('wsExportBar');
+        var msg = null;
+        if (note) {
+          msg = document.createElement('div');
+          msg.style.cssText = 'margin-top:10px;font-size:12px;color:var(--text-2,#B5AFA3)';
+          msg.textContent = 'Loading font for your language — first export only…';
+          note.appendChild(msg);
+        }
+ 
+        var b64 = await slateLoadFont(script);
+        if (msg && msg.parentNode) msg.parentNode.removeChild(msg);
+        return b64 ? script : null;
+      }
+ 
+     function slateDoc(documentLabel) {
               if (!window.jspdf || !window.jspdf.jsPDF) {
           alert('The PDF library is still loading, or your connection blocked it. Please check your network and try again in a moment.');
           throw new Error('jsPDF unavailable');
         }
         var jsPDF = window.jspdf.jsPDF;
         var doc = new jsPDF();
+       // If a non-Latin font was loaded for this export, register it and
+        // use it throughout. Noto covers Latin too, so one font keeps the
+        // whole document consistent rather than switching mid-line.
+        var slateBodyFont = 'helvetica';
+        if (window.slateActiveScript && slateFontCache[window.slateActiveScript]) {
+          try {
+            var cfg = SLATE_FONTS[window.slateActiveScript];
+            doc.addFileToVFS(cfg.name + '.ttf', slateFontCache[window.slateActiveScript]);
+            doc.addFont(cfg.name + '.ttf', cfg.name, 'normal');
+            doc.addFont(cfg.name + '.ttf', cfg.name, 'bold');
+            slateBodyFont = cfg.name;
+          } catch (e) {
+            console.warn('[Slate] Font registration failed:', e.message);
+          }
+        }
         var y = 0;
 
         function paintPage() {
@@ -1603,7 +1700,7 @@
           doc.line(15, 285, 195, 285);
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(7);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(slateBodyFont, 'normal');
           doc.text('MISSOLOWO SLATE  ·  ' + documentLabel + '  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
           doc.text('Page ' + pg, 195, 291, { align: 'right' });
         }
@@ -1616,21 +1713,21 @@
           doc.rect(0, 0, 210, 2, 'F');
           doc.setTextColor.apply(doc, SLATE_GOLD);
           doc.setFontSize(9);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(slateBodyFont, 'bold');
           doc.text('MISSOLOWO SLATE — FILM PRODUCTION OPERATING SYSTEM', 20, 40);
           doc.setDrawColor.apply(doc, SLATE_GOLD);
           doc.setLineWidth(0.6);
           doc.line(20, 46, 44, 46);
           doc.setTextColor.apply(doc, SLATE_INK);
           doc.setFontSize(26);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(slateBodyFont, 'bold');
           doc.text(documentLabel.toUpperCase(), 20, 66);
           doc.setDrawColor.apply(doc, SLATE_LINE);
           doc.setLineWidth(0.2);
           doc.line(20, 96, 190, 96);
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(slateBodyFont, 'bold');
           doc.text('PROJECT TITLE', 20, 110);
           doc.setTextColor.apply(doc, SLATE_INK);
           doc.setFontSize(18);
@@ -1639,7 +1736,7 @@
           (meta || []).forEach(function(pair) {
             doc.setTextColor.apply(doc, SLATE_MUTED);
             doc.setFontSize(7);
-            doc.setFont('helvetica', 'bold');
+            doc.setFont(slateBodyFont, 'bold');
             doc.text(pair[0].toUpperCase(), mx, 145);
             doc.setTextColor.apply(doc, SLATE_GOLD);
             doc.setFontSize(20);
@@ -1781,8 +1878,9 @@
       }
 
       // ── DOCUMENT: SCRIPT BREAKDOWN ──
-      function slateExportBreakdown() {
+      async function slateExportBreakdown() {
         if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateBreakdown);
         var d = slateBreakdown;
         var scenes = d.scenes || [];
         var chars = d.character_breakdown || [];
@@ -1863,8 +1961,9 @@
       }
 
       // ── DOCUMENT: SHOOTING SCHEDULE ──
-      function slateExportSchedule() {
+      async function slateExportSchedule() {
         if (!slateSchedule) { alert('Generate a shooting schedule first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateSchedule);
         var s = slateSchedule;
         var days = s.schedule || [];
         var allScenes = [];
@@ -1886,7 +1985,9 @@
               pdf.sceneNumeral(sc.scene_number);
              // Day header carries the location; the row names the SET —
             // which room, not which building.
-            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + (sc.set || sc.location || sc.set_location || ''));               
+             var schSet = sc.set || sc.location || sc.set_location || '';
+            if (!schSet || schSet === 'null' || schSet === 'undefined') schSet = '—';
+            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + schSet); 
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -1920,8 +2021,9 @@
       }
       
       // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
-      function slateExportCallsheet() {
+      async function slateExportCallsheet() {
         if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};
         var scenes = cs.scenes_today || [];
@@ -2028,7 +2130,11 @@
           pdf.check(20);
           pdf.sceneNumeral(s.scene_number);
           // Location is the address in the header; the row names the SET.
-          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + (s.set || s.location || ''));
+          // A missing set must never print as the word "null" on a document
+          // a crew reads. Blank is honest; null looks like a fault.
+          var csSet = s.set || s.location || '';
+          if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
+          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + csSet);
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
