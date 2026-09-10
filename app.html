@@ -2501,7 +2501,17 @@
         }
  
         // Inconsistent location naming
-        function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+        // Keep letters from any script, not just A-Z. Stripping non-Latin
+        // characters made every Japanese or Hindi location collapse to the
+        // same empty key, so three different places were reported as one
+        // written three ways.
+        function key(s) {
+          return String(s || '')
+            .toUpperCase()
+            .replace(/[^\p{L}\p{N} ]/gu, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
         var byKey = {};
         scenes.forEach(function (s) {
           var loc = s.rest.split(/[-—–]/)[0].replace(/^(INT|EXT|I\/E|INT\/EXT)\.?\s*/i, '').trim();
