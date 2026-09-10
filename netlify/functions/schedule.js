@@ -94,7 +94,10 @@ exports.handler = async function(event, context) {
         ie: s.int_ext || 'INT',
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',
-        cast: (s.cast || []).slice(0, 8)
+        set: s.set || '',
+        cast: (s.cast || []).slice(0, 8),
+        // Flagged, never counted — how many is a producer decision.
+        bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
       };
     });
 
@@ -123,11 +126,15 @@ exports.handler = async function(event, context) {
       // Group scenes by location, keeping day and night separate
       const groups = {};
       slimScenes.forEach(function (s) {
-        const key = normKey(s.loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
-        if (!groups[key]) groups[key] = { location: s.loc || 'Unspecified', night: key.endsWith('|N'), scenes: [] };
+        // A scene with no location is not a place to travel to. Group it,
+        // but leave the location blank so it never appears on a call sheet
+        // header as somewhere the crew should go.
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        const key = normKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
         groups[key].scenes.push(s);
       });
-
       // Largest groups first so big locations aren't split across days
       const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
         .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
@@ -145,26 +152,60 @@ exports.handler = async function(event, context) {
         current = { scenes: [], locations: [] };
       }
 
+    
+      // Split each location into evenly-sized pieces first. A location with
+      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
+      // three-scene day still costs a full crew, so an even spread is both
+      // cheaper and more realistic to shoot.
+      var pieces = [];
       ordered.forEach(function (g) {
-        // Keep a location's scenes together where possible: if the whole
-        // group won't fit in the day we've started, begin a fresh day
-        // rather than splitting the location across two.
+        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
+        var size = Math.ceil(g.scenes.length / needed);
+        for (var i = 0; i < g.scenes.length; i += size) {
+          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
+        }
+      });
+
+       // Pack pieces into days, so small locations share rather than each
+      // taking a day to itself.
+      var overflow = [];
+      pieces.forEach(function (p) {
+        // Once every day is spoken for, hold the rest back rather than
+        // dumping them all into the final day — twenty scenes across
+        // seventeen locations is not a day anyone can shoot.
+        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
+          overflow.push(p);
+          return;
+        }
         if (current.scenes.length &&
-            (current.scenes.length + g.scenes.length) > perDay &&
+            current.scenes.length + p.scenes.length > perDay &&
             days.length < dayCount - 1) {
           closeDay();
         }
-        g.scenes.forEach(function (s) {
-          // Hard split only when one location has more scenes than a day holds
-          if (current.scenes.length >= perDay && days.length < dayCount - 1) {
-            closeDay();
-          }
-          if (current.locations.indexOf(g.location) < 0) current.locations.push(g.location);
-          current.scenes.push(s);
-        });
+        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
+        p.scenes.forEach(function (s) { current.scenes.push(s); });
       });
       closeDay();
 
+      // Place whatever is left. Prefer a day already going to that location —
+      // returning to a place you have wrapped means travelling back, which is
+      // the cost the whole grouping exists to avoid. Only when no such day
+      // exists does it go to the emptiest one.
+      overflow.forEach(function (p) {
+        if (!days.length) {
+        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
+          return;
+        }
+        var sameLocation = days.filter(function (d) {
+          return d.locations.indexOf(p.location) >= 0;
+        });
+        var pool = sameLocation.length ? sameLocation : days;
+        var target = pool.reduce(function (a, b) {
+          return a.scenes.length <= b.scenes.length ? a : b;
+        });
+      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
+        p.scenes.forEach(function (s) { target.scenes.push(s); });
+      });
       // Scene order within a day. PMs read call sheets in ascending scene
       // order; 47A sorts after 47 and before 48.
       function bySceneNumber(a, b) {
@@ -184,11 +225,23 @@ exports.handler = async function(event, context) {
         return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
       }
       const baseDate = start_date || 'Monday 30 June 2026';
+      // Count distinct scene numbers. A script with a duplicate — two
+      // different scenes both numbered 67 — would otherwise report one
+      // more scene than the breakdown found.
+      var uniqueScenes = {};
+      slimScenes.forEach(function (s) { uniqueScenes[String(s.n)] = true; });
 
+      // Warn when a day carries more locations than a crew could realistically
+      // move between. We do not silently produce an impossible day.
+      var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
+      
       schedule = {
         title: breakdown.title || 'Untitled Production',
         total_shoot_days: days.length,
-        total_scenes: slimScenes.length,
+        total_scenes: Object.keys(uniqueScenes).length,
+        schedule_warning: crowdedDays
+          ? crowdedDays + ' day' + (crowdedDays > 1 ? 's have' : ' has') + ' more than three locations. Consider adding shoot days — company moves cost time and money.'
+          : '',
         schedule: days.map(function (d, i) {
           return {
             day: i + 1,
@@ -196,13 +249,15 @@ exports.handler = async function(event, context) {
             location: d.locations.join(' · '),
             locations: d.locations.slice(),
             company_move: d.locations.length > 1,
-            scenes: d.scenes.map(function (s) {
+           scenes: d.scenes.map(function (s) {
               return {
                 scene_number: s.n,
                 int_ext: s.ie,
                 time_of_day: s.tod,
+                set: s.set || '',
                 description: '',
                 cast_required: s.cast || [],
+                background: s.bg || '',
                 props: []
               };
             }),
