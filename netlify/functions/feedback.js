@@ -38,16 +38,21 @@ exports.handler = async function(event, context) {
       user_email,
       user_id,
       breakdown_title,
-      feature
+      feature,
+      kind,
+      context
     } = JSON.parse(event.body);
 
-    if (!rating) {
+    // A bug report does not need a star rating. Require something, though —
+    // an empty submission helps nobody.
+    if (!rating && !(feedback_text && String(feedback_text).trim())) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Rating is required' })
+        body: JSON.stringify({ error: 'Please tell us what happened, or leave a rating.' })
       };
     }
+    
 
     // ── FIX: Sanitize blank string parameters to true NULL ──
     // Prevents Supabase UUID parsing crashes when empty strings
@@ -66,7 +71,9 @@ exports.handler = async function(event, context) {
     const { data, error } = await supabase
       .from('feedback')
       .insert({
-        rating:          parseInt(rating, 10),          // Explicit base 10
+        rating:          rating ? parseInt(rating, 10) : null,
+        kind:            kind || 'general',
+        context:         context || null,
         feedback_text:   feedback_text   || null,
         user_email:      sanitizedUserEmail,            // Guaranteed null or valid email
         user_id:         sanitizedUserId,               // Guaranteed null or valid UUID
