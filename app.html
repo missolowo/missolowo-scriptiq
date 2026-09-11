@@ -2793,6 +2793,111 @@
         }
       }
       window.slateStartNewProduction = slateStartNewProduction;
+    // ── FEEDBACK ──
+      // Always reachable, because a problem can happen anywhere — during
+      // upload, in the schedule, at export. Tying this to one moment would
+      // miss most of what goes wrong.
+      var slateFbKind = 'bug';
+ 
+      function slateOpenFeedback() {
+        var o = document.getElementById('fbOverlay');
+        if (!o) return;
+        // Show what we will send alongside their message, so it is never
+        // a surprise. No script text, no personal data.
+        var bits = [];
+        if (window.slateProductionId) bits.push('production id');
+        if (typeof slateBreakdown !== 'undefined' && slateBreakdown) {
+          bits.push((slateBreakdown.scenes || []).length + ' scenes');
+          if (slateBreakdown.language_detected) bits.push(slateBreakdown.language_detected);
+        }
+        var note = document.getElementById('fbContextNote');
+        if (note) {
+          note.textContent = bits.length
+            ? 'We will also send: ' + bits.join(', ') + ', and your browser version. Never your script.'
+            : 'We will also send your browser version. Never your script.';
+        }
+        o.classList.add('open');
+        var t = document.getElementById('fbText');
+        if (t) t.focus();
+      }
+ 
+      function slateCloseFeedback() {
+        var o = document.getElementById('fbOverlay');
+        if (o) o.classList.remove('open');
+      }
+ 
+      document.addEventListener('click', function (e) {
+        var k = e.target.closest('.fb-kind');
+        if (!k) return;
+        slateFbKind = k.getAttribute('data-kind');
+        document.querySelectorAll('.fb-kind').forEach(function (b) { b.classList.remove('active'); });
+        k.classList.add('active');
+      });
+ 
+      async function slateSendFeedback() {
+        var t = document.getElementById('fbText');
+        var btn = document.getElementById('fbSend');
+        var text = t ? t.value.trim() : '';
+        if (!text) { if (t) t.focus(); return; }
+ 
+        var user = null;
+        try {
+          var rawFb = localStorage.getItem('scriptiq_user');
+          user = rawFb ? JSON.parse(rawFb) : null;
+        } catch (e) { user = null; }
+ 
+        // Context, so a report is actionable. "It broke" is much less use
+        // than knowing they were on a Korean script at the export step.
+        var context = {
+          production_id: window.slateProductionId || null,
+          has_breakdown: typeof slateBreakdown !== 'undefined' && !!slateBreakdown,
+          has_schedule: typeof slateSchedule !== 'undefined' && !!slateSchedule,
+          scene_count: (typeof slateBreakdown !== 'undefined' && slateBreakdown && slateBreakdown.scenes)
+            ? slateBreakdown.scenes.length : null,
+          language: (typeof slateBreakdown !== 'undefined' && slateBreakdown)
+            ? slateBreakdown.language_detected : null,
+          user_agent: navigator.userAgent,
+          screen: window.innerWidth + 'x' + window.innerHeight,
+          page: location.hash || '#home'
+        };
+ 
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+ 
+        try {
+          var res = await fetch('/.netlify/functions/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kind: slateFbKind,
+              feedback_text: text,
+              context: context,
+              user_id: user ? user.id : null,
+              user_email: user ? user.email : null,
+              breakdown_title: (typeof slateBreakdown !== 'undefined' && slateBreakdown)
+                ? slateBreakdown.title : null,
+              feature: 'workspace'
+            })
+          });
+          var data = await res.json();
+          if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+ 
+          if (data.success) {
+            if (t) t.value = '';
+            slateCloseFeedback();
+            alert('Thank you — that has reached the team.');
+          } else {
+            alert(data.error || 'Could not send that. Please try again.');
+          }
+        } catch (e) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+          alert('Could not reach the server. Check your connection and try again.');
+        }
+      }
+ 
+      window.slateOpenFeedback = slateOpenFeedback;
+      window.slateCloseFeedback = slateCloseFeedback;
+      window.slateSendFeedback = slateSendFeedback;
+ 
   </script>
   <div class="fb-overlay" id="fbOverlay">
     <div class="fb-modal">
