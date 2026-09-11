@@ -2545,13 +2545,6 @@
             detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
         }
  
-        // Missing time of day
-        var noTod = scenes.filter(function (s) { return !/\b(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|LATER)\b/i.test(s.rest); });
-        if (noTod.length) {
-          findings.push({ level: 'medium', title: noTod.length + ' heading' + (noTod.length > 1 ? 's' : '') + ' missing DAY or NIGHT',
-            detail: 'Scheduling separates day and night shoots, so this affects your shooting schedule.' });
-        }
- 
         // Inconsistent location naming
         // Keep letters from any script, not just A-Z. Stripping non-Latin
         // characters made every Japanese or Hindi location collapse to the
