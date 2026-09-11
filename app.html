@@ -2794,5 +2794,29 @@
       }
       window.slateStartNewProduction = slateStartNewProduction;
   </script>
-</body>
+  <div class="fb-overlay" id="fbOverlay">
+    <div class="fb-modal">
+      <div class="fb-title">Tell us what happened</div>
+      <div class="fb-sub">This goes straight to the team. We read every one.</div>
+ 
+      <div class="fb-kinds">
+        <button class="fb-kind active" data-kind="bug">Something broke
+          <small>An error, or output that looks wrong</small></button>
+        <button class="fb-kind" data-kind="feature">I need something
+          <small>A feature that would help your production</small></button>
+        <button class="fb-kind" data-kind="general">General feedback
+          <small>Anything else</small></button>
+      </div>
+ 
+      <textarea class="fb-text" id="fbText"
+        placeholder="What were you doing, and what did you expect to happen?"></textarea>
+      <div class="fb-note" id="fbContextNote"></div>
+ 
+      <div class="fb-actions">
+        <button class="fb-cancel" onclick="slateCloseFeedback()">Cancel</button>
+        <button class="btn-primary" id="fbSend" onclick="slateSendFeedback()">Send</button>
+      </div>
+    </div>
+  </div>
+ </body>
 </html>
