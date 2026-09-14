@@ -1145,11 +1145,16 @@
         // "Scenes: 3, 2, 1" came from. Now every chunk is in, so this is
         // the first moment the numbers can actually be right.
         // Derived in code, not asked of the model: counting is arithmetic.
-        function labelFor(s) {
-          return (s.scene_number !== null && s.scene_number !== undefined)
-            ? s.scene_number
-            : ('#' + s.scene_index);
-        }
+          function labelFor(s) {
+          var n = s.scene_number;
+          // The model sometimes returns the string "null" rather than a
+          // real null, which printed literally in the character and
+          // location reports.
+          if (n === null || n === undefined || n === '' || n === 'null' || n === 'undefined') {
+            return '#' + s.scene_index;
+          }
+          return n;
+        } 
 
         var charMap = {}, locMap = {};
 
