@@ -1667,9 +1667,10 @@
           korean:     { file: '/NotoSansKR.ttf',         name: 'NotoKR'  },
         // Covers Japanese kana and kanji, and traditional Chinese.
         // Simplified Chinese needs its own font (17.8MB) — added when needed.
-        japanese:   { file: '/NotoSansJP.ttf',         name: 'NotoJP'  }
-      };
-      var slateFontCache = {};   // script → base64, fetched once per session
+        japanese:   { file: '/NotoSansJP.ttf',         name: 'NotoJP'  },
+        cyrillic:   { file: '/NotoSansCyrillic.ttf',   name: 'NotoCyr' }
+      };   
+     var slateFontCache = {};   // script → base64, fetched once per session
  
       // Which script does this text need? Latin needs nothing.
         function slateDetectScript(text) {
@@ -1677,6 +1678,7 @@
         if (/[\u0900-\u097F]/.test(s)) return 'devanagari';
         if (/[\uAC00-\uD7A3\u1100-\u11FF]/.test(s)) return 'korean';
         if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(s)) return 'japanese';
+        if (/[\u0400-\u04FF]/.test(s)) return 'cyrillic';
         return null;
       }
  
