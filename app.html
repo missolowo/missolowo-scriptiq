@@ -1855,10 +1855,12 @@
         function sceneNumeral(num) {
           doc.setTextColor.apply(doc, SLATE_GOLD);
           doc.setFontSize(15);
-          doc.setFont('helvetica', 'bold');
-          doc.text(String(num).padStart(2, '0'), 15, y + 4);
+          doc.setFont(slateBodyFont, 'bold');
+          // Never pad: "2.01" and "47A" are labels, not numbers, and
+          // padStart turned a missing number into "nu".
+          doc.text((num == null || num === 'null' || num === 'undefined') ? '—' : String(num), 15, y + 4);
         }
-
+      
         function slugline(text, x) {
          doc.setTextColor.apply(doc, SLATE_INK);
           doc.setFontSize(9);
