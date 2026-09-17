@@ -1335,7 +1335,17 @@
          // Single-chunk scripts skip the merge, so the title captured from
           // the front matter has to be applied here too.
           if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
-
+          // Normalise scene numbers once, here, where every breakdown passes
+          // through. The model returns the string "null" as often as a real
+          // null, and guarding each display separately just moves the problem
+          // from one document to the next.
+          (slateBreakdown.scenes || []).forEach(function (s, i) {
+            var n = (s.scene_number === undefined || s.scene_number === null)
+              ? '' : String(s.scene_number).trim();
+            if (!n || n === 'null' || n === 'undefined' || n === 'NaN') n = null;
+            s.scene_number = n;
+            if (!s.scene_index) s.scene_index = i + 1;
+          });
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
