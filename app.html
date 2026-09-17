@@ -1099,11 +1099,9 @@
           // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
             var label = scene.scene_number;
-            if (label === undefined || label === null || String(label).trim() === '') {
-              label = null;
-            } else {
-              label = String(label).trim();
-            }
+            label = (label === undefined || label === null) ? '' : String(label).trim();
+            if (!label || label === 'null' || label === 'undefined' || label === 'NaN') label = null;
+            
             merged.scenes.push({
               ...scene,
               scene_number: label,
