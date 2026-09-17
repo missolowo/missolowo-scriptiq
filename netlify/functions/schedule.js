@@ -90,7 +90,7 @@ exports.handler = async function(event, context) {
     // Sending full descriptions/props/costume blew the function timeout.
     const slimScenes = (breakdown.scenes || []).map(function (s) {
       return {
-        n: s.scene_number,
+        n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
         ie: s.int_ext || 'INT',
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',

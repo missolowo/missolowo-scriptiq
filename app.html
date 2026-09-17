@@ -1099,11 +1099,9 @@
           // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
             var label = scene.scene_number;
-            if (label === undefined || label === null || String(label).trim() === '') {
-              label = null;
-            } else {
-              label = String(label).trim();
-            }
+            label = (label === undefined || label === null) ? '' : String(label).trim();
+            if (!label || label === 'null' || label === 'undefined' || label === 'NaN') label = null;
+            
             merged.scenes.push({
               ...scene,
               scene_number: label,
@@ -1145,11 +1143,16 @@
         // "Scenes: 3, 2, 1" came from. Now every chunk is in, so this is
         // the first moment the numbers can actually be right.
         // Derived in code, not asked of the model: counting is arithmetic.
-        function labelFor(s) {
-          return (s.scene_number !== null && s.scene_number !== undefined)
-            ? s.scene_number
-            : ('#' + s.scene_index);
-        }
+          function labelFor(s) {
+          var n = s.scene_number;
+          // The model sometimes returns the string "null" rather than a
+          // real null, which printed literally in the character and
+          // location reports.
+          if (n === null || n === undefined || n === '' || n === 'null' || n === 'undefined') {
+            return '#' + s.scene_index;
+          }
+          return n;
+        } 
 
         var charMap = {}, locMap = {};
 
@@ -1330,7 +1333,17 @@
          // Single-chunk scripts skip the merge, so the title captured from
           // the front matter has to be applied here too.
           if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
-
+          // Normalise scene numbers once, here, where every breakdown passes
+          // through. The model returns the string "null" as often as a real
+          // null, and guarding each display separately just moves the problem
+          // from one document to the next.
+          (slateBreakdown.scenes || []).forEach(function (s, i) {
+            var n = (s.scene_number === undefined || s.scene_number === null)
+              ? '' : String(s.scene_number).trim();
+            if (!n || n === 'null' || n === 'undefined' || n === 'NaN') n = null;
+            s.scene_number = n;
+            if (!s.scene_index) s.scene_index = i + 1;
+          });
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
@@ -1512,8 +1525,8 @@
        html += days.map(function(d) {
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
             + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || '') + '</span></div>'
-            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return s.scene_number; }).join(', ') + '</div>'
-          + (function () {
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number; }).join(', ') + '</div>'
+           + (function () {
                 var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
                 if (!bgScenes.length) return '';
                 return '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
@@ -1850,10 +1863,12 @@
         function sceneNumeral(num) {
           doc.setTextColor.apply(doc, SLATE_GOLD);
           doc.setFontSize(15);
-          doc.setFont('helvetica', 'bold');
-          doc.text(String(num).padStart(2, '0'), 15, y + 4);
+          doc.setFont(slateBodyFont, 'bold');
+          // Never pad: "2.01" and "47A" are labels, not numbers, and
+          // padStart turned a missing number into "nu".
+          doc.text((num == null || num === 'null' || num === 'undefined') ? '—' : String(num), 15, y + 4);
         }
-
+      
         function slugline(text, x) {
          doc.setTextColor.apply(doc, SLATE_INK);
           doc.setFontSize(9);
@@ -1870,16 +1885,21 @@
           y += lines.length * 4;
         }
 
-        function labelledList(label, items, x) {
-          var arr = Array.isArray(items) ? items.filter(Boolean) : [];
+         function labelledList(label, items, x) {
+          // Drop empties, whitespace and the literal strings "null" and
+          // "undefined" — an empty BACKGROUND label on a call sheet looks
+          // like a fault rather than an absence.
+          var arr = (Array.isArray(items) ? items : [items])
+            .map(function (v) { return v == null ? '' : String(v).trim(); })
+            .filter(function (v) { return v && v !== 'null' && v !== 'undefined'; });
           if (!arr.length) return;
           check(8);
           doc.setTextColor.apply(doc, SLATE_GOLD);
           doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(slateBodyFont, 'bold');
           doc.text(label.toUpperCase() + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(slateBodyFont, 'normal');
           var lines = doc.splitTextToSize(arr.join('  ·  '), 130);
           doc.text(lines, (x || 34) + 26, y);
           y += lines.length * 4 + 1;
