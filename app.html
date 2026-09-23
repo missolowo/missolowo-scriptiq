@@ -1169,7 +1169,11 @@
             });
           }
           merged.total_scenes = merged.scenes.length;
-         
+          // scene_index is the scene's permanent identity: its position in
+          // the assembled script. The schedule and call sheet must look
+          // scenes up by this, never by scene_number — a script can leave a
+          // scene unnumbered, or number two scenes the same, and matching on
+          // the number then pulls in every other scene that shares it.         
           const pe = chunk.production_elements || {};
           // Cast names need the same normalisation as Report 2, or "Abake"
           // and "ABAKE" appear as two people in the elements list while
