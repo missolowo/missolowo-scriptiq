@@ -1249,8 +1249,34 @@
           return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
+         // One canonical spelling per character and location, everywhere.
+        // Reports 2 and 3 were already normalised, but each scene still
+        // displayed whatever spelling its own section returned — so one
+        // document showed ADEWALE in scene 1 and Adewale in scene 5.
+        // The maps above already hold the cleanest spelling of each name;
+        // this applies it back to the scenes the crew actually reads.
+        var slateCanonCast = {}, slateCanonLoc = {};
+        merged.character_breakdown.forEach(function (c) { slateCanonCast[slateKey(c.character)] = c.character; });
+        merged.outline_schedule.forEach(function (l) { slateCanonLoc[slateKey(l.set_location)] = l.set_location; });
+        merged.scenes.forEach(function (s) {
+          if (Array.isArray(s.cast)) {
+            var seen = {};
+            s.cast = s.cast.map(function (c) {
+              var k = slateKey(c);
+              return slateCanonCast[k] || c;
+            }).filter(function (n) {
+              var k = slateKey(n);
+              if (!k || seen[k]) return false;
+              seen[k] = true;
+              return true;
+            });
+          }
+          var lk = slateKey(s.location || '');
+          if (lk && slateCanonLoc[lk]) s.location = slateCanonLoc[lk];
+        });
+
         return merged; 
-      }
+      }  
 
       function wsProgress(pct, label) {
         var wrap = document.getElementById('wsProgressWrap');
