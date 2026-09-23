@@ -1776,7 +1776,21 @@
       // are large (Devanagari 642KB, Korean 10MB), so we load one only when
       // a script actually needs it, never on an ordinary export.
       var SLATE_FONTS = {
-       c
+        devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' },
+        // Subset to Hangul + Latin: 4.5MB rather than 9.9MB for the full
+        // font, which carries Chinese characters modern screenplays don't use.
+        korean:     { file: '/NotoSansKR.ttf',         name: 'NotoKR'  },
+        // Covers Japanese kana and kanji, and traditional Chinese.
+        // Simplified Chinese needs its own font (17.8MB) — added when needed.
+        japanese:   { file: '/NotoSansJP.ttf',         name: 'NotoJP'  },
+        cyrillic:   { file: '/NotoSansCyrillic.ttf',   name: 'NotoCyr' },
+        // Yorùbá, Igbo and Hausa use Latin letters with marks that jsPDF's
+        // built-in fonts cannot encode — ẹ ọ ṣ ǹ and the tone marks. Without
+        // a real font the export spaces every character apart, on documents
+        // for the market this product was built for.
+        latinExt:   { file: '/NotoSans-Regular.ttf',   name: 'NotoLatin' }
+      };
+      var slateFontCache = {};   // script → base64, fetched once per session
       // Which script does this text need? Latin needs nothing.
         function slateDetectScript(text) {
         var s = String(text || '');
@@ -1784,10 +1798,15 @@
         if (/[\uAC00-\uD7A3\u1100-\u11FF]/.test(s)) return 'korean';
         if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(s)) return 'japanese';
         if (/[\u0400-\u04FF]/.test(s)) return 'cyrillic';
+        // Latin Extended — checked last, because a Korean or Russian script
+        // may also carry an accented Latin name, and those fonts already
+        // cover it. Matches both forms: the precomposed character (ẹ) and
+        // the decomposed one (e followed by a combining mark).
+        // Covers Latin-1 Supplement, Extended A and B, and Additional.
+        if (/[\u00C0-\u024F\u1E00-\u1EFF\u0300-\u036F]/.test(s)) return 'latinExt';
         return null;
-      }
- 
-      // Scan a breakdown for any non-Latin text we would have to render.
+      }   
+     // Scan a breakdown for any non-Latin text we would have to render.
       function slateScriptForExport(data) {
         if (!data) return null;
         var sample = JSON.stringify(data).slice(0, 200000);
