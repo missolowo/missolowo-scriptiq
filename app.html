@@ -910,7 +910,27 @@
       function siqTrack(name, params) {
         try { if (typeof gtag === 'function') gtag('event', name, params || {}); } catch (e) {}
       }
-
+      // Is this front-matter line something other than the title?
+      // Title pages open with dates, drafts, page numbers, credits and
+      // contact details far more often than with the title itself.
+      function slateIsNotTitle(line) {
+        var t = String(line || '').trim();
+        if (!t) return true;
+        if (t.length < 2 || t.length > 120) return true;
+        // Labels and status markers
+        if (/^(fade in|fade out|screenplay|draft|revision|revised|copyright|\u00a9|all rights|confidential|page\b)/i.test(t)) return true;
+        // Credit lines: "STORY BY", "WRITTEN AND SCRIPTED BY", "by ..."
+        if (/\b(story|written|screenplay|script|scripted|created|adapted|produced|directed|teleplay)\b[^a-z]*\bby\b/i.test(t)) return true;
+        if (/^by\b/i.test(t)) return true;
+        // Contact details
+        if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(t)) return true;
+        if (/^(e-?mail|gmail|mail|tel|phone|mobile|contact|address|www|http)\b/i.test(t)) return true;
+        if (/^[+(]?\d[\d\s()+-]{6,}$/.test(t)) return true;
+        // Dates and bare numbers: 18/11/2025, 2025-11-18, 18.11.2025
+        if (t.replace(/[^0-9]/g, '').length >= 4 && /^[\d\s./:-]+$/.test(t)) return true;
+        if (/^\d+$/.test(t)) return true;
+        return false;
+      }
       function splitScriptForProcessing(script, maxChunkSize) {
           // Discard everything before the first scene heading. Title pages,
         // writer credits and episode synopses are not scenes, and asking
@@ -936,17 +956,20 @@
           + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
         var firstHeading = raw.search(new RegExp('(?:^|\\n)[ \\t]*' + slateHeadingSrc, 'i'));
        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
+          // Clear any title captured from a previous upload. Without this, a
+        // script whose title page we cannot read silently inherits the last
+        // script's title — on its cover, its PDFs and its saved production.
+        window.slateScriptTitle = null;
         // The title lives in the front matter we are about to discard, so
-        // take it first. It is normally the first substantial line, skipping
-        // labels like "FADE IN" and any "written by" credit.
+        // take it first. A title page rarely opens with the title: it may
+        // start with a date, a draft marker, a page number, a credit line or
+        // contact details. Take the first line that is none of those.
         if (firstHeading > 0) {
           var frontMatter = raw.slice(0, firstHeading).split(/\r?\n/);
           for (var fm = 0; fm < frontMatter.length; fm++) {
             var line = frontMatter[fm].trim();
-            if (!line) continue;
-            if (/^(fade in|fade out|written by|by|screenplay|draft|revision|copyright|\u00a9)/i.test(line)) continue;
-            if (line.length < 2 || line.length > 120) continue;
-             window.slateScriptTitle = line
+            if (slateIsNotTitle(line)) continue;
+            window.slateScriptTitle = line
               .replace(/^(title|script title|episode title)\s*[:\-–]\s*/i, '')
               .replace(/\s+/g, ' ')
               .trim();
