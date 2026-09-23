@@ -959,9 +959,26 @@
         // them as two, which is where phantom scenes come from.
         // Covers: "INT. X", "12 EXT. X", "47A. INT. X", "2.01. INT. X",
         // "2.02.INT. X" (no space), and "SCENE 1  LOCATION  EXT/DAY".
-        const sceneBoundary = /\n(?=[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9]))/i;
+        const sceneBoundary = new RegExp('\\n(?=[ \\t]*' + slateHeadingSrc + ')', 'i');
         let segments = text.split(sceneBoundary);
-        if (segments.length <= 1) {
+        // Rejoin an orphaned scene-number line to the scene it belongs to.
+        // Scripts that write "SCENE 5" on its own line, with the heading on
+        // the line below, split into two segments here. The number then ends
+        // one section while its scene starts the next, so the AI never sees
+        // the number and correctly returns null. Ten scenes lost their
+        // numbers this way in one real script; one scene vanished entirely.
+        var slateNumOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*[0-9][0-9A-Za-z.\\-]*[.):]?[ \\t]*$', 'i');
+        var slateJoined = [];
+        for (var si = 0; si < segments.length; si++) {
+          var seg = segments[si];
+          if (slateNumOnly.test(seg.trim()) && si + 1 < segments.length) {
+            segments[si + 1] = seg.replace(/\s+$/, '') + '\n' + segments[si + 1];
+            continue;
+          }
+          slateJoined.push(seg);
+        }
+        segments = slateJoined;  
+       if (segments.length <= 1) {
           segments = splitBySize(text, maxChunkSize);
         }
         const chunks = [];
