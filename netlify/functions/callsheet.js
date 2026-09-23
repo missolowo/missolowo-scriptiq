@@ -65,9 +65,28 @@ exports.handler = async function(event, context) {
     }
 
     // Full, rich scene detail for exactly this day's scenes — never the whole script.
-    const todaysSceneNumbers = new Set((dayData.scenes || []).map(s => s.scene_number));
-    const todaysFullScenes = (breakdown.scenes || []).filter(s => todaysSceneNumbers.has(s.scene_number));
-
+    // Match scenes by IDENTITY, not by number. Matching on scene_number meant
+    // that if any of today's scenes had no number, the set contained null and
+    // the filter pulled in every unnumbered scene in the whole script — a day
+    // 3 call sheet listing scenes shot three weeks later, with their cast
+    // called to set. Two scenes sharing a number did the same.
+    // Older saved productions have no scene_index, so fall back to the old
+    // behaviour for those rather than returning an empty call sheet.
+    const todaysIndexes = new Set(
+      (dayData.scenes || []).map(s => s.scene_index).filter(v => v !== undefined && v !== null)
+    );
+    let todaysFullScenes;
+    if (todaysIndexes.size) {
+      todaysFullScenes = (breakdown.scenes || []).filter(function (s, i) {
+        return todaysIndexes.has(s.scene_index || (i + 1));
+      });
+    } else {
+      const todaysSceneNumbers = new Set((dayData.scenes || []).map(s => s.scene_number));
+      todaysFullScenes = (breakdown.scenes || []).filter(function (s) {
+        return s.scene_number !== null && s.scene_number !== undefined
+          && todaysSceneNumbers.has(s.scene_number);
+      });
+    }
     const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
 
     // ── STEP 1: Rate limit — user_id passed to fix the film-set shared-IP issue ──
@@ -108,6 +127,9 @@ exports.handler = async function(event, context) {
 
     const scenesToday = todaysFullScenes.slice().sort(sceneSort).map(function (s) {
       return {
+        // Identity travels with the scene onto the call sheet, so anything
+        // downstream — exports, future Budget and Crew modules — has it too.
+        scene_index: s.scene_index,
         scene_number: s.scene_number,
         int_ext: s.int_ext || 'INT',
         time_of_day: s.time_of_day || 'DAY',

@@ -910,7 +910,27 @@
       function siqTrack(name, params) {
         try { if (typeof gtag === 'function') gtag('event', name, params || {}); } catch (e) {}
       }
-
+      // Is this front-matter line something other than the title?
+      // Title pages open with dates, drafts, page numbers, credits and
+      // contact details far more often than with the title itself.
+      function slateIsNotTitle(line) {
+        var t = String(line || '').trim();
+        if (!t) return true;
+        if (t.length < 2 || t.length > 120) return true;
+        // Labels and status markers
+        if (/^(fade in|fade out|screenplay|draft|revision|revised|copyright|\u00a9|all rights|confidential|page\b)/i.test(t)) return true;
+        // Credit lines: "STORY BY", "WRITTEN AND SCRIPTED BY", "by ..."
+        if (/\b(story|written|screenplay|script|scripted|created|adapted|produced|directed|teleplay)\b[^a-z]*\bby\b/i.test(t)) return true;
+        if (/^by\b/i.test(t)) return true;
+        // Contact details
+        if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(t)) return true;
+        if (/^(e-?mail|gmail|mail|tel|phone|mobile|contact|address|www|http)\b/i.test(t)) return true;
+        if (/^[+(]?\d[\d\s()+-]{6,}$/.test(t)) return true;
+        // Dates and bare numbers: 18/11/2025, 2025-11-18, 18.11.2025
+        if (t.replace(/[^0-9]/g, '').length >= 4 && /^[\d\s./:-]+$/.test(t)) return true;
+        if (/^\d+$/.test(t)) return true;
+        return false;
+      }
       function splitScriptForProcessing(script, maxChunkSize) {
           // Discard everything before the first scene heading. Title pages,
         // writer credits and episode synopses are not scenes, and asking
@@ -918,19 +938,38 @@
         // containing only a synopsis, it would rather invent a scene than
         // return nothing. So it never sees them.
         var raw = script.trim();
-        var firstHeading = raw.search(/(?:^|\n)[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9])/i);
-        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
+         // ИНТ, НАТ and ПАВ are the Russian equivalents of INT, EXT and
+        // stage. Without them the splitter finds no first heading on a
+        // Russian script, so front matter is never stripped and the title
+        // is never captured.
+        // ── SINGLE SOURCE OF TRUTH: scene heading patterns ──
+        // Every heading test in this file builds on these two strings.
+        // Adding a language is one edit here, not four across the file.
+        // SLATE_HEAD  — the INT/EXT word in each supported language.
+        // SLATE_NUM   — the SCENE/SC word, for scripts that number scenes.
+        // Mirrored in netlify/functions/lib/slate-core.js — change both together.
+        var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
+        var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+        // A heading is either an INT/EXT word, or a SCENE word followed by a number.
+        var slateHeadingSrc =
+          '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
+          + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
+        var firstHeading = raw.search(new RegExp('(?:^|\\n)[ \\t]*' + slateHeadingSrc, 'i'));
+       const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
+          // Clear any title captured from a previous upload. Without this, a
+        // script whose title page we cannot read silently inherits the last
+        // script's title — on its cover, its PDFs and its saved production.
+        window.slateScriptTitle = null;
         // The title lives in the front matter we are about to discard, so
-        // take it first. It is normally the first substantial line, skipping
-        // labels like "FADE IN" and any "written by" credit.
+        // take it first. A title page rarely opens with the title: it may
+        // start with a date, a draft marker, a page number, a credit line or
+        // contact details. Take the first line that is none of those.
         if (firstHeading > 0) {
           var frontMatter = raw.slice(0, firstHeading).split(/\r?\n/);
           for (var fm = 0; fm < frontMatter.length; fm++) {
             var line = frontMatter[fm].trim();
-            if (!line) continue;
-            if (/^(fade in|fade out|written by|by|screenplay|draft|revision|copyright|\u00a9)/i.test(line)) continue;
-            if (line.length < 2 || line.length > 120) continue;
-             window.slateScriptTitle = line
+            if (slateIsNotTitle(line)) continue;
+            window.slateScriptTitle = line
               .replace(/^(title|script title|episode title)\s*[:\-–]\s*/i, '')
               .replace(/\s+/g, ' ')
               .trim();
@@ -943,9 +982,26 @@
         // them as two, which is where phantom scenes come from.
         // Covers: "INT. X", "12 EXT. X", "47A. INT. X", "2.01. INT. X",
         // "2.02.INT. X" (no space), and "SCENE 1  LOCATION  EXT/DAY".
-        const sceneBoundary = /\n(?=[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR)\b|(?:SCENE|SC)[ \t]*[0-9]))/i;
+        const sceneBoundary = new RegExp('\\n(?=[ \\t]*' + slateHeadingSrc + ')', 'i');
         let segments = text.split(sceneBoundary);
-        if (segments.length <= 1) {
+        // Rejoin an orphaned scene-number line to the scene it belongs to.
+        // Scripts that write "SCENE 5" on its own line, with the heading on
+        // the line below, split into two segments here. The number then ends
+        // one section while its scene starts the next, so the AI never sees
+        // the number and correctly returns null. Ten scenes lost their
+        // numbers this way in one real script; one scene vanished entirely.
+        var slateNumOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*[0-9][0-9A-Za-z.\\-]*[.):]?[ \\t]*$', 'i');
+        var slateJoined = [];
+        for (var si = 0; si < segments.length; si++) {
+          var seg = segments[si];
+          if (slateNumOnly.test(seg.trim()) && si + 1 < segments.length) {
+            segments[si + 1] = seg.replace(/\s+$/, '') + '\n' + segments[si + 1];
+            continue;
+          }
+          slateJoined.push(seg);
+        }
+        segments = slateJoined;  
+       if (segments.length <= 1) {
           segments = splitBySize(text, maxChunkSize);
         }
         const chunks = [];
@@ -1113,7 +1169,11 @@
             });
           }
           merged.total_scenes = merged.scenes.length;
-         
+          // scene_index is the scene's permanent identity: its position in
+          // the assembled script. The schedule and call sheet must look
+          // scenes up by this, never by scene_number — a script can leave a
+          // scene unnumbered, or number two scenes the same, and matching on
+          // the number then pulls in every other scene that shares it.         
           const pe = chunk.production_elements || {};
           // Cast names need the same normalisation as Report 2, or "Abake"
           // and "ABAKE" appear as two people in the elements list while
@@ -1233,8 +1293,18 @@
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
             + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || 'INT') + '. ' + (s.location || s.set_location || '') + ' — ' + (s.time_of_day || 'DAY') + '</span></div>'
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
-            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join('') + '</div>' : '')
-            + '</div>';
+            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
+            // Background is extracted by the breakdown and was being thrown
+            // away here, only to reappear on the schedule two documents
+            // later. Flagged, never counted — how many is a producer and
+            // director decision.
+            + (function () {
+                var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+                if (!bgText || bgText === 'null' || bgText === 'undefined') return '';
+                return '<div style="margin-top:6px;font-size:12px;color:var(--gold,#D4A64A);font-family:monospace">BG: '
+                  + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>';
+              })()  
+           + '</div>';
         }).join('');
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 2 — Character Scene Breakdown</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
@@ -1322,7 +1392,7 @@
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
             completedChunks.push(result);
             // Progressive reveal (PM-approved Aug 14) — show what's done so far
-            var soFar = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+             var soFar = mergeBreakdownChunks(completedChunks);  
             renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
           }
           
@@ -1330,7 +1400,12 @@
             throw new Error('Could not process the script. Please try again.');
           }
           wsProgress(92, 'Combining production data...');
-          slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+           // Always merge, even for a single section. The shortcut meant a
+          // short script skipped name normalisation and the rebuilt,
+          // counted Reports 2 and 3 — so short scripts silently ran
+          // different code from long ones, and test scripts behaved
+          // differently from real ones.
+          slateBreakdown = mergeBreakdownChunks(completedChunks);
          // Single-chunk scripts skip the merge, so the title captured from
           // the front matter has to be applied here too.
           if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
@@ -2008,8 +2083,9 @@
           if (s.description) pdf.body(s.description, 34, 158);
           pdf.gap(2);
           pdf.labelledList('Cast', s.cast);
-          pdf.labelledList('Props', s.props);
-          pdf.labelledList('Costume', s.costume);
+          var bgPdf = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+          if (bgPdf && bgPdf !== 'null') pdf.labelledList('Background', [bgPdf]);
+          pdf.labelledList('Props', s.props);          pdf.labelledList('Costume', s.costume);
           pdf.labelledList('Equipment', s.equipment);
           pdf.gap(3);
           pdf.rule();
@@ -2464,15 +2540,44 @@
       window.slateExportBreakdown = slateExportBreakdown;
       window.slateExportSchedule = slateExportSchedule;
       window.slateExportCallsheet = slateExportCallsheet;
-      
+        // True when two names differ by a single character — a typo, not a
+      // different person. Used only to suggest, never to merge.
+      function slateNearMatch(a, b) {
+        if (a === b) return false;
+        var la = a.length, lb = b.length;
+        if (Math.abs(la - lb) > 1) return false;
+        var i = 0, j = 0, diff = 0;
+        while (i < la && j < lb) {
+          if (a[i] === b[j]) { i++; j++; continue; }
+          if (++diff > 1) return false;
+          if (la > lb) i++; else if (lb > la) j++; else { i++; j++; }
+        }
+        return true;
+      }
       // ── SCRIPT HEALTH CHECK — runs in the browser before processing ──
       // Advisory only. Real scripts legitimately contain 47A/47B scenes and
       // unnumbered montages, so gaps are weighted lightly.
       function slateHealthCheck(text) {
         var findings = [];
-         var lines = String(text || '').split(/\r?\n/);
-
-        // ── Two heading formats, tried in order of strictness ──
+        var rawLines = String(text || '').split(/\r?\n/);
+        // Fold a lone scene-number line into the heading beneath it, so
+        // "SCENE 5" on one line and "INTERIOR/DAY/HOUSE" on the next is read
+        // as one numbered heading. Very common in Nollywood scripts; without
+        // this every scene reports as unnumbered and a clean script scores red.
+        var lines = [];
+        for (var hl = 0; hl < rawLines.length; hl++) {
+          var cur = rawLines[hl];
+          if (/^[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*$/i.test(cur)) {
+            var look = hl + 1;
+            while (look < rawLines.length && !rawLines[look].trim()) look++;
+            if (look < rawLines.length) {
+              lines.push(cur.trim() + ' ' + rawLines[look].trim());
+              hl = look;
+              continue;
+            }
+          }
+          lines.push(cur);
+        }        // ── Two heading formats, tried in order of strictness ──
         //
         // Layer 2 is checked FIRST even though it is numbered second,
         // because its pattern is strict: it only matches the Nollywood
@@ -2560,7 +2665,34 @@
           findings.push({ level: 'high', title: dupes.length + ' duplicate scene number' + (dupes.length > 1 ? 's' : ''),
             detail: 'Scene ' + dupes.slice(0, 6).join(', ') + (dupes.length > 6 ? '…' : '') + ' appear more than once.' });
         }
- 
+
+         // Headings we could not read at all. A misspelled INT/EXT word means
+        // that scene is invisible to every tool downstream — it will not be
+        // split correctly, numbered, or scheduled. Silently skipping it is
+        // the one thing a health check must not do.
+           var misread = [];
+        lines.forEach(function (line) {
+          var t = String(line || '').trim();
+          if (!t || t.length > 90) return;
+          // Looks like a heading (opens with a scene number or an INT/EXT-ish
+          // word) but our reader found nothing on this line.
+           if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+          // Starting with those letters is not enough — INTERVIEWER is a
+          // character cue, not a heading. A real slug line also carries a
+          // time of day, or several slash-separated parts, or a separator
+          // followed by a place.
+          if (!/\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(t)
+              && (t.match(/\//g) || []).length < 2
+              && !/[.\-–—]\s*\S/.test(t.replace(/^[^ ]+/, ''))) return;
+          var ok = scenes.some(function (s) { return s.raw && t.indexOf(s.raw.slice(0, 12)) >= 0; });
+          if (!ok && misread.indexOf(t) < 0) misread.push(t);
+        });
+        if (misread.length) {
+          findings.push({ level: 'medium',
+            title: misread.length + ' scene heading' + (misread.length > 1 ? 's' : '') + ' we could not read',
+            detail: 'e.g. "' + misread[0].slice(0, 60) + '". This usually means a typo in INT or EXT. '
+              + 'Scenes we cannot read are not broken down or scheduled. Review before export.' });
+        }
         // Unnumbered headings
         var unnumbered = scenes.filter(function (s) { return !s.number; });
         if (unnumbered.length) {
@@ -2583,18 +2715,75 @@
         }
         var byKey = {};
         scenes.forEach(function (s) {
-          var loc = s.rest.split(/[-—–]/)[0].replace(/^(INT|EXT|I\/E|INT\/EXT|ИНТ|НАТ|ПАВ)\.?\s*/i, '').trim(); 
+           // Pull the place out of a heading. Two layouts in real use:
+          //   "INT. ADEWALE'S HOUSE - DAY"        → split on the dash
+          //   "EXTERIOR/DAYLIGHT/ADEWALE'S HOUSE" → split on slashes, and
+          //     drop the INT/EXT and time-of-day parts, which are not places
+          var loc = s.rest.split(/[-—–]/)[0]
+            .replace(/^(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)\.?\s*/i, '')
+            .trim();
+          if (loc.indexOf('/') >= 0) {
+            loc = loc.split('/')
+              .map(function (p) { return p.trim(); })
+              .filter(function (p) {
+                if (!p) return false;
+                if (/^(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)\.?$/i.test(p)) return false;
+                return !/^(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\.?$/i.test(p);
+              })
+              .join(' / ');
+          } 
           if (!loc) return;
           var k = key(loc);
           if (!byKey[k]) byKey[k] = [];
           if (byKey[k].indexOf(loc) < 0) byKey[k].push(loc);
         });
-        var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
+      var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
         if (inconsistent.length) {
-          findings.push({ level: 'medium', title: inconsistent.length + ' location' + (inconsistent.length > 1 ? 's' : '') + ' written inconsistently',
-            detail: 'e.g. ' + byKey[inconsistent[0]].slice(0, 3).join(' / ') + '. Consistent naming groups scenes correctly.' });
+          findings.push({ level: 'medium', title: 'Possible Location Variant',
+            detail: 'Did you mean the same location?  •  ' + byKey[inconsistent[0]].slice(0, 3).join('  •  ')
+              + (inconsistent.length > 1 ? '  (and ' + (inconsistent.length - 1) + ' more)' : '')
+              + '. Review before export.' });
         }
- 
+
+        // Possible character variants. Unlike spelling differences, this is a
+        // judgement we cannot make for the filmmaker: "Ade" may be short for
+        // "Adewale", or a different person entirely. So we ask, never merge.
+        // Only strong signals are raised — one name contained within another,
+        // or a one-character difference — to keep this quiet enough to trust.
+        var cueNames = {};
+        lines.forEach(function (line) {
+          var t = String(line || '').trim();
+          // A character cue: a short line, mostly letters, no sentence
+          // punctuation and no INT/EXT word.
+          if (!t || t.length > 32) return;
+          if (/[.!?,:;\/]/.test(t)) return;
+          if (/\b(INT|EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|SCENE|DAY|NIGHT)\b/i.test(t)) return;
+          if (!/^[\p{L}][\p{L} '’\-]*$/u.test(t)) return;
+          if (t.split(/\s+/).length > 3) return;
+          var clean = t.replace(/\s*\(.*$/, '').trim();
+          if (clean.length < 3) return;
+          var k = clean.toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+          if (!cueNames[k]) cueNames[k] = { label: clean, count: 0 };
+          cueNames[k].count++;
+        });
+        var names = Object.keys(cueNames).filter(function (k) { return cueNames[k].count >= 2; });
+        var variantPairs = [];
+        for (var a = 0; a < names.length; a++) {
+          for (var b = a + 1; b < names.length; b++) {
+            var A = names[a], B = names[b];
+            var contained = A.length >= 4 && B.length >= 4 && (A.indexOf(B) >= 0 || B.indexOf(A) >= 0);
+            var oneOff = Math.abs(A.length - B.length) <= 1 && A.length >= 4 && slateNearMatch(A, B);
+            if (contained || oneOff) {
+              variantPairs.push(cueNames[A].label + '  •  ' + cueNames[B].label);
+            }
+          }
+        }
+        if (variantPairs.length) {
+          findings.push({ level: 'medium', title: 'Possible Character Variant',
+            detail: 'Did you mean the same character?  •  ' + variantPairs[0]
+              + (variantPairs.length > 1 ? '  (and ' + (variantPairs.length - 1) + ' more)' : '')
+              + '. Review before export.' });
+        }
         // Score — weighted so well-formed scripts land green
         var score = 100;
         findings.forEach(function (f) {

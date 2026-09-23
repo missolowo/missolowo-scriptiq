@@ -88,8 +88,12 @@ exports.handler = async function(event, context) {
     // ── STEP 4: Slim the scenes ──
     // Scheduling only needs scene identity, location, timing and cast.
     // Sending full descriptions/props/costume blew the function timeout.
-    const slimScenes = (breakdown.scenes || []).map(function (s) {
+       const slimScenes = (breakdown.scenes || []).map(function (s, i) {
       return {
+        // Permanent identity — carried through so the call sheet can match
+        // scenes by identity instead of by number. Falls back to array
+        // position for breakdowns saved before scene_index existed.
+        idx: s.scene_index || (i + 1),
         n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
         ie: s.int_ext || 'INT',
         tod: s.time_of_day || 'DAY',
@@ -228,9 +232,11 @@ exports.handler = async function(event, context) {
       // Count distinct scene numbers. A script with a duplicate — two
       // different scenes both numbered 67 — would otherwise report one
       // more scene than the breakdown found.
+      // Count by identity, not by number. Counting by scene_number collapsed
+      // every unnumbered scene into a single "null" entry, so a script with
+      // five unnumbered scenes reported four fewer than it has.
       var uniqueScenes = {};
-      slimScenes.forEach(function (s) { uniqueScenes[String(s.n)] = true; });
-
+      slimScenes.forEach(function (s) { uniqueScenes[String(s.idx)] = true; });
       // Warn when a day carries more locations than a crew could realistically
       // move between. We do not silently produce an impossible day.
       var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
@@ -251,8 +257,9 @@ exports.handler = async function(event, context) {
             company_move: d.locations.length > 1,
            scenes: d.scenes.map(function (s) {
               return {
+                scene_index: s.idx,
                 scene_number: s.n,
-                int_ext: s.ie,
+                int_ext: s.ie,         
                 time_of_day: s.tod,
                 set: s.set || '',
                 description: '',
