@@ -1092,7 +1092,12 @@
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
           .replace(/[''`]/g, '')
-          .replace(/[^A-Z0-9 ]/g, ' ')
+           // Keep letters and digits from ANY script, not just A-Z. Stripping
+          // to A-Z turned every Korean, Russian, Arabic, Hindi and Chinese
+          // name into an empty key — so those characters never appeared in
+          // Report 2 at all, and the canonical-name pass then dropped them
+          // from the scenes too.
+          .replace(/[^\p{L}\p{N} ]/gu, ' ')
           .replace(/\s+/g, ' ')
           .trim();
       } 
