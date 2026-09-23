@@ -2641,7 +2641,27 @@
           findings.push({ level: 'high', title: dupes.length + ' duplicate scene number' + (dupes.length > 1 ? 's' : ''),
             detail: 'Scene ' + dupes.slice(0, 6).join(', ') + (dupes.length > 6 ? '…' : '') + ' appear more than once.' });
         }
- 
+
+         // Headings we could not read at all. A misspelled INT/EXT word means
+        // that scene is invisible to every tool downstream — it will not be
+        // split correctly, numbered, or scheduled. Silently skipping it is
+        // the one thing a health check must not do.
+           var misread = [];
+        lines.forEach(function (line) {
+          var t = String(line || '').trim();
+          if (!t || t.length > 90) return;
+          // Looks like a heading (opens with a scene number or an INT/EXT-ish
+          // word) but our reader found nothing on this line.
+          if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+          var ok = scenes.some(function (s) { return s.raw && t.indexOf(s.raw.slice(0, 12)) >= 0; });
+          if (!ok && misread.indexOf(t) < 0) misread.push(t);
+        });
+        if (misread.length) {
+          findings.push({ level: 'medium',
+            title: misread.length + ' scene heading' + (misread.length > 1 ? 's' : '') + ' we could not read',
+            detail: 'e.g. "' + misread[0].slice(0, 60) + '". This usually means a typo in INT or EXT. '
+              + 'Scenes we cannot read are not broken down or scheduled. Review before export.' });
+        }
         // Unnumbered headings
         var unnumbered = scenes.filter(function (s) { return !s.number; });
         if (unnumbered.length) {
