@@ -2071,7 +2071,7 @@
               var val = String(row[i] == null ? '' : row[i]);
               if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
               else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
-              else { doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 58, 54); }
+              else { doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, SLATE_INK); }
               doc.setFontSize(9);
               var txt = doc.splitTextToSize(val, c.width - 4);
               doc.text(txt, c.align === 'right' ? cx + c.width - 4 : cx, y,
