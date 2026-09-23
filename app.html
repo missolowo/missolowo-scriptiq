@@ -2032,8 +2032,12 @@
           doc.setFont(slateBodyFont, 'bold');
           doc.text(label.toUpperCase() + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
+          // Reset the size: the label above set 7.5pt, and without this the
+          // VALUES inherited it — so the cast names and props, the actual
+          // content, printed smaller than anything else on the page.
+          doc.setFontSize(9);
           doc.setFont(slateBodyFont, 'normal');
-          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);
+          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);   
           doc.text(lines, (x || 34) + 26, y);
           y += lines.length * 4 + 1;
         }
