@@ -2652,7 +2652,14 @@
           if (!t || t.length > 90) return;
           // Looks like a heading (opens with a scene number or an INT/EXT-ish
           // word) but our reader found nothing on this line.
-          if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+           if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+          // Starting with those letters is not enough — INTERVIEWER is a
+          // character cue, not a heading. A real slug line also carries a
+          // time of day, or several slash-separated parts, or a separator
+          // followed by a place.
+          if (!/\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(t)
+              && (t.match(/\//g) || []).length < 2
+              && !/[.\-–—]\s*\S/.test(t.replace(/^[^ ]+/, ''))) return;
           var ok = scenes.some(function (s) { return s.raw && t.indexOf(s.raw.slice(0, 12)) >= 0; });
           if (!ok && misread.indexOf(t) < 0) misread.push(t);
         });
