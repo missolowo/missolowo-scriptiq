@@ -2024,8 +2024,11 @@
             .filter(function (v) { return v && v !== 'null' && v !== 'undefined'; });
           if (!arr.length) return;
           check(8);
-          doc.setTextColor.apply(doc, SLATE_GOLD);
-          doc.setFontSize(7);
+           // CAST / PROPS / COSTUME labels were gold at 7pt on cream — too
+          // little contrast at too small a size. Gold stays where it is
+          // large enough to read: scene numerals and section rules.
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7.5);
           doc.setFont(slateBodyFont, 'bold');
           doc.text(label.toUpperCase() + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
