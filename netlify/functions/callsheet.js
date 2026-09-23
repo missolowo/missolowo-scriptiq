@@ -127,6 +127,9 @@ exports.handler = async function(event, context) {
 
     const scenesToday = todaysFullScenes.slice().sort(sceneSort).map(function (s) {
       return {
+        // Identity travels with the scene onto the call sheet, so anything
+        // downstream — exports, future Budget and Crew modules — has it too.
+        scene_index: s.scene_index,
         scene_number: s.scene_number,
         int_ext: s.int_ext || 'INT',
         time_of_day: s.time_of_day || 'DAY',
