@@ -2006,9 +2006,9 @@
           doc.text(text, x || 34, y + 4);
         }
 
-        function body(text, x, width) {
+         function body(text, x, width) {
           doc.setTextColor.apply(doc,SLATE_INK);
-          doc.setFontSize(9);
+          doc.setFontSize(9.5);
           doc.setFont('helvetica', 'normal');
           var lines = doc.splitTextToSize(text, width || 160);
           doc.text(lines, x || 34, y);
