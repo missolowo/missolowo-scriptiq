@@ -1764,29 +1764,22 @@
           + '</div>';
         out.innerHTML = html;
       }
-           // ============================================================
+      // ============================================================
       // MISSOLOWO SLATE — DOCUMENT EXPORT FRAMEWORK
       // Shared engine + per-document definitions. New production
       // documents plug in here rather than spawning new generators.
       // Night Shoot paper mode: warm white, grayscale-safe gold.
       // ============================================================
-      // Near-white, with warmth retained. The old cream (244,239,230) was a
-      // mid-tone, and black text on a mid-tone cannot reach the contrast a
-      // filmmaker needs reading a call sheet on a phone at 6am on set.
-      // Gold stays for scene numerals, rules and the cover — large elements
-      // where it reads as gold. Small text is black everywhere.
-      var SLATE_PAPER = [252, 250, 246];   // --doc-bg
-      // Pure black. The previous near-black carried a slight warm tint that
-      // read soft against cream paper, especially at small sizes on a phone.
-      // Maximum contrast matters more on these documents than a refined grey.
-      var SLATE_INK   = [0, 0, 0];         // --doc-ink
-      var SLATE_LINE  = [201, 194, 180];   // --doc-line
-      var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
-       // Darkened for legibility (Sep 2026). The old value was a soft grey
-      // that failed on a phone screen in daylight — which is where most of
-      // these documents are read. Small text must be near-black, not tinted.
-      var SLATE_MUTED = [48, 45, 40];
-     
+      // ── Dark production documents (PM-approved, Sep 2026) ──
+      // Readability over decoration: gold on a light background is two
+      // mid-tones against each other and cannot be sharp at 7.5pt. On
+      // charcoal it reads as gold, and body text reaches full contrast.
+      // A print-optimised light variant follows in V3.
+      var SLATE_PAPER = [18, 19, 22];      // deep charcoal — the page
+      var SLATE_INK   = [244, 239, 230];   // warm white — body text
+      var SLATE_LINE  = [58, 60, 66];      // rules and dividers
+      var SLATE_GOLD  = [212, 166, 74];    // brighter gold — legible on dark
+      var SLATE_MUTED = [168, 162, 150];   // labels: light enough to read     
       // ── Unicode fonts for PDF export ──
       // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
       // Devanagari, Arabic, Chinese — exports as corrupted characters,
