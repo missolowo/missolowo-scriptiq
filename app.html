@@ -1382,7 +1382,7 @@
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
             completedChunks.push(result);
             // Progressive reveal (PM-approved Aug 14) — show what's done so far
-            var soFar = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+             var soFar = mergeBreakdownChunks(completedChunks);  
             renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
           }
           
@@ -1390,7 +1390,12 @@
             throw new Error('Could not process the script. Please try again.');
           }
           wsProgress(92, 'Combining production data...');
-          slateBreakdown = completedChunks.length === 1 ? completedChunks[0] : mergeBreakdownChunks(completedChunks);
+           // Always merge, even for a single section. The shortcut meant a
+          // short script skipped name normalisation and the rebuilt,
+          // counted Reports 2 and 3 — so short scripts silently ran
+          // different code from long ones, and test scripts behaved
+          // differently from real ones.
+          slateBreakdown = mergeBreakdownChunks(completedChunks);
          // Single-chunk scripts skip the merge, so the title captured from
           // the front matter has to be applied here too.
           if (window.slateScriptTitle) slateBreakdown.title = window.slateScriptTitle;
