@@ -233,8 +233,9 @@ COSTUME, PROPS AND EQUIPMENT — record only what the script actually specifies:
 - Costume means a garment the script describes: "bright yellow wrapper", "police uniform", "torn school shirt".
 - Never write a placeholder. "Costume for Adewale", "Adewale's outfit" or "regular clothes" say nothing a costume department can act on, and they make a breakdown look padded.
 - If the script does not describe what a character wears, leave costume empty. An empty field is honest; a filler entry wastes a department's time.
-- The same rule applies to props and equipment: list the object, never the fact that an object exists.
-SCREENPLAY:${script.trim()}
+- Props and equipment: list every object the script mentions by name — "phone", "makeshift stall", "15,000 naira". Only avoid entries that name no object, such as "props for the scene".
+SCREENPLAY:
+${script.trim()}
 
 REMINDER: write every description, location, set, prop, costume and equipment value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
 
