@@ -1097,10 +1097,15 @@
           .trim();
       } 
   
-      function slateBetterLabel(a, b) {
+        function slateBetterLabel(a, b) {
         var A = String(a || ''), B = String(b || '');
-        var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
-        var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
+        // "Mixed case" must be tested in any alphabet, not just A-Z.
+        // Yorùbá "BÙKỌ́LÁ" contains ù and ọ́, which are lowercase letters,
+        // so an /[a-z]/ test called it mixed case and blended the two
+        // spellings into "Bùkọ́LÁ". \p{Ll} and \p{Lu} ask the question
+        // properly: is there a lowercase letter, and an uppercase one.
+        var mixedA = /\p{Ll}/u.test(A) && /\p{Lu}/u.test(A);
+        var mixedB = /\p{Ll}/u.test(B) && /\p{Lu}/u.test(B);
         if (mixedA && !mixedB) return A;
         if (mixedB && !mixedA) return B;
         return A.length >= B.length ? A : B;
