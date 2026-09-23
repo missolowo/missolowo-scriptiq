@@ -2535,9 +2535,25 @@
       // unnumbered montages, so gaps are weighted lightly.
       function slateHealthCheck(text) {
         var findings = [];
-         var lines = String(text || '').split(/\r?\n/);
-
-        // ── Two heading formats, tried in order of strictness ──
+        var rawLines = String(text || '').split(/\r?\n/);
+        // Fold a lone scene-number line into the heading beneath it, so
+        // "SCENE 5" on one line and "INTERIOR/DAY/HOUSE" on the next is read
+        // as one numbered heading. Very common in Nollywood scripts; without
+        // this every scene reports as unnumbered and a clean script scores red.
+        var lines = [];
+        for (var hl = 0; hl < rawLines.length; hl++) {
+          var cur = rawLines[hl];
+          if (/^[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*$/i.test(cur)) {
+            var look = hl + 1;
+            while (look < rawLines.length && !rawLines[look].trim()) look++;
+            if (look < rawLines.length) {
+              lines.push(cur.trim() + ' ' + rawLines[look].trim());
+              hl = look;
+              continue;
+            }
+          }
+          lines.push(cur);
+        }        // ── Two heading formats, tried in order of strictness ──
         //
         // Layer 2 is checked FIRST even though it is numbered second,
         // because its pattern is strict: it only matches the Nollywood
