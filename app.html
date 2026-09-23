@@ -1293,8 +1293,18 @@
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
             + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || 'INT') + '. ' + (s.location || s.set_location || '') + ' — ' + (s.time_of_day || 'DAY') + '</span></div>'
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
-            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join('') + '</div>' : '')
-            + '</div>';
+            + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
+            // Background is extracted by the breakdown and was being thrown
+            // away here, only to reappear on the schedule two documents
+            // later. Flagged, never counted — how many is a producer and
+            // director decision.
+            + (function () {
+                var bgText = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+                if (!bgText || bgText === 'null' || bgText === 'undefined') return '';
+                return '<div style="margin-top:6px;font-size:12px;color:var(--gold,#D4A64A);font-family:monospace">BG: '
+                  + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>';
+              })()  
+           + '</div>';
         }).join('');
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 2 — Character Scene Breakdown</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
