@@ -1770,7 +1770,12 @@
       // documents plug in here rather than spawning new generators.
       // Night Shoot paper mode: warm white, grayscale-safe gold.
       // ============================================================
-      var SLATE_PAPER = [244, 239, 230];   // --doc-bg
+      // Near-white, with warmth retained. The old cream (244,239,230) was a
+      // mid-tone, and black text on a mid-tone cannot reach the contrast a
+      // filmmaker needs reading a call sheet on a phone at 6am on set.
+      // Gold stays for scene numerals, rules and the cover — large elements
+      // where it reads as gold. Small text is black everywhere.
+      var SLATE_PAPER = [252, 250, 246];   // --doc-bg
       // Pure black. The previous near-black carried a slight warm tint that
       // read soft against cream paper, especially at small sizes on a phone.
       // Maximum contrast matters more on these documents than a refined grey.
