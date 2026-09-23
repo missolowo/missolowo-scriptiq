@@ -1940,17 +1940,23 @@
           doc.setFont('helvetica', 'normal');
           doc.text('Generated ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), 20, 182);
           footer();
+          // The cover owns its page. Without this, y stays 0 and the first
+          // sectionHeader repaints this page — erasing the cover we just drew.
+          newPage();
         }
-
          function sectionHeader(label) {
-          // Only start a fresh page if this one has content. Calling
-          // newPage() unconditionally left a blank page between sections.
+          // Start a new page only when this section genuinely will not fit.
+          // Forcing a break whenever the page had content gave the call
+          // sheet eleven sections across eleven near-empty pages.
+          // The else branch that repainted the page is gone: it erased the
+          // cover, and newPage() already paints every page it creates.
           if (y > 24) {
-            check(40);
-            if (y > 24) newPage();
-          } else {
-            paintPage();
-            footer();
+            var slateNeed = 34;
+            if (y + slateNeed > 278) {
+              newPage();
+            } else {
+              y += 10; // breathing room above a section that stays on this page
+            }
           }
           doc.setFillColor.apply(doc, SLATE_GOLD);
           doc.rect(15, y - 4, 20, 1.2, 'F');
