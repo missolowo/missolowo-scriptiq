@@ -1771,14 +1771,17 @@
       // Night Shoot paper mode: warm white, grayscale-safe gold.
       // ============================================================
       var SLATE_PAPER = [244, 239, 230];   // --doc-bg
-      var SLATE_INK   = [13, 14, 16];      // --doc-ink
+      // Pure black. The previous near-black carried a slight warm tint that
+      // read soft against cream paper, especially at small sizes on a phone.
+      // Maximum contrast matters more on these documents than a refined grey.
+      var SLATE_INK   = [0, 0, 0];         // --doc-ink
       var SLATE_LINE  = [201, 194, 180];   // --doc-line
       var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
        // Darkened for legibility (Sep 2026). The old value was a soft grey
       // that failed on a phone screen in daylight — which is where most of
       // these documents are read. Small text must be near-black, not tinted.
-      var SLATE_MUTED = [74, 70, 62];
-
+      var SLATE_MUTED = [48, 45, 40];
+     
       // ── Unicode fonts for PDF export ──
       // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
       // Devanagari, Arabic, Chinese — exports as corrupted characters,
