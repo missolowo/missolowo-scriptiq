@@ -2664,7 +2664,23 @@
         }
         var byKey = {};
         scenes.forEach(function (s) {
-          var loc = s.rest.split(/[-—–]/)[0].replace(/^(INT|EXT|I\/E|INT\/EXT|ИНТ|НАТ|ПАВ)\.?\s*/i, '').trim(); 
+           // Pull the place out of a heading. Two layouts in real use:
+          //   "INT. ADEWALE'S HOUSE - DAY"        → split on the dash
+          //   "EXTERIOR/DAYLIGHT/ADEWALE'S HOUSE" → split on slashes, and
+          //     drop the INT/EXT and time-of-day parts, which are not places
+          var loc = s.rest.split(/[-—–]/)[0]
+            .replace(/^(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)\.?\s*/i, '')
+            .trim();
+          if (loc.indexOf('/') >= 0) {
+            loc = loc.split('/')
+              .map(function (p) { return p.trim(); })
+              .filter(function (p) {
+                if (!p) return false;
+                if (/^(INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)\.?$/i.test(p)) return false;
+                return !/^(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\.?$/i.test(p);
+              })
+              .join(' / ');
+          } 
           if (!loc) return;
           var k = key(loc);
           if (!byKey[k]) byKey[k] = [];
