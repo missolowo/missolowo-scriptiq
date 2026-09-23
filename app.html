@@ -922,7 +922,19 @@
         // stage. Without them the splitter finds no first heading on a
         // Russian script, so front matter is never stripped and the title
         // is never captured.
-        var firstHeading = raw.search(/(?:^|\n)[ \t]*(?:(?:[0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \t]*)?(?:INT|EXT|I\/E|INT\/EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)(?![А-Яа-яA-Za-z])|(?:SCENE|SC|СЦЕНА)[ \t]*[0-9])/i); 
+        // ── SINGLE SOURCE OF TRUTH: scene heading patterns ──
+        // Every heading test in this file builds on these two strings.
+        // Adding a language is one edit here, not four across the file.
+        // SLATE_HEAD  — the INT/EXT word in each supported language.
+        // SLATE_NUM   — the SCENE/SC word, for scripts that number scenes.
+        // Mirrored in netlify/functions/lib/slate-core.js — change both together.
+        var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
+        var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+        // A heading is either an INT/EXT word, or a SCENE word followed by a number.
+        var slateHeadingSrc =
+          '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
+          + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
+        var firstHeading = raw.search(new RegExp('(?:^|\\n)[ \\t]*' + slateHeadingSrc, 'i'));
        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
         // The title lives in the front matter we are about to discard, so
         // take it first. It is normally the first substantial line, skipping
