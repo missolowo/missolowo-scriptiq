@@ -2529,7 +2529,20 @@
       window.slateExportBreakdown = slateExportBreakdown;
       window.slateExportSchedule = slateExportSchedule;
       window.slateExportCallsheet = slateExportCallsheet;
-      
+        // True when two names differ by a single character — a typo, not a
+      // different person. Used only to suggest, never to merge.
+      function slateNearMatch(a, b) {
+        if (a === b) return false;
+        var la = a.length, lb = b.length;
+        if (Math.abs(la - lb) > 1) return false;
+        var i = 0, j = 0, diff = 0;
+        while (i < la && j < lb) {
+          if (a[i] === b[j]) { i++; j++; continue; }
+          if (++diff > 1) return false;
+          if (la > lb) i++; else if (lb > la) j++; else { i++; j++; }
+        }
+        return true;
+      }
       // ── SCRIPT HEALTH CHECK — runs in the browser before processing ──
       // Advisory only. Real scripts legitimately contain 47A/47B scenes and
       // unnumbered montages, so gaps are weighted lightly.
@@ -2713,12 +2726,53 @@
           if (!byKey[k]) byKey[k] = [];
           if (byKey[k].indexOf(loc) < 0) byKey[k].push(loc);
         });
-        var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
+      var inconsistent = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; });
         if (inconsistent.length) {
-          findings.push({ level: 'medium', title: inconsistent.length + ' location' + (inconsistent.length > 1 ? 's' : '') + ' written inconsistently',
-            detail: 'e.g. ' + byKey[inconsistent[0]].slice(0, 3).join(' / ') + '. Consistent naming groups scenes correctly.' });
+          findings.push({ level: 'medium', title: 'Possible Location Variant',
+            detail: 'Did you mean the same location?  •  ' + byKey[inconsistent[0]].slice(0, 3).join('  •  ')
+              + (inconsistent.length > 1 ? '  (and ' + (inconsistent.length - 1) + ' more)' : '')
+              + '. Review before export.' });
         }
- 
+
+        // Possible character variants. Unlike spelling differences, this is a
+        // judgement we cannot make for the filmmaker: "Ade" may be short for
+        // "Adewale", or a different person entirely. So we ask, never merge.
+        // Only strong signals are raised — one name contained within another,
+        // or a one-character difference — to keep this quiet enough to trust.
+        var cueNames = {};
+        lines.forEach(function (line) {
+          var t = String(line || '').trim();
+          // A character cue: a short line, mostly letters, no sentence
+          // punctuation and no INT/EXT word.
+          if (!t || t.length > 32) return;
+          if (/[.!?,:;\/]/.test(t)) return;
+          if (/\b(INT|EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|SCENE|DAY|NIGHT)\b/i.test(t)) return;
+          if (!/^[\p{L}][\p{L} '’\-]*$/u.test(t)) return;
+          if (t.split(/\s+/).length > 3) return;
+          var clean = t.replace(/\s*\(.*$/, '').trim();
+          if (clean.length < 3) return;
+          var k = clean.toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+          if (!cueNames[k]) cueNames[k] = { label: clean, count: 0 };
+          cueNames[k].count++;
+        });
+        var names = Object.keys(cueNames).filter(function (k) { return cueNames[k].count >= 2; });
+        var variantPairs = [];
+        for (var a = 0; a < names.length; a++) {
+          for (var b = a + 1; b < names.length; b++) {
+            var A = names[a], B = names[b];
+            var contained = A.length >= 4 && B.length >= 4 && (A.indexOf(B) >= 0 || B.indexOf(A) >= 0);
+            var oneOff = Math.abs(A.length - B.length) <= 1 && A.length >= 4 && slateNearMatch(A, B);
+            if (contained || oneOff) {
+              variantPairs.push(cueNames[A].label + '  •  ' + cueNames[B].label);
+            }
+          }
+        }
+        if (variantPairs.length) {
+          findings.push({ level: 'medium', title: 'Possible Character Variant',
+            detail: 'Did you mean the same character?  •  ' + variantPairs[0]
+              + (variantPairs.length > 1 ? '  (and ' + (variantPairs.length - 1) + ' more)' : '')
+              + '. Review before export.' });
+        }
         // Score — weighted so well-formed scripts land green
         var score = 100;
         findings.forEach(function (f) {
