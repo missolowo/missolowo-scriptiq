@@ -1774,7 +1774,10 @@
       var SLATE_INK   = [13, 14, 16];      // --doc-ink
       var SLATE_LINE  = [201, 194, 180];   // --doc-line
       var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
-      var SLATE_MUTED = [120, 115, 105];
+       // Darkened for legibility (Sep 2026). The old value was a soft grey
+      // that failed on a phone screen in daylight — which is where most of
+      // these documents are read. Small text must be near-black, not tinted.
+      var SLATE_MUTED = [74, 70, 62];
 
       // ── Unicode fonts for PDF export ──
       // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
