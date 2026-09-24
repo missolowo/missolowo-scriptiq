@@ -1802,7 +1802,13 @@
         // built-in fonts cannot encode — ẹ ọ ṣ ǹ and the tone marks. Without
         // a real font the export spaces every character apart, on documents
         // for the market this product was built for.
-        latinExt:   { file: '/NotoSans-Regular.ttf',   name: 'NotoLatin' }
+         // A bold file where we have one. Without it, jsPDF resolves every
+        // setFont(..., 'bold') to the regular weight — so nothing in the
+        // document is actually bold, and Noto regular is lighter than the
+        // built-in Helvetica it replaces. On dark pages that reads as dim,
+        // tinted text, which is what sent us chasing colour values.
+        latinExt:   { file: '/NotoSans-Regular.ttf',   name: 'NotoLatin',
+                      bold: '/NotoSans-Bold.ttf' }
       };
       var slateFontCache = {};   // script → base64, fetched once per session
       // Which script does this text need? Latin needs nothing.
@@ -1829,15 +1835,19 @@
  
       // Fetch and cache the font. Returns null if it cannot be loaded —
       // the export then proceeds in Latin rather than failing outright.
-      async function slateLoadFont(script) {
-        if (!script || !SLATE_FONTS[script]) return null;
-        if (slateFontCache[script]) return slateFontCache[script];
- 
+      async function slateLoadFont(script, variant) {
+        var cfg = SLATE_FONTS[script];
+        if (!script || !cfg) return null;
+        var path = variant === 'bold' ? cfg.bold : cfg.file;
+        if (!path) return null;
+        var cacheKey = script + (variant === 'bold' ? ':bold' : '');
+        if (slateFontCache[cacheKey]) return slateFontCache[cacheKey];
+
         try {
-          var res = await fetch(SLATE_FONTS[script].file);
+          var res = await fetch(path);
           if (!res.ok) return null;
           var buf = await res.arrayBuffer();
- 
+
           // Chunked so a large font does not blow the call stack
           var bytes = new Uint8Array(buf);
           var binary = '';
@@ -1845,14 +1855,13 @@
           for (var i = 0; i < bytes.length; i += chunk) {
             binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
           }
-          slateFontCache[script] = btoa(binary);
-          return slateFontCache[script];
+          slateFontCache[cacheKey] = btoa(binary);
+          return slateFontCache[cacheKey];
         } catch (e) {
-          console.warn('[Slate] Could not load ' + script + ' font:', e.message);
+          console.warn('[Slate] Could not load ' + cacheKey + ' font:', e.message);
           return null;
         }
-      }
- 
+      } 
       // Called before an export. Loads the font if the content needs one,
       // and shows the user why the wait is happening.
       async function slatePrepareFont(data) {
@@ -1870,6 +1879,9 @@
         }
  
         var b64 = await slateLoadFont(script);
+        // Bold is optional — a font family without a bold file still exports,
+        // just without true bold. Never let a missing bold block the export.
+        await slateLoadFont(script, 'bold');
         if (msg && msg.parentNode) msg.parentNode.removeChild(msg);
         return b64 ? script : null;
       }
@@ -1891,10 +1903,16 @@
             var cfg = SLATE_FONTS[window.slateActiveScript];
             var fontB64 = slateFontCache[window.slateActiveScript];
             doc.addFileToVFS(cfg.name + '.ttf', fontB64);
+            // Bold gets its own file where we have one. Registering the same
+            // regular file under all three styles is why nothing rendered bold.
+            var boldB64 = slateFontCache[window.slateActiveScript + ':bold'];
+            var boldFile = cfg.name + '-Bold.ttf';
+            if (boldB64) doc.addFileToVFS(boldFile, boldB64);
             ['normal', 'bold', 'italic'].forEach(function (style) {
-              doc.addFont(cfg.name + '.ttf', cfg.name, style);
-              doc.addFont(cfg.name + '.ttf', 'helvetica', style);
-              doc.addFont(cfg.name + '.ttf', 'courier', style);
+              var src = (style === 'bold' && boldB64) ? boldFile : (cfg.name + '.ttf');
+              doc.addFont(src, cfg.name, style);
+              doc.addFont(src, 'helvetica', style);
+              doc.addFont(src, 'courier', style);
             });
             slateBodyFont = cfg.name;
           } catch (e) {
