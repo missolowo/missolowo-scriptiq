@@ -1898,24 +1898,50 @@
         // setFont call then resolves to the Unicode font without needing to
         // change dozens of call sites across three export functions.
         var slateBodyFont = 'helvetica';
+        var slateUni = null, slateUniBold = false;
         if (window.slateActiveScript && slateFontCache[window.slateActiveScript]) {
           try {
             var cfg = SLATE_FONTS[window.slateActiveScript];
-            var fontB64 = slateFontCache[window.slateActiveScript];
-            doc.addFileToVFS(cfg.name + '.ttf', fontB64);
-            // Bold gets its own file where we have one. Registering the same
-            // regular file under all three styles is why nothing rendered bold.
+            doc.addFileToVFS(cfg.name + '.ttf', slateFontCache[window.slateActiveScript]);
+            doc.addFont(cfg.name + '.ttf', cfg.name, 'normal');
             var boldB64 = slateFontCache[window.slateActiveScript + ':bold'];
-            var boldFile = cfg.name + '-Bold.ttf';
-            if (boldB64) doc.addFileToVFS(boldFile, boldB64);
-            ['normal', 'bold', 'italic'].forEach(function (style) {
-              var src = (style === 'bold' && boldB64) ? boldFile : (cfg.name + '.ttf');
-              doc.addFont(src, cfg.name, style);
-              doc.addFont(src, 'helvetica', style);
-              doc.addFont(src, 'courier', style);
-            });
-            slateBodyFont = cfg.name;
+            if (boldB64) {
+              doc.addFileToVFS(cfg.name + '-Bold.ttf', boldB64);
+              doc.addFont(cfg.name + '-Bold.ttf', cfg.name, 'bold');
+              slateUniBold = true;
+            }
+            slateUni = cfg.name;
+            // Draw non-Latin strings with the Unicode font and everything else
+            // with the built-ins. Aliasing helvetica and courier to Noto made
+            // EVERY string use it, which cost us real bold, real monospace and
+            // proper letter spacing on documents that are mostly English.
+            // Patched in one place so no call site has to choose a font.
+            var slateDrawText = doc.text.bind(doc);
+            doc.text = function (txt, x, y, opts) {
+              var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
+              if (!/[^\u0000-\u00FF]/.test(probe)) return slateDrawText(txt, x, y, opts);
+              var was = doc.getFont() || {};
+              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var out = slateDrawText(txt, x, y, opts);
+              try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
+              return out;
+            };
+            // Measuring has to use the same font, or wrapped lines come back
+            // the wrong width for non-Latin text.
+            var slateSplit = doc.splitTextToSize.bind(doc);
+            doc.splitTextToSize = function (txt, w, opts) {
+              var s = String(txt == null ? '' : txt);
+              if (!/[^\u0000-\u00FF]/.test(s)) return slateSplit(txt, w, opts);
+              var was = doc.getFont() || {};
+              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var lines = slateSplit(txt, w, opts);
+              try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
+              return lines;
+            };
           } catch (e) {
+            console.warn('[Slate] Font registration failed:', e.message);
+          }
+        }
             console.warn('[Slate] Font registration failed:', e.message);
           }
         }
