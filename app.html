@@ -2333,11 +2333,11 @@
         ]);
 
         function labelValue(label, value, x, width) {
-          d.setTextColor(120, 115, 105);
+          d.setTextColor.apply(d, SLATE_MUTED);
           d.setFontSize(6.5);
           d.setFont('helvetica', 'bold');
           d.text(label.toUpperCase(), x, pdf.getY());
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('courier', 'normal');
           var lines = d.splitTextToSize(String(value || '—'), width || 55);
@@ -2387,7 +2387,8 @@
         if (pd.emergency_contacts && pd.emergency_contacts.length) {
           pdf.check(14 + pd.emergency_contacts.length * 6);
           var eY = pdf.getY();
-          d.setFillColor(13, 14, 16);
+          // Inverted on a light page; on a dark page it needs to lift off it.
+          d.setFillColor(38, 34, 28);
           d.rect(15, eY - 4, 180, 10 + pd.emergency_contacts.length * 6, 'F');
           d.setTextColor(212, 166, 74);
           d.setFontSize(6.5);
@@ -2408,11 +2409,11 @@
           pdf.sectionHeader('Department Call Timeline');
           pd.department_timeline.forEach(function(t) {
             pdf.check(8);
-            d.setTextColor(156, 122, 47);
+            d.setTextColor.apply(d, SLATE_GOLD);
             d.setFontSize(10);
             d.setFont('courier', 'bold');
             d.text(String(t.time || ''), 15, pdf.getY());
-            d.setTextColor(13, 14, 16);
+            d.setTextColor.apply(d, SLATE_INK);
             d.setFontSize(8);
             d.setFont('helvetica', 'normal');
             d.text(String(t.label || ''), 45, pdf.getY());
@@ -2440,13 +2441,13 @@
         pdf.sectionHeader('Cast');
         cast.forEach(function(c) {
           pdf.check(14);
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('helvetica', 'bold');
           d.text(String(c.character || ''), 15, pdf.getY());
           d.setFont('courier', 'normal');
           d.setFontSize(8);
-          d.setTextColor(120, 115, 105);
+          d.setTextColor.apply(d, SLATE_MUTED);
           d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—') + '   ·   Scenes ' + (c.scenes || []).join(', '), 15, pdf.getY() + 5);
           pdf.gap(11);
           pdf.rule();
@@ -2456,11 +2457,11 @@
           pdf.sectionHeader('Full Crew List');
           pd.crew.forEach(function(m) {
             pdf.check(8);
-            d.setTextColor(120, 115, 105);
+            d.setTextColor.apply(d, SLATE_MUTED);
             d.setFontSize(7);
             d.setFont('helvetica', 'normal');
             d.text(String(m.role || ''), 15, pdf.getY());
-            d.setTextColor(13, 14, 16);
+            d.setTextColor.apply(d, SLATE_INK);
             d.setFontSize(8.5);
             d.setFont('helvetica', 'bold');
             d.text(String(m.name || ''), 75, pdf.getY());
@@ -2487,10 +2488,10 @@
 
         if (pd.quote_of_day) {
           pdf.check(16);
-          d.setDrawColor(156, 122, 47);
+          d.setDrawColor.apply(d, SLATE_GOLD);
           d.setLineWidth(0.8);
           d.line(15, pdf.getY() - 3, 15, pdf.getY() + 6);
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(10);
           d.setFont('helvetica', 'italic');
           d.text('"' + pd.quote_of_day + '"', 20, pdf.getY() + 2);
