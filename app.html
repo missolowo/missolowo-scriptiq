@@ -931,6 +931,56 @@
         if (/^\d+$/.test(t)) return true;
         return false;
       }
+      // ── SINGLE SOURCE OF TRUTH: scene heading patterns ──
+      // Hoisted out of the splitter so the number-recorder below builds on the
+      // same definitions. Adding a language is one edit here.
+      // SLATE_HEAD — the INT/EXT word in each supported language.
+      // SLATE_NUM  — the SCENE/SC word, for scripts that number their scenes.
+      var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
+      var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+      // A heading is either an INT/EXT word, or a SCENE word followed by a number.
+      var slateHeadingSrc =
+        '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
+        + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
+
+      // ── DERIVE, DON'T ASK: remember the scene numbers we hand to the model ──
+      // The splitter can see every scene number in the script. Until now it
+      // threw that record away, so when the model returned null for a scene
+      // whose number was plainly in front of it — nine of fourteen on one real
+      // fixture — nothing downstream could recover it.
+      // Now each section's numbers are recorded in order, and the merge fills
+      // any null the model returns. The model is asked to read; the code keeps
+      // the facts it already had.
+      function slateSceneNumbersIn(sectionText) {
+        var raw = String(sectionText || '').split(/\r?\n/);
+        // Fold "SCENE 5" on its own line into the heading beneath it, so the
+        // pair counts as one scene — the same shape the splitter produces.
+        var numOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*$', 'i');
+        var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
+        var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
+        var out = [];
+        for (var i = 0; i < raw.length; i++) {
+          var m = raw[i].match(numOnly);
+          if (m) {
+            var look = i + 1;
+            while (look < raw.length && !raw[look].trim()) look++;
+            if (look < raw.length && headStart.test(raw[look])) { out.push(m[1]); i = look; continue; }
+          }
+          if (headStart.test(raw[i])) {
+            var wn = raw[i].match(withNum);
+            out.push(wn ? wn[1] : null);
+          }
+        }
+        return out;
+      }
+
+      function slateRecordNumbers(chunks) {
+        try {
+          window.slateChunkNumbers = chunks.map(slateSceneNumbersIn);
+        } catch (e) { window.slateChunkNumbers = null; }
+        return chunks;
+      }
+
       function splitScriptForProcessing(script, maxChunkSize) {
           // Discard everything before the first scene heading. Title pages,
         // writer credits and episode synopses are not scenes, and asking
@@ -948,12 +998,6 @@
         // SLATE_HEAD  — the INT/EXT word in each supported language.
         // SLATE_NUM   — the SCENE/SC word, for scripts that number scenes.
         // Mirrored in netlify/functions/lib/slate-core.js — change both together.
-        var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
-        var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
-        // A heading is either an INT/EXT word, or a SCENE word followed by a number.
-        var slateHeadingSrc =
-          '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
-          + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
         var firstHeading = raw.search(new RegExp('(?:^|\\n)[ \\t]*' + slateHeadingSrc, 'i'));
        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
           // Clear any title captured from a previous upload. Without this, a
@@ -976,7 +1020,7 @@
             break;
           }
         }
-        if (text.length <= maxChunkSize) return [text];
+        if (text.length <= maxChunkSize) return slateRecordNumbers([text]);
          // Cut only at scene headings, never mid-scene. A chunk boundary
         // inside a scene makes the model see two half-scenes and report
         // them as two, which is where phantom scenes come from.
@@ -1015,7 +1059,7 @@
           }
         }
         if (currentChunk.trim()) chunks.push(currentChunk.trim());
-        return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+        return slateRecordNumbers(chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)]);
       }
 
       function splitBySize(text, maxChunkSize) {
@@ -1141,8 +1185,17 @@
           }
         };
                let sceneOffset = 0;
+        var slateChunkIdx = -1;
         for (const chunk of chunks) {
+          slateChunkIdx++;
           const scenes = chunk.scenes || [];
+          // DERIVE, DON'T ASK — the numbers this section was built from.
+          // Used only to fill a null the model returned, and only when the
+          // scene counts agree; a mismatch means we are not sure which scene
+          // is which, and a wrong number is worse than a missing one.
+          var slateRec = (window.slateChunkNumbers || [])[slateChunkIdx];
+          var slateUseRec = !!(slateRec && slateRec.length === scenes.length);
+          var slateSceneInChunk = -1;
            // Collapse duplicates that arrive WITHIN a single chunk — the AI
           // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
           function slateDedupe(list, nameField) {
@@ -1165,9 +1218,14 @@
           // producing NaN rows and collapsing 2.10 into 2.1.
           // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
+            slateSceneInChunk++;
             var label = scene.scene_number;
             label = (label === undefined || label === null) ? '' : String(label).trim();
             if (!label || label === 'null' || label === 'undefined' || label === 'NaN') label = null;
+            // The model dropped a number the splitter had already read. Restore it.
+            if (label === null && slateUseRec && slateRec[slateSceneInChunk]) {
+              label = String(slateRec[slateSceneInChunk]);
+            }
             
             merged.scenes.push({
               ...scene,
@@ -1768,18 +1826,17 @@
       // MISSOLOWO SLATE — DOCUMENT EXPORT FRAMEWORK
       // Shared engine + per-document definitions. New production
       // documents plug in here rather than spawning new generators.
-      // Night Shoot paper mode: warm white, grayscale-safe gold.
       // ============================================================
-      // ── Dark production documents (PM-approved, Sep 2026) ──
-      // Readability over decoration: gold on a light background is two
-      // mid-tones against each other and cannot be sharp at 7.5pt. On
-      // charcoal it reads as gold, and body text reaches full contrast.
-      // A print-optimised light variant follows in V3.
-      var SLATE_PAPER = [18, 19, 22];      // deep charcoal — the page
-      var SLATE_INK   = [244, 239, 230];   // warm white — body text
-      var SLATE_LINE  = [58, 60, 66];      // rules and dividers
-      var SLATE_GOLD  = [212, 166, 74];    // brighter gold — legible on dark
-      var SLATE_MUTED = [168, 162, 150];   // labels: light enough to read     
+      // ── Premium light production documents (PM ruling, Sep 2026) ──
+      // Readability first. Premium second. Decoration last.
+      // White page, deep charcoal text, gold as an accent only — never
+      // carrying small text, where it cannot reach enough contrast.
+      // Prints cleanly, and reads on a phone at 6am on set.
+      var SLATE_PAPER = [255, 255, 255];   // white — the page
+      var SLATE_INK   = [26, 26, 28];      // deep charcoal — body text
+      var SLATE_LINE  = [216, 214, 208];   // rules and dividers
+      var SLATE_GOLD  = [156, 122, 47];    // deep gold — accents, and solid in grayscale
+      var SLATE_MUTED = [92, 89, 83];      // labels — dark enough to read at 7.5pt
       // ── Unicode fonts for PDF export ──
       // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
       // Devanagari, Arabic, Chinese — exports as corrupted characters,
@@ -2089,7 +2146,7 @@
           var x0 = 15;
           function header() {
             check(14);
-            doc.setFillColor(32, 34, 39);
+            doc.setFillColor(242, 241, 237);
             doc.rect(x0, y - 4, 180, 8, 'F');
             doc.setTextColor.apply(doc, SLATE_MUTED);
             doc.setFontSize(7.5);
@@ -2112,7 +2169,7 @@
              var rowH = Math.max(9, lines * 4.5 + 4);
             if (y + rowH > 278) { newPage(); header(); }
             if (ri % 2 === 0) {
-              doc.setFillColor(25, 27, 31);
+              doc.setFillColor(249, 248, 245);
              doc.rect(x0, y - 4, 180, rowH, 'F');
             }
             var cx = x0 + 2;
@@ -2384,8 +2441,9 @@
         if (pd.emergency_contacts && pd.emergency_contacts.length) {
           pdf.check(14 + pd.emergency_contacts.length * 6);
           var eY = pdf.getY();
-          // Inverted on a light page; on a dark page it needs to lift off it.
-          d.setFillColor(38, 34, 28);
+          // Deliberately inverted: the one block on the page that must be
+          // found in a hurry.
+          d.setFillColor(26, 26, 28);
           d.rect(15, eY - 4, 180, 10 + pd.emergency_contacts.length * 6, 'F');
           d.setTextColor(212, 166, 74);
           d.setFontSize(6.5);
