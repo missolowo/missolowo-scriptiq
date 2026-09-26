@@ -228,6 +228,12 @@ Background actors are performers with no name and no dialogue who populate a sce
 - NEVER estimate a number. Only record a count in "background_count" if the script itself states one, e.g. "about twenty villagers". Otherwise leave it null.
 - How many background actors a scene needs is a decision for the producer and director based on budget and location. Our job is to say WHERE background is needed and WHAT KIND, never how many.
 - Named characters with dialogue are cast, not background. Do not list them twice.
+
+COSTUME, PROPS AND EQUIPMENT — record only what the script actually specifies:
+- Costume means a garment the script describes: "bright yellow wrapper", "police uniform", "torn school shirt".
+- Never write a placeholder. "Costume for Adewale", "Adewale's outfit" or "regular clothes" say nothing a costume department can act on, and they make a breakdown look padded.
+- If the script does not describe what a character wears, leave costume empty. An empty field is honest; a filler entry wastes a department's time.
+- Props and equipment: list every object the script mentions by name — "phone", "makeshift stall", "15,000 naira". Only avoid entries that name no object, such as "props for the scene".
 SCREENPLAY:
 ${script.trim()}
 

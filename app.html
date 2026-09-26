@@ -931,6 +931,56 @@
         if (/^\d+$/.test(t)) return true;
         return false;
       }
+      // ── SINGLE SOURCE OF TRUTH: scene heading patterns ──
+      // Hoisted out of the splitter so the number-recorder below builds on the
+      // same definitions. Adding a language is one edit here.
+      // SLATE_HEAD — the INT/EXT word in each supported language.
+      // SLATE_NUM  — the SCENE/SC word, for scripts that number their scenes.
+      var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
+      var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+      // A heading is either an INT/EXT word, or a SCENE word followed by a number.
+      var slateHeadingSrc =
+        '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
+        + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
+
+      // ── DERIVE, DON'T ASK: remember the scene numbers we hand to the model ──
+      // The splitter can see every scene number in the script. Until now it
+      // threw that record away, so when the model returned null for a scene
+      // whose number was plainly in front of it — nine of fourteen on one real
+      // fixture — nothing downstream could recover it.
+      // Now each section's numbers are recorded in order, and the merge fills
+      // any null the model returns. The model is asked to read; the code keeps
+      // the facts it already had.
+      function slateSceneNumbersIn(sectionText) {
+        var raw = String(sectionText || '').split(/\r?\n/);
+        // Fold "SCENE 5" on its own line into the heading beneath it, so the
+        // pair counts as one scene — the same shape the splitter produces.
+        var numOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*$', 'i');
+        var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
+        var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
+        var out = [];
+        for (var i = 0; i < raw.length; i++) {
+          var m = raw[i].match(numOnly);
+          if (m) {
+            var look = i + 1;
+            while (look < raw.length && !raw[look].trim()) look++;
+            if (look < raw.length && headStart.test(raw[look])) { out.push(m[1]); i = look; continue; }
+          }
+          if (headStart.test(raw[i])) {
+            var wn = raw[i].match(withNum);
+            out.push(wn ? wn[1] : null);
+          }
+        }
+        return out;
+      }
+
+      function slateRecordNumbers(chunks) {
+        try {
+          window.slateChunkNumbers = chunks.map(slateSceneNumbersIn);
+        } catch (e) { window.slateChunkNumbers = null; }
+        return chunks;
+      }
+
       function splitScriptForProcessing(script, maxChunkSize) {
           // Discard everything before the first scene heading. Title pages,
         // writer credits and episode synopses are not scenes, and asking
@@ -948,12 +998,6 @@
         // SLATE_HEAD  — the INT/EXT word in each supported language.
         // SLATE_NUM   — the SCENE/SC word, for scripts that number scenes.
         // Mirrored in netlify/functions/lib/slate-core.js — change both together.
-        var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
-        var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
-        // A heading is either an INT/EXT word, or a SCENE word followed by a number.
-        var slateHeadingSrc =
-          '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
-          + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
         var firstHeading = raw.search(new RegExp('(?:^|\\n)[ \\t]*' + slateHeadingSrc, 'i'));
        const text = firstHeading > 0 ? raw.slice(firstHeading).trim() : raw;
           // Clear any title captured from a previous upload. Without this, a
@@ -976,7 +1020,7 @@
             break;
           }
         }
-        if (text.length <= maxChunkSize) return [text];
+        if (text.length <= maxChunkSize) return slateRecordNumbers([text]);
          // Cut only at scene headings, never mid-scene. A chunk boundary
         // inside a scene makes the model see two half-scenes and report
         // them as two, which is where phantom scenes come from.
@@ -1015,7 +1059,7 @@
           }
         }
         if (currentChunk.trim()) chunks.push(currentChunk.trim());
-        return chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)];
+        return slateRecordNumbers(chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)]);
       }
 
       function splitBySize(text, maxChunkSize) {
@@ -1092,15 +1136,25 @@
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
           .replace(/[''`]/g, '')
-          .replace(/[^A-Z0-9 ]/g, ' ')
+           // Keep letters and digits from ANY script, not just A-Z. Stripping
+          // to A-Z turned every Korean, Russian, Arabic, Hindi and Chinese
+          // name into an empty key — so those characters never appeared in
+          // Report 2 at all, and the canonical-name pass then dropped them
+          // from the scenes too.
+          .replace(/[^\p{L}\p{N} ]/gu, ' ')
           .replace(/\s+/g, ' ')
           .trim();
       } 
   
-      function slateBetterLabel(a, b) {
+        function slateBetterLabel(a, b) {
         var A = String(a || ''), B = String(b || '');
-        var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
-        var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
+        // "Mixed case" must be tested in any alphabet, not just A-Z.
+        // Yorùbá "BÙKỌ́LÁ" contains ù and ọ́, which are lowercase letters,
+        // so an /[a-z]/ test called it mixed case and blended the two
+        // spellings into "Bùkọ́LÁ". \p{Ll} and \p{Lu} ask the question
+        // properly: is there a lowercase letter, and an uppercase one.
+        var mixedA = /\p{Ll}/u.test(A) && /\p{Lu}/u.test(A);
+        var mixedB = /\p{Ll}/u.test(B) && /\p{Lu}/u.test(B);
         if (mixedA && !mixedB) return A;
         if (mixedB && !mixedA) return B;
         return A.length >= B.length ? A : B;
@@ -1131,8 +1185,17 @@
           }
         };
                let sceneOffset = 0;
+        var slateChunkIdx = -1;
         for (const chunk of chunks) {
+          slateChunkIdx++;
           const scenes = chunk.scenes || [];
+          // DERIVE, DON'T ASK — the numbers this section was built from.
+          // Used only to fill a null the model returned, and only when the
+          // scene counts agree; a mismatch means we are not sure which scene
+          // is which, and a wrong number is worse than a missing one.
+          var slateRec = (window.slateChunkNumbers || [])[slateChunkIdx];
+          var slateUseRec = !!(slateRec && slateRec.length === scenes.length);
+          var slateSceneInChunk = -1;
            // Collapse duplicates that arrive WITHIN a single chunk — the AI
           // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
           function slateDedupe(list, nameField) {
@@ -1155,9 +1218,14 @@
           // producing NaN rows and collapsing 2.10 into 2.1.
           // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
+            slateSceneInChunk++;
             var label = scene.scene_number;
             label = (label === undefined || label === null) ? '' : String(label).trim();
             if (!label || label === 'null' || label === 'undefined' || label === 'NaN') label = null;
+            // The model dropped a number the splitter had already read. Restore it.
+            if (label === null && slateUseRec && slateRec[slateSceneInChunk]) {
+              label = String(slateRec[slateSceneInChunk]);
+            }
             
             merged.scenes.push({
               ...scene,
@@ -1249,8 +1317,34 @@
           return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
+         // One canonical spelling per character and location, everywhere.
+        // Reports 2 and 3 were already normalised, but each scene still
+        // displayed whatever spelling its own section returned — so one
+        // document showed ADEWALE in scene 1 and Adewale in scene 5.
+        // The maps above already hold the cleanest spelling of each name;
+        // this applies it back to the scenes the crew actually reads.
+        var slateCanonCast = {}, slateCanonLoc = {};
+        merged.character_breakdown.forEach(function (c) { slateCanonCast[slateKey(c.character)] = c.character; });
+        merged.outline_schedule.forEach(function (l) { slateCanonLoc[slateKey(l.set_location)] = l.set_location; });
+        merged.scenes.forEach(function (s) {
+          if (Array.isArray(s.cast)) {
+            var seen = {};
+            s.cast = s.cast.map(function (c) {
+              var k = slateKey(c);
+              return slateCanonCast[k] || c;
+            }).filter(function (n) {
+              var k = slateKey(n);
+              if (!k || seen[k]) return false;
+              seen[k] = true;
+              return true;
+            });
+          }
+          var lk = slateKey(s.location || '');
+          if (lk && slateCanonLoc[lk]) s.location = slateCanonLoc[lk];
+        });
+
         return merged; 
-      }
+      }  
 
       function wsProgress(pct, label) {
         var wrap = document.getElementById('wsProgressWrap');
@@ -1728,18 +1822,21 @@
           + '</div>';
         out.innerHTML = html;
       }
-           // ============================================================
+      // ============================================================
       // MISSOLOWO SLATE — DOCUMENT EXPORT FRAMEWORK
       // Shared engine + per-document definitions. New production
       // documents plug in here rather than spawning new generators.
-      // Night Shoot paper mode: warm white, grayscale-safe gold.
       // ============================================================
-      var SLATE_PAPER = [244, 239, 230];   // --doc-bg
-      var SLATE_INK   = [13, 14, 16];      // --doc-ink
-      var SLATE_LINE  = [201, 194, 180];   // --doc-line
-      var SLATE_GOLD  = [156, 122, 47];    // --doc-gold (prints solid in grayscale)
-      var SLATE_MUTED = [120, 115, 105];
-
+      // ── Premium light production documents (PM ruling, Sep 2026) ──
+      // Readability first. Premium second. Decoration last.
+      // White page, deep charcoal text, gold as an accent only — never
+      // carrying small text, where it cannot reach enough contrast.
+      // Prints cleanly, and reads on a phone at 6am on set.
+      var SLATE_PAPER = [255, 255, 255];   // white — the page
+      var SLATE_INK   = [26, 26, 28];      // deep charcoal — body text
+      var SLATE_LINE  = [216, 214, 208];   // rules and dividers
+      var SLATE_GOLD  = [156, 122, 47];    // deep gold — accents, and solid in grayscale
+      var SLATE_MUTED = [92, 89, 83];      // labels — dark enough to read at 7.5pt
       // ── Unicode fonts for PDF export ──
       // jsPDF's built-in fonts only cover Latin. Anything else — Hangul,
       // Devanagari, Arabic, Chinese — exports as corrupted characters,
@@ -1750,17 +1847,27 @@
       // are large (Devanagari 642KB, Korean 10MB), so we load one only when
       // a script actually needs it, never on an ordinary export.
       var SLATE_FONTS = {
-         devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' },
+        devanagari: { file: '/NotoSansDevanagari.ttf', name: 'NotoDev' },
         // Subset to Hangul + Latin: 4.5MB rather than 9.9MB for the full
         // font, which carries Chinese characters modern screenplays don't use.
-          korean:     { file: '/NotoSansKR.ttf',         name: 'NotoKR'  },
+        korean:     { file: '/NotoSansKR.ttf',         name: 'NotoKR'  },
         // Covers Japanese kana and kanji, and traditional Chinese.
         // Simplified Chinese needs its own font (17.8MB) — added when needed.
         japanese:   { file: '/NotoSansJP.ttf',         name: 'NotoJP'  },
-        cyrillic:   { file: '/NotoSansCyrillic.ttf',   name: 'NotoCyr' }
-      };   
-     var slateFontCache = {};   // script → base64, fetched once per session
- 
+        cyrillic:   { file: '/NotoSansCyrillic.ttf',   name: 'NotoCyr' },
+        // Yorùbá, Igbo and Hausa use Latin letters with marks that jsPDF's
+        // built-in fonts cannot encode — ẹ ọ ṣ ǹ and the tone marks. Without
+        // a real font the export spaces every character apart, on documents
+        // for the market this product was built for.
+         // A bold file where we have one. Without it, jsPDF resolves every
+        // setFont(..., 'bold') to the regular weight — so nothing in the
+        // document is actually bold, and Noto regular is lighter than the
+        // built-in Helvetica it replaces. On dark pages that reads as dim,
+        // tinted text, which is what sent us chasing colour values.
+        latinExt:   { file: '/NotoSans-Regular.ttf',   name: 'NotoLatin',
+                      bold: '/NotoSans-Bold.ttf' }
+      };
+      var slateFontCache = {};   // script → base64, fetched once per session
       // Which script does this text need? Latin needs nothing.
         function slateDetectScript(text) {
         var s = String(text || '');
@@ -1768,10 +1875,15 @@
         if (/[\uAC00-\uD7A3\u1100-\u11FF]/.test(s)) return 'korean';
         if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(s)) return 'japanese';
         if (/[\u0400-\u04FF]/.test(s)) return 'cyrillic';
+        // Latin Extended — checked last, because a Korean or Russian script
+        // may also carry an accented Latin name, and those fonts already
+        // cover it. Matches both forms: the precomposed character (ẹ) and
+        // the decomposed one (e followed by a combining mark).
+        // Covers Latin-1 Supplement, Extended A and B, and Additional.
+        if (/[\u00C0-\u024F\u1E00-\u1EFF\u0300-\u036F]/.test(s)) return 'latinExt';
         return null;
-      }
- 
-      // Scan a breakdown for any non-Latin text we would have to render.
+      }   
+     // Scan a breakdown for any non-Latin text we would have to render.
       function slateScriptForExport(data) {
         if (!data) return null;
         var sample = JSON.stringify(data).slice(0, 200000);
@@ -1780,15 +1892,19 @@
  
       // Fetch and cache the font. Returns null if it cannot be loaded —
       // the export then proceeds in Latin rather than failing outright.
-      async function slateLoadFont(script) {
-        if (!script || !SLATE_FONTS[script]) return null;
-        if (slateFontCache[script]) return slateFontCache[script];
- 
+      async function slateLoadFont(script, variant) {
+        var cfg = SLATE_FONTS[script];
+        if (!script || !cfg) return null;
+        var path = variant === 'bold' ? cfg.bold : cfg.file;
+        if (!path) return null;
+        var cacheKey = script + (variant === 'bold' ? ':bold' : '');
+        if (slateFontCache[cacheKey]) return slateFontCache[cacheKey];
+
         try {
-          var res = await fetch(SLATE_FONTS[script].file);
+          var res = await fetch(path);
           if (!res.ok) return null;
           var buf = await res.arrayBuffer();
- 
+
           // Chunked so a large font does not blow the call stack
           var bytes = new Uint8Array(buf);
           var binary = '';
@@ -1796,14 +1912,13 @@
           for (var i = 0; i < bytes.length; i += chunk) {
             binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
           }
-          slateFontCache[script] = btoa(binary);
-          return slateFontCache[script];
+          slateFontCache[cacheKey] = btoa(binary);
+          return slateFontCache[cacheKey];
         } catch (e) {
-          console.warn('[Slate] Could not load ' + script + ' font:', e.message);
+          console.warn('[Slate] Could not load ' + cacheKey + ' font:', e.message);
           return null;
         }
-      }
- 
+      } 
       // Called before an export. Loads the font if the content needs one,
       // and shows the user why the wait is happening.
       async function slatePrepareFont(data) {
@@ -1821,6 +1936,9 @@
         }
  
         var b64 = await slateLoadFont(script);
+        // Bold is optional — a font family without a bold file still exports,
+        // just without true bold. Never let a missing bold block the export.
+        await slateLoadFont(script, 'bold');
         if (msg && msg.parentNode) msg.parentNode.removeChild(msg);
         return b64 ? script : null;
       }
@@ -1837,17 +1955,46 @@
         // setFont call then resolves to the Unicode font without needing to
         // change dozens of call sites across three export functions.
         var slateBodyFont = 'helvetica';
+        var slateUni = null, slateUniBold = false;
         if (window.slateActiveScript && slateFontCache[window.slateActiveScript]) {
           try {
             var cfg = SLATE_FONTS[window.slateActiveScript];
-            var fontB64 = slateFontCache[window.slateActiveScript];
-            doc.addFileToVFS(cfg.name + '.ttf', fontB64);
-            ['normal', 'bold', 'italic'].forEach(function (style) {
-              doc.addFont(cfg.name + '.ttf', cfg.name, style);
-              doc.addFont(cfg.name + '.ttf', 'helvetica', style);
-              doc.addFont(cfg.name + '.ttf', 'courier', style);
-            });
-            slateBodyFont = cfg.name;
+            doc.addFileToVFS(cfg.name + '.ttf', slateFontCache[window.slateActiveScript]);
+            doc.addFont(cfg.name + '.ttf', cfg.name, 'normal');
+            var boldB64 = slateFontCache[window.slateActiveScript + ':bold'];
+            if (boldB64) {
+              doc.addFileToVFS(cfg.name + '-Bold.ttf', boldB64);
+              doc.addFont(cfg.name + '-Bold.ttf', cfg.name, 'bold');
+              slateUniBold = true;
+            }
+            slateUni = cfg.name;
+            // Draw non-Latin strings with the Unicode font and everything else
+            // with the built-ins. Aliasing helvetica and courier to Noto made
+            // EVERY string use it, which cost us real bold, real monospace and
+            // proper letter spacing on documents that are mostly English.
+            // Patched in one place so no call site has to choose a font.
+            var slateDrawText = doc.text.bind(doc);
+            doc.text = function (txt, x, y, opts) {
+              var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
+              if (!/[^\u0000-\u00FF]/.test(probe)) return slateDrawText(txt, x, y, opts);
+              var was = doc.getFont() || {};
+              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var out = slateDrawText(txt, x, y, opts);
+              try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
+              return out;
+            };
+            // Measuring has to use the same font, or wrapped lines come back
+            // the wrong width for non-Latin text.
+            var slateSplit = doc.splitTextToSize.bind(doc);
+            doc.splitTextToSize = function (txt, w, opts) {
+              var s = String(txt == null ? '' : txt);
+              if (!/[^\u0000-\u00FF]/.test(s)) return slateSplit(txt, w, opts);
+              var was = doc.getFont() || {};
+              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var lines = slateSplit(txt, w, opts);
+              try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
+              return lines;
+            };
           } catch (e) {
             console.warn('[Slate] Font registration failed:', e.message);
           }
@@ -1914,17 +2061,23 @@
           doc.setFont('helvetica', 'normal');
           doc.text('Generated ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), 20, 182);
           footer();
+          // The cover owns its page. Without this, y stays 0 and the first
+          // sectionHeader repaints this page — erasing the cover we just drew.
+          newPage();
         }
-
          function sectionHeader(label) {
-          // Only start a fresh page if this one has content. Calling
-          // newPage() unconditionally left a blank page between sections.
+          // Start a new page only when this section genuinely will not fit.
+          // Forcing a break whenever the page had content gave the call
+          // sheet eleven sections across eleven near-empty pages.
+          // The else branch that repainted the page is gone: it erased the
+          // cover, and newPage() already paints every page it creates.
           if (y > 24) {
-            check(40);
-            if (y > 24) newPage();
-          } else {
-            paintPage();
-            footer();
+            var slateNeed = 34;
+            if (y + slateNeed > 278) {
+              newPage();
+            } else {
+              y += 10; // breathing room above a section that stays on this page
+            }
           }
           doc.setFillColor.apply(doc, SLATE_GOLD);
           doc.rect(15, y - 4, 20, 1.2, 'F');
@@ -1952,9 +2105,9 @@
           doc.text(text, x || 34, y + 4);
         }
 
-        function body(text, x, width) {
+         function body(text, x, width) {
           doc.setTextColor.apply(doc,SLATE_INK);
-          doc.setFontSize(9);
+          doc.setFontSize(9.5);
           doc.setFont('helvetica', 'normal');
           var lines = doc.splitTextToSize(text, width || 160);
           doc.text(lines, x || 34, y);
@@ -1970,13 +2123,20 @@
             .filter(function (v) { return v && v !== 'null' && v !== 'undefined'; });
           if (!arr.length) return;
           check(8);
-          doc.setTextColor.apply(doc, SLATE_GOLD);
-          doc.setFontSize(7);
+           // CAST / PROPS / COSTUME labels were gold at 7pt on cream — too
+          // little contrast at too small a size. Gold stays where it is
+          // large enough to read: scene numerals and section rules.
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.setFontSize(7.5);
           doc.setFont(slateBodyFont, 'bold');
           doc.text(label.toUpperCase() + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
+          // Reset the size: the label above set 7.5pt, and without this the
+          // VALUES inherited it — so the cast names and props, the actual
+          // content, printed smaller than anything else on the page.
+          doc.setFontSize(9);
           doc.setFont(slateBodyFont, 'normal');
-          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);
+          var lines = doc.splitTextToSize(arr.join('  ·  '), 130);   
           doc.text(lines, (x || 34) + 26, y);
           y += lines.length * 4 + 1;
         }
@@ -1986,7 +2146,7 @@
           var x0 = 15;
           function header() {
             check(14);
-            doc.setFillColor(237, 230, 216);
+            doc.setFillColor(242, 241, 237);
             doc.rect(x0, y - 4, 180, 8, 'F');
             doc.setTextColor.apply(doc, SLATE_MUTED);
             doc.setFontSize(7.5);
@@ -2009,15 +2169,15 @@
              var rowH = Math.max(9, lines * 4.5 + 4);
             if (y + rowH > 278) { newPage(); header(); }
             if (ri % 2 === 0) {
-              doc.setFillColor(248, 245, 238);
-              doc.rect(x0, y - 4, 180, rowH, 'F');
+              doc.setFillColor(249, 248, 245);
+             doc.rect(x0, y - 4, 180, rowH, 'F');
             }
             var cx = x0 + 2;
             cols.forEach(function (c, i) {
               var val = String(row[i] == null ? '' : row[i]);
               if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
               else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
-              else { doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 58, 54); }
+              else { doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, SLATE_INK); }
               doc.setFontSize(9);
               var txt = doc.splitTextToSize(val, c.width - 4);
               doc.text(txt, c.align === 'right' ? cx + c.width - 4 : cx, y,
@@ -2227,11 +2387,11 @@
         ]);
 
         function labelValue(label, value, x, width) {
-          d.setTextColor(120, 115, 105);
+          d.setTextColor.apply(d, SLATE_MUTED);
           d.setFontSize(6.5);
           d.setFont('helvetica', 'bold');
           d.text(label.toUpperCase(), x, pdf.getY());
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('courier', 'normal');
           var lines = d.splitTextToSize(String(value || '—'), width || 55);
@@ -2281,7 +2441,9 @@
         if (pd.emergency_contacts && pd.emergency_contacts.length) {
           pdf.check(14 + pd.emergency_contacts.length * 6);
           var eY = pdf.getY();
-          d.setFillColor(13, 14, 16);
+          // Deliberately inverted: the one block on the page that must be
+          // found in a hurry.
+          d.setFillColor(26, 26, 28);
           d.rect(15, eY - 4, 180, 10 + pd.emergency_contacts.length * 6, 'F');
           d.setTextColor(212, 166, 74);
           d.setFontSize(6.5);
@@ -2302,11 +2464,11 @@
           pdf.sectionHeader('Department Call Timeline');
           pd.department_timeline.forEach(function(t) {
             pdf.check(8);
-            d.setTextColor(156, 122, 47);
+            d.setTextColor.apply(d, SLATE_GOLD);
             d.setFontSize(10);
             d.setFont('courier', 'bold');
             d.text(String(t.time || ''), 15, pdf.getY());
-            d.setTextColor(13, 14, 16);
+            d.setTextColor.apply(d, SLATE_INK);
             d.setFontSize(8);
             d.setFont('helvetica', 'normal');
             d.text(String(t.label || ''), 45, pdf.getY());
@@ -2334,13 +2496,13 @@
         pdf.sectionHeader('Cast');
         cast.forEach(function(c) {
           pdf.check(14);
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('helvetica', 'bold');
           d.text(String(c.character || ''), 15, pdf.getY());
           d.setFont('courier', 'normal');
           d.setFontSize(8);
-          d.setTextColor(120, 115, 105);
+          d.setTextColor.apply(d, SLATE_MUTED);
           d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—') + '   ·   Scenes ' + (c.scenes || []).join(', '), 15, pdf.getY() + 5);
           pdf.gap(11);
           pdf.rule();
@@ -2350,11 +2512,11 @@
           pdf.sectionHeader('Full Crew List');
           pd.crew.forEach(function(m) {
             pdf.check(8);
-            d.setTextColor(120, 115, 105);
+            d.setTextColor.apply(d, SLATE_MUTED);
             d.setFontSize(7);
             d.setFont('helvetica', 'normal');
             d.text(String(m.role || ''), 15, pdf.getY());
-            d.setTextColor(13, 14, 16);
+            d.setTextColor.apply(d, SLATE_INK);
             d.setFontSize(8.5);
             d.setFont('helvetica', 'bold');
             d.text(String(m.name || ''), 75, pdf.getY());
@@ -2381,10 +2543,10 @@
 
         if (pd.quote_of_day) {
           pdf.check(16);
-          d.setDrawColor(156, 122, 47);
+          d.setDrawColor.apply(d, SLATE_GOLD);
           d.setLineWidth(0.8);
           d.line(15, pdf.getY() - 3, 15, pdf.getY() + 6);
-          d.setTextColor(13, 14, 16);
+          d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(10);
           d.setFont('helvetica', 'italic');
           d.text('"' + pd.quote_of_day + '"', 20, pdf.getY() + 2);
