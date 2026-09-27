@@ -16,6 +16,9 @@ const fetch = (() => {
   catch(e) { return global.fetch; }
 })();
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
+// One definition of name matching, scene sorting and the admin list.
+// See lib/slate-core.js — mirrored in app.html, change both together.
+const { isAdmin, slateKey, slateBetterLabel, bySceneNumberField } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -87,7 +90,7 @@ exports.handler = async function(event, context) {
           && todaysSceneNumbers.has(s.scene_number);
       });
     }
-    const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
+    const isAdminEmail = isAdmin(user_email);
 
     // ── STEP 1: Rate limit — user_id passed to fix the film-set shared-IP issue ──
     if (!isAdminEmail) {
@@ -118,14 +121,7 @@ exports.handler = async function(event, context) {
     }
 
     // ── STEP 4: Build the sheet from DATA ──
-    function sceneSort(a, b) {
-      var na = parseFloat(String(a.scene_number).replace(/[^0-9.]/g, '')) || 0;
-      var nb = parseFloat(String(b.scene_number).replace(/[^0-9.]/g, '')) || 0;
-      if (na !== nb) return na - nb;
-      return String(a.scene_number).localeCompare(String(b.scene_number));
-    }
-
-    const scenesToday = todaysFullScenes.slice().sort(sceneSort).map(function (s) {
+    const scenesToday = todaysFullScenes.slice().sort(bySceneNumberField('scene_number')).map(function (s) {
       return {
         // Identity travels with the scene onto the call sheet, so anything
         // downstream — exports, future Budget and Crew modules — has it too.
@@ -148,29 +144,14 @@ exports.handler = async function(event, context) {
         costume: s.costume || []
       };
     });
-    // Character identity key. "Baale" and "BAALE" are one actor and must
-    // never appear as two rows with two call times on a printed sheet.
-    // Strips case, accents and punctuation for matching only.
-    function castKey(name) {
-      return String(name || '')
-        // "Ernest" and "Ernest (V.O.)" are one actor — one row, one call time.
-        .replace(/\s*\((?:V\.?O\.?|O\.?S\.?|O\.?C\.?|CONT'?D|CONTINUED|PRE-?LAP|FILTERED|ON\s+PHONE|OFF)\)\s*/gi, ' ')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9 ]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-    // Prefer the more readable spelling: mixed case over shouting.
-    function betterName(a, b) {
-      var A = String(a || ''), B = String(b || '');
-      var mixedA = /[a-z]/.test(A) && /[A-Z]/.test(A);
-      var mixedB = /[a-z]/.test(B) && /[A-Z]/.test(B);
-      if (mixedA && !mixedB) return A;
-      if (mixedB && !mixedA) return B;
-      return A.length >= B.length ? A : B;
-    }
+    // Character identity, and the readable spelling to display. Both are
+    // now the shared implementations: the local castKey stripped to A-Z, so
+    // every Korean, Russian, Arabic, Hindi and Chinese actor normalised to
+    // the same empty key and collapsed into ONE row on a printed call sheet.
+    // The local betterName tested mixed case with /[a-z]/, which blended
+    // Yorùbá spellings into "Bùkọ́LÁ".
+    const castKey = slateKey;
+    const betterName = slateBetterLabel;
 
     // Which cast work today, and in which scenes
     const castMap = {};
