@@ -10,6 +10,9 @@ const fetch = (() => {
   catch(e) { return global.fetch; }
 })();
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
+// One definition of name matching, scene sorting and the admin list.
+// See lib/slate-core.js — mirrored in app.html, change both together.
+const { isAdmin, slateKey, bySceneNumberField } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -44,7 +47,7 @@ exports.handler = async function(event, context) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
     }
 
-    const isAdminEmail = user_email && ['missolowoai@gmail.com','omoyeni38@gmail.com'].includes(user_email);
+    const isAdminEmail = isAdmin(user_email);
 
     // ── STEP 1: Rate limit — user_id passed to fix the film-set shared-IP issue ──
     if (!isAdminEmail) {
@@ -112,20 +115,11 @@ exports.handler = async function(event, context) {
     try {
       const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
 
-      // Matching key only — never displayed. Strips diacritics so
-      // "Baale's Sitting Room" and "Baalé's Sitting Room" are the same
-      // room. NFD splits an accented letter into base + combining mark,
-      // then the mark is removed. Covers Yorùbá tone marks and the
-      // dot-below vowels (ọ, ẹ, ṣ) as well as é, à, ń.
-      function normKey(s) {
-        return String(s || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .replace(/[^A-Z0-9 ]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-      }
+      // Matching key only — never displayed. Now the shared implementation:
+      // the local copy stripped to A-Z, so every Korean, Russian, Arabic,
+      // Hindi and Chinese name and location normalised to an empty string
+      // and collapsed into one another.
+      const normKey = slateKey;
 
       // Group scenes by location, keeping day and night separate
       const groups = {};
@@ -212,13 +206,7 @@ exports.handler = async function(event, context) {
       });
       // Scene order within a day. PMs read call sheets in ascending scene
       // order; 47A sorts after 47 and before 48.
-      function bySceneNumber(a, b) {
-        var na = parseFloat(String(a.n).replace(/[^0-9.]/g, '')) || 0;
-        var nb = parseFloat(String(b.n).replace(/[^0-9.]/g, '')) || 0;
-        if (na !== nb) return na - nb;
-        return String(a.n).localeCompare(String(b.n));
-      }
-      days.forEach(function (d) { d.scenes.sort(bySceneNumber); });
+      days.forEach(function (d) { d.scenes.sort(bySceneNumberField('n')); });
 
       // Dates
       function addDays(dateStr, n) {
