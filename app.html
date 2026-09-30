@@ -297,6 +297,11 @@
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M7.8 8a2.2 2.2 0 1 1 3.1 2c-.7.5-1 .9-1 1.7" stroke-linecap="round"/><circle cx="10" cy="14" r="0.4" fill="currentColor"/></svg>
         Help
       </a>
+      <a class="nav-item" id="navEngineCheck" style="padding-left:0;display:none;cursor:pointer"
+         onclick="renderSelfTest(); return false;">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Engine Check
+      </a>
       <a class="nav-item" style="padding-left:0" href="#logout">
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="4" y="3" width="8" height="14" rx="1"/><path d="M11 10h6M14 7l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Log Out
@@ -366,6 +371,7 @@
           <div id="wsProgressBar" style="height:100%;width:0%;background:var(--gold,#D4A64A);transition:width .4s"></div>
         </div>
       </div>
+      <div id="wsSelfTest" style="display:none;margin:24px 0;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden"></div>
       <div id="wsResults" style="display:none;margin-top:32px"></div>
             <div id="wsExportBar" style="display:none;margin-top:24px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A)">
         <div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Export</div>
@@ -583,6 +589,10 @@
           strip.innerHTML =
             '<div class="account-name">' + name + '</div>' +
             '<div class="account-credits">' + credits + ' credits</div>';
+          // Engine Check is a diagnostics panel, not a feature. Testers do
+          // not need it and it would only clutter their workspace.
+          var engineNav = document.getElementById('navEngineCheck');
+          if (engineNav) engineNav.style.display = isAdmin ? 'flex' : 'none';
         } catch (e) {
           strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
         }
@@ -1153,6 +1163,15 @@
         // so an /[a-z]/ test called it mixed case and blended the two
         // spellings into "Bùkọ́LÁ". \p{Ll} and \p{Lu} ask the question
         // properly: is there a lowercase letter, and an uppercase one.
+        // A dialogue modifier is never part of a character's name. The key
+        // strips them so "Ernest" and "Ernest (V.O.)" match, but the DISPLAY
+        // label fell through to "longer wins" and printed the modifier on the
+        // call sheet. Caught by the engine check on a Korean fixture, where
+        // neither spelling is mixed case so length decided it.
+        var modRe = /\s*\((?:V\.?O\.?|O\.?S\.?|O\.?C\.?|CONT'?D|CONTINUED|PRE-?LAP|FILTERED|ON\s+PHONE|OFF)\)\s*/i;
+        var modA = modRe.test(A), modB = modRe.test(B);
+        if (modA && !modB) return B;
+        if (modB && !modA) return A;
         var mixedA = /\p{Ll}/u.test(A) && /\p{Lu}/u.test(A);
         var mixedB = /\p{Ll}/u.test(B) && /\p{Lu}/u.test(B);
         if (mixedA && !mixedB) return A;
@@ -2990,7 +3009,225 @@
         el.innerHTML = html;
         el.style.display = 'block';
       }
-      window.renderHealthPanel = renderHealthPanel;  
+      window.renderHealthPanel = renderHealthPanel;
+
+      // ============================================================
+      // ENGINE CHECK — the regression suite, in the browser
+      // ============================================================
+      // Stabilisation milestone, item 3. Runs the production engine against
+      // fixtures built into this page and reports pass or fail per criterion.
+      //
+      // Structural assertions only. The breakdown calls an AI model and the
+      // same script can return slightly different text between runs, so
+      // "every scene has a number" is a valid check and "scene 4 reads
+      // exactly X" is not. These checks cost nothing and use no credits:
+      // they exercise the splitter, the title reader, the health check and
+      // the merge, which is where every bug of the last three weeks lived.
+      var SLATE_FIXTURES = {
+        'English — numbers inline': {
+          title: 'THE LAST BUS',
+          scenes: 4,
+          cast: ['Adewale', 'ADEWALE'], castLabel: 'Adewale',
+          text: '12/03/2026\nTHE LAST BUS\nSTORY BY A WRITER\n\n' +
+            '1. INT. GARAGE - DAY\nA man checks the engine.\n\n' +
+            '2. EXT. ROAD - DAY\nThe bus pulls away.\n\n' +
+            '3. INT. BUS - NIGHT\nPassengers doze.\n\n' +
+            '4. EXT. DEPOT - NIGHT\nThe bus returns.\n'
+        },
+        'Nollywood — number on its own line': {
+          title: 'WHEN LOVE FINDS YOU',
+          scenes: 4,
+          cast: ['Atinuke', 'ATINUKE'], castLabel: 'Atinuke',
+          text: '18/11/2025\nWHEN LOVE FINDS YOU\nWRITTEN BY A WRITER\nGMAIL: X@Y.COM\n\n' +
+            'SCENE1\nEXTERIOR/DAYLIGHT/ROAD\nAdewale talks to his manager.\n\n' +
+            'SCENE2\nINTERIOR/DAYLIGHT/SHOP\nAtinuke counts money.\n\n' +
+            'SCENE3\nEXTERIOR/EVENING/MARKET\nThe market closes.\n\n' +
+            'SCENE4\nINTERIOR/NIGHT/HOUSE\nThey talk until late.\n'
+        },
+        'Yorùbá — accented names': {
+          title: 'ÀÁRỌ̀ TÍTUN',
+          scenes: 3,
+          cast: ['Bùkọ́lá', 'BÙKỌ́LÁ'], castLabel: 'Bùkọ́lá',
+          text: 'ÀÁRỌ̀ TÍTUN\n\n' +
+            'SCENE 1\nEXT. ỌJÀ ÒJÉ - DAY\nBùkọ́lá walks to the market.\n\n' +
+            'SCENE 2\nINT. ṢỌ́Ọ̀BÙ - DAY\nṢadé measures cloth.\n\n' +
+            'SCENE 3\nINT. ILÉ - NIGHT\nBùkọ́lá rests.\n'
+        },
+        'Russian — Cyrillic headings': {
+          title: 'ПОСЛЕДНИЙ ТРАМВАЙ',
+          scenes: 3,
+          cast: ['Ирина', 'ИРИНА'], castLabel: 'Ирина',
+          text: 'ПОСЛЕДНИЙ ТРАМВАЙ\n\n' +
+            'СЦЕНА 1\nНАТ. ДЕПО — ДЕНЬ\nИрина идёт к трамваю.\n\n' +
+            'СЦЕНА 2\nИНТ. ТРАМВАЙ — ДЕНЬ\nПассажиры входят.\n\n' +
+            'СЦЕНА 3\nНАТ. ДЕПО — НОЧЬ\nАртём курит у ворот.\n'
+        },
+        'Korean — non-Latin names': {
+          title: '비 오는 날의 약속',
+          scenes: 3,
+          cast: ['지훈', '지훈 (V.O.)'], castLabel: '지훈',
+          text: '비 오는 날의 약속\n\n' +
+            'SCENE 1\nEXT. 한강 공원 - DAY\n민준이 달리고 있다.\n\n' +
+            'SCENE 2\nINT. 작은 카페 - DAY\n하은이 앉아 있다.\n\n' +
+            'SCENE 3\nEXT. 골목길 - NIGHT\n비가 내린다.\n'
+        },
+        'Malformed — typos and duplicates': {
+          title: 'BROKEN DRAFT',
+          scenes: 4,
+          cast: ['Ade', 'ADE'], castLabel: 'Ade',
+          expectFindings: true,
+          text: 'BROKEN DRAFT\n\n' +
+            'SCENE 1\nINT. HOUSE - DAY\nA room.\n\n' +
+            'SCENE 2\nINTERRIOR/DAYLIGHT/KITCHEN\nA misspelled heading.\n\n' +
+            'SCENE 2\nEXT. YARD - DAY\nA duplicate number.\n\n' +
+            'INT. SHED - NIGHT\nNo number at all.\n'
+        }
+      };
+
+      function slateSelfTest() {
+        var results = [], passed = 0, failed = 0;
+        function group(name) { results.push({ group: name }); }
+        function t(name, cond, detail) {
+          results.push({ name: name, ok: !!cond, detail: cond ? '' : (detail || '') });
+          if (cond) passed++; else failed++;
+        }
+        var LABEL = /(?:^|\n)[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*/gi;
+
+        Object.keys(SLATE_FIXTURES).forEach(function (key) {
+          var f = SLATE_FIXTURES[key];
+          group(key);
+
+          // Title must be read, and must not survive from the fixture before it
+          window.slateScriptTitle = 'CARRIED OVER FROM A PREVIOUS UPLOAD';
+          var chunks = splitScriptForProcessing(f.text, 3000);
+          t('title read from the script', window.slateScriptTitle === f.title,
+            'got ' + JSON.stringify(window.slateScriptTitle));
+
+          // The splitter must not lose a scene label
+          LABEL.lastIndex = 0;
+          var before = (f.text.match(LABEL) || []).length;
+          LABEL.lastIndex = 0;
+          var after = (chunks.join('\n').match(LABEL) || []).length;
+          t('no scene label lost when splitting', before === after, before + ' in, ' + after + ' out');
+
+          // Every scene number must stay attached to its heading
+          var orphan = 0;
+          chunks.forEach(function (c) {
+            var L = c.split('\n');
+            L.forEach(function (l, i) {
+              if (/^[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*$/i.test(l)) {
+                var n = (L[i + 1] || '').trim();
+                if (!/^(?:INT|EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)/i.test(n)) orphan++;
+              }
+            });
+          });
+          t('scene numbers stay attached to their headings', orphan === 0, orphan + ' orphaned');
+
+          // The health check must complete and find the scenes
+          var hc = slateHealthCheck(f.text);
+          t('health check completes', hc && typeof hc.score === 'number');
+          t('health check finds the scene headings', hc.sceneCount >= f.scenes - 1,
+            'found ' + hc.sceneCount + ' of about ' + f.scenes);
+          if (f.expectFindings) {
+            t('health check reports the problems in a broken script', hc.findings.length > 0,
+              'reported nothing');
+          }
+
+          // Merge: identity, numbers restored, names survive
+          var recorded = window.slateChunkNumbers || [];
+          var reply = recorded.map(function (nums, ci) {
+            return { language_detected: 'Test',
+                     scenes: nums.map(function () {
+                       // The model drops the numbers, and shouts one spelling
+                       // of a name written in this fixture's own script.
+                       return { scene_number: null, location: 'A Place', cast: f.cast };
+                     }),
+                     production_elements: { all_cast: [] } };
+          });
+          var merged = mergeBreakdownChunks(JSON.parse(JSON.stringify(reply)));
+          t('scene_index assigned in order',
+            merged.scenes.every(function (s, i) { return s.scene_index === i + 1; }));
+          t('numbers restored when the model drops them',
+            merged.scenes.filter(function (s) { return s.scene_number !== null; }).length
+              === recorded.flat().filter(function (n) { return n !== null; }).length,
+            merged.scenes.filter(function (s) { return s.scene_number === null; }).length + ' left empty');
+          t('character survives the pipeline in this script',
+            merged.character_breakdown.length === 1,
+            'got ' + merged.character_breakdown.length + ' rows: '
+              + JSON.stringify(merged.character_breakdown.map(function (c) { return c.character; })));
+          t('one row per character, cleanest spelling kept',
+            merged.character_breakdown.length === 1
+              && merged.character_breakdown[0].character === f.castLabel,
+            JSON.stringify(merged.character_breakdown.map(function (c) { return c.character; })));
+        });
+
+        // Cross-fixture: a title must never carry from one upload to the next
+        group('Across uploads');
+        splitScriptForProcessing(SLATE_FIXTURES['English — numbers inline'].text, 3000);
+        var first = window.slateScriptTitle;
+        splitScriptForProcessing('INT. ROOM - DAY\nA man sits alone.\n', 3000);
+        t('title does not carry over to a script without one',
+          window.slateScriptTitle !== first, 'still ' + JSON.stringify(window.slateScriptTitle));
+
+        // Safety: never invent a number when the counts disagree
+        group('Safety');
+        splitScriptForProcessing(SLATE_FIXTURES['Yorùbá — accented names'].text, 3000);
+        var mismatch = mergeBreakdownChunks([{ language_detected: 'Test',
+          scenes: [{ scene_number: null, location: 'A Place', cast: ['A'] }],
+          production_elements: { all_cast: [] } }]);
+        t('no number invented when scene counts disagree',
+          mismatch.scenes[0].scene_number === null,
+          'filled with ' + mismatch.scenes[0].scene_number);
+
+        window.slateScriptTitle = null;
+        window.slateChunkNumbers = null;
+        return { passed: passed, failed: failed, results: results };
+      }
+      window.slateSelfTest = slateSelfTest;
+
+      function renderSelfTest() {
+        var host = document.getElementById('wsSelfTest');
+        if (!host) return;
+        host.style.display = 'block';
+        host.innerHTML = '<div style="padding:16px 20px;color:var(--text-2,#B5AFA3);font-size:13px">Running engine check…</div>';
+        setTimeout(function () {
+          var r;
+          try { r = slateSelfTest(); }
+          catch (e) {
+            host.innerHTML = '<div style="padding:16px 20px;color:var(--error,#D96A57);font-size:13px">'
+              + 'Engine check could not run: ' + e.message + '</div>';
+            return;
+          }
+          var ok = r.failed === 0;
+          var c = ok ? '#7FAE7E' : '#D96A57';
+          var html = '<div style="padding:18px 20px;background:var(--ink-2,#1B1D22);display:flex;align-items:center;gap:18px">'
+            + '<div style="width:62px;height:62px;border-radius:50%;border:3px solid ' + c
+            + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+            + '<span style="font-size:15px;font-weight:600;color:' + c + '">' + r.passed + '/' + (r.passed + r.failed) + '</span></div>'
+            + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Engine Check</div>'
+            + '<div style="font-size:15px;font-weight:600;color:var(--paper,#F4EFE6);margin-top:4px">'
+            + (ok ? 'All checks passed' : r.failed + ' check' + (r.failed > 1 ? 's' : '') + ' failed') + '</div>'
+            + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">'
+            + 'Six fixture scripts · no credits used</div></div></div>'
+            + '<div style="padding:12px 20px 18px;background:var(--ink-1,#141519)">';
+          r.results.forEach(function (row) {
+            if (row.group) {
+              html += '<div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:14px 0 6px">'
+                + row.group + '</div>';
+              return;
+            }
+            html += '<div style="display:flex;gap:10px;margin-bottom:5px;font-size:12px">'
+              + '<span style="color:' + (row.ok ? '#7FAE7E' : '#D96A57') + ';flex-shrink:0;width:14px">'
+              + (row.ok ? '\u2713' : '\u2717') + '</span>'
+              + '<span style="color:var(--text-2,#B5AFA3)">' + row.name
+              + (row.detail ? ' <span style="color:#D96A57">\u2014 ' + row.detail + '</span>' : '')
+              + '</span></div>';
+          });
+          html += '</div>';
+          host.innerHTML = html;
+        }, 30);
+      }
+      window.renderSelfTest = renderSelfTest;
     })();
     // ── PRODUCTIONS ──
       // Lists saved productions and reopens one in full. A filmmaker
