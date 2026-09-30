@@ -1,16 +1,24 @@
 // ============================================
-// SCRIPTIQ — PAYMENT INITIATE
-// Uses node-fetch to avoid "fetch is not defined"
-// on Netlify Node.js environments
+// MISSOLOWO SLATE — PAYMENT INITIATE
+// ============================================
+// The amount charged is NEVER taken from the browser. It is looked
+// up in lib/slate-pricing.js by pack name, so a request asking to
+// pay ₦1 for the Studio pack is charged the real Studio price.
+//
+// Which price applies — launch or regular — is decided here too,
+// by counting distinct paying customers. The page displays what
+// this function says, not the other way round.
 // ============================================
 
-const fetch = require('node-fetch');
+const fetch = (() => {
+  try { return require('node-fetch'); }
+  catch (e) { return global.fetch; }
+})();
+const { createClient } = require('@supabase/supabase-js');
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
+const { priceFor, PACKS } = require('./lib/slate-pricing');
 
-const PLANS = {
-  starter: { amount: 250000, credits: 80,  name: 'ScriptIQ Starter — 80 Credits' },
-  pro:     { amount: 800000, credits: 300, name: 'ScriptIQ Pro — 300 Credits'    }
-};
+const SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
 exports.handler = async function(event) {
 
@@ -37,14 +45,19 @@ exports.handler = async function(event) {
   };
 
   try {
-    const { email, plan, user_id } = JSON.parse(event.body);
+    // "pack" is the new name; "plan" still accepted so an older page
+    // does not break mid-deploy.
+    const body = JSON.parse(event.body);
+    const email = body.email;
+    const pack = body.pack || body.plan;
+    const user_id = body.user_id;
 
     // ── Validate inputs ──
-    if (!email || !plan || !user_id) {
+    if (!email || !pack || !user_id) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'email, plan and user_id are required' })
+        body: JSON.stringify({ error: 'email, pack and user_id are required' })
       };
     }
 
@@ -53,14 +66,22 @@ exports.handler = async function(event) {
     const rateLimit = await checkRateLimit(clientIP, 'payment-initiate', 10, process.env.SUPABASE_SECRET_KEY, user_id || null);
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'payment-initiate');
 
-    const selectedPlan = PLANS[plan];
-    if (!selectedPlan) {
+    if (!PACKS[pack]) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: `Invalid plan "${plan}". Must be "starter" or "pro"` })
+        body: JSON.stringify({ error: `Unknown pack "${pack}". Must be one of: ${Object.keys(PACKS).join(', ')}` })
       };
     }
+
+    const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+    if (!SUPABASE_SECRET) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error' }) };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
+
+    // The server decides the price. Launch or regular, counted here.
+    const selectedPack = await priceFor(pack, supabase);
 
     const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
     if (!PAYSTACK_SECRET) {
@@ -72,7 +93,7 @@ exports.handler = async function(event) {
     }
 
     // ── Build a unique, traceable reference ──
-    const reference = `scriptiq_${plan}_${user_id}_${Date.now()}`;
+    const reference = `slate_${pack}_${user_id}_${Date.now()}`;
 
     // ── Call Paystack using node-fetch ──
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
@@ -83,16 +104,18 @@ exports.handler = async function(event) {
       },
       body: JSON.stringify({
         email,
-        amount:       selectedPlan.amount,
+        amount:       selectedPack.amount,
         reference,
-        currency:     'NGN',
-        callback_url: 'https://missolowo-scriptiq.netlify.app/payment-success',
+        currency:     selectedPack.currency,
+        callback_url: 'https://missolowo.com/payment-success',
         metadata: {
           user_id,
-          plan,
-          credits:        selectedPlan.credits,
-          expected_amount: selectedPlan.amount,
-          product:        'ScriptIQ'
+          pack,
+          plan:            pack,   // kept for older records
+          credits:         selectedPack.credits,
+          expected_amount: selectedPack.amount,
+          on_launch_offer: selectedPack.on_launch_offer,
+          product:         'Missolowo Slate'
         }
       })
     });
@@ -114,9 +137,12 @@ exports.handler = async function(event) {
         authorization_url: paystackData.data.authorization_url,
         reference:         paystackData.data.reference,
         access_code:       paystackData.data.access_code,
-        plan,
-        credits:           selectedPlan.credits,
-        amount:            selectedPlan.amount
+        pack,
+        name:              selectedPack.name,
+        credits:           selectedPack.credits,
+        amount:            selectedPack.amount,
+        currency:          selectedPack.currency,
+        on_launch_offer:   selectedPack.on_launch_offer
       })
     };
 
