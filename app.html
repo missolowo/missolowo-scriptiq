@@ -3538,9 +3538,12 @@
     // Paystack sends the filmmaker back here. Credits are added by the
     // server after it verifies with Paystack — this only asks for the
     // result and shows it.
-    async function slateVerifyReturn() {
-      var params = new URLSearchParams(window.location.search);
-      var reference = params.get('reference') || params.get('trxref');
+    async function slateVerifyReturn(referenceOverride) {
+      var reference = referenceOverride || null;
+      if (!reference) {
+        var params = new URLSearchParams(window.location.search);
+        reference = params.get('reference') || params.get('trxref');
+      }
       if (!reference) {
         try { reference = localStorage.getItem('slate_last_payment_ref'); } catch (e) {}
       }
@@ -3584,13 +3587,24 @@
           if (typeof renderAccountStrip === 'function') renderAccountStrip();
         } else {
           if (out) {
-            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:14px;margin-bottom:18px">'
-              + (data.error || 'We could not confirm that payment.')
-              + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:8px">'
-              + 'If money left your account, send this reference to support and it will be sorted: <code>'
-              + reference + '</code></div></div>';
+            // A payment can fail to confirm for reasons that pass on their
+            // own — a database latency spike, a dropped connection. The
+            // money is with Paystack and the reference is kept, so the
+            // filmmaker can finish it themselves rather than waiting on
+            // a support reply.
+            var canRetry = data.retryable !== false;
+            out.innerHTML = '<div style="background:var(--ink-2,#1B1D22);border:1px solid rgba(217,106,87,0.35);'
+              + 'border-radius:12px;padding:22px 24px;margin-bottom:24px">'
+              + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--error,#D96A57)">Not confirmed yet</div>'
+              + '<div style="font-size:15px;color:var(--paper,#F4EFE6);margin-top:6px">'
+              + (data.error || 'We could not confirm that payment.') + '</div>'
+              + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:10px">'
+              + 'Your payment reference is <code style="color:var(--gold,#D4A64A)">' + reference + '</code>. '
+              + 'Nothing is lost \u2014 if this keeps failing, send that reference to support and we will sort it.</div>'
+              + (canRetry ? '<button class="tool-card-action" style="border:none;cursor:pointer;margin-top:16px" '
+                  + 'data-retry-ref="' + reference + '">Confirm my payment</button>' : '')
+              + '</div>';
           }
-          setTimeout(loadBilling, 50);
         }
       } catch (e) {
         if (out) out.innerHTML = '<div style="color:var(--error,#D96A57)">Could not reach the server to confirm the payment. '
@@ -3606,32 +3620,57 @@
     // Delegated, so buttons rendered later work without rebinding.
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-pack]');
-      if (!btn) return;
-      e.preventDefault();
-      slateBuyPack(btn.getAttribute('data-pack'));
+      if (btn) {
+        e.preventDefault();
+        slateBuyPack(btn.getAttribute('data-pack'));
+        return;
+      }
+      var retry = e.target.closest('[data-retry-ref]');
+      if (retry) {
+        e.preventDefault();
+        retry.disabled = true;
+        retry.textContent = 'Confirming\u2026';
+        slateVerifyReturn(retry.getAttribute('data-retry-ref'));
+      }
     });
 
     document.querySelectorAll('.nav-item[href="#billing"]').forEach(function (link) {
       link.addEventListener('click', function () { setTimeout(loadBilling, 0); });
     });
 
+    // Open the Billing view and mark its sidebar item, the same way the
+    // nav links do. Used on a refresh, a shared link, and on the way back
+    // from Paystack.
+    function slateShowBilling() {
+      var view = document.querySelector('[data-view="billing"]');
+      if (!view) return;
+      document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+      view.classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+      var nav = document.querySelector('.nav-item[href="#billing"]');
+      if (nav) nav.classList.add('active');
+      window.scrollTo(0, 0);
+    }
+
     // Returning from Paystack, or landing straight on #billing.
     (function () {
       var params = new URLSearchParams(window.location.search);
       if (params.get('reference') || params.get('trxref')) {
-        var view = document.querySelector('[data-view="billing"]');
-        if (view) {
-          document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
-          view.classList.add('active');
-        }
+        slateShowBilling();
         setTimeout(slateVerifyReturn, 0);
       } else if (location.hash === '#billing') {
+        // Loading the data was not enough: the page still showed whichever
+        // view was marked active in the HTML, so a refresh on #billing — or
+        // a shared link — put the filmmaker back on the Workspace home page
+        // wondering where their credits went. Open the view as well.
+        slateShowBilling();
         setTimeout(loadBilling, 0);
       }
     })();
 
     window.loadBilling = loadBilling;
     window.slateBuyPack = slateBuyPack;
+    window.slateVerifyReturn = slateVerifyReturn;
 
     // ── FEEDBACK ──
       // Always reachable, because a problem can happen anywhere — during
