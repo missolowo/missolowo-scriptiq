@@ -22,6 +22,42 @@ const { PACKS, amountIsValidFor } = require('./lib/slate-pricing');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
+// ── Retrying the database ──
+// Supabase had an intermittent-latency incident in late September that hit
+// serverless functions in the eastern US — which is where these run. A spike
+// lasting seconds was enough to fail a write, and because credits are only
+// added after the payment row is claimed, a filmmaker could be charged and
+// see nothing. Paystack still had the money and the reference, but somebody
+// had to put it right by hand.
+//
+// A spike lasts seconds; three attempts a short pause apart ride through it.
+//
+// Two errors are NOT retried, because they are answers rather than faults:
+// 23505 means another call already claimed this payment, and PGRST116 means
+// the row genuinely does not exist. Retrying either would only waste time.
+function slateIsRetryable(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  if (code === '23505') return false;
+  if (code === 'PGRST116') return false;
+  return true;
+}
+
+async function slateRetry(action) {
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await action();
+      if (!res || !res.error || !slateIsRetryable(res.error)) return res;
+      last = res;
+    } catch (e) {
+      last = { error: { message: e.message } };
+    }
+    if (attempt < 3) await new Promise(function (r) { setTimeout(r, attempt * 500); });
+  }
+  return last;
+}
+
 exports.handler = async function(event) {
 
   // ── CORS preflight ──
@@ -82,11 +118,13 @@ exports.handler = async function(event) {
     // The real guard is the unique index on payments.reference, claimed
     // in STEP 6 before any credit is added.
     // ══════════════════════════════════════════════
-    const { data: existingPayment } = await supabase
-      .from('payments')
-      .select('id, status, credits_added')
-      .eq('reference', reference)
-      .single();
+    const existing = await slateRetry(function () {
+      return supabase.from('payments')
+        .select('id, status, credits_added')
+        .eq('reference', reference)
+        .single();
+    });
+    const existingPayment = existing && existing.data;
 
     if (existingPayment && existingPayment.status === 'success') {
       return {
@@ -104,15 +142,29 @@ exports.handler = async function(event) {
     // STEP 2 — Verify with Paystack servers
     // node-fetch used here to avoid "fetch is not defined"
     // ══════════════════════════════════════════════
-    const paystackRes = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      {
-        method:  'GET',
-        headers: { 'Authorization': `Bearer ${PAYSTACK_SECRET}` }
+    // Paystack is reached over the network too, so the same reasoning applies.
+    let paystackData = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const paystackRes = await fetch(
+          `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+          { method: 'GET', headers: { 'Authorization': `Bearer ${PAYSTACK_SECRET}` } }
+        );
+        paystackData = await paystackRes.json();
+        break;
+      } catch (e) {
+        if (attempt === 3) {
+          return {
+            statusCode: 503, headers,
+            body: JSON.stringify({
+              error: 'Could not reach Paystack to confirm this payment. Nothing is lost — try again in a moment.',
+              reference, retryable: true
+            })
+          };
+        }
+        await new Promise(function (r) { setTimeout(r, attempt * 500); });
       }
-    );
-
-    const paystackData = await paystackRes.json();
+    }
 
     // ── Paystack call itself failed ──
     if (!paystackData.status) {
@@ -213,17 +265,51 @@ exports.handler = async function(event) {
     // index, so the second insert is rejected by the database and that
     // call credits nothing. The database decides, not a sequence of
     // reads and writes that can interleave.
-    const { error: claimError } = await supabase.from('payments').insert({
-      user_id:           uid,
-      reference,
-      amount:            txn.amount,
-      currency:          txn.currency || 'NGN',
-      status:            'processing',
-      plan:              planName,
-      credits_added:     0,
-      paystack_response: txn,
-      created_at:        new Date().toISOString()
-    });
+    // A payment that stalled earlier — the database was unreachable midway,
+    // or the customer closed the tab — leaves a row at "processing" or
+    // "credit_failed" with no credits added. Rather than refusing it
+    // forever, take it over: flip the status, but only if it is still in
+    // that state. If another call got there first the update changes
+    // nothing, and we stop. That keeps the resume path as safe against
+    // double credits as the original claim.
+    let claimError = null;
+    if (existingPayment && (existingPayment.status === 'processing' || existingPayment.status === 'credit_failed')) {
+      const takeover = await slateRetry(function () {
+        return supabase.from('payments')
+          .update({ status: 'crediting', updated_at: new Date().toISOString() })
+          .eq('reference', reference)
+          .in('status', ['processing', 'credit_failed'])
+          .select('id');
+      });
+      if (takeover && takeover.error) {
+        throw new Error('Could not resume this payment: ' + takeover.error.message);
+      }
+      if (!takeover || !takeover.data || takeover.data.length === 0) {
+        // Someone else is finishing it. Report honestly rather than guessing.
+        return {
+          statusCode: 200, headers,
+          body: JSON.stringify({
+            success: true, duplicate: true,
+            message: 'This payment is being confirmed. Your credits will appear shortly.'
+          })
+        };
+      }
+    } else {
+      const claim = await slateRetry(function () {
+        return supabase.from('payments').insert({
+          user_id:           uid,
+          reference,
+          amount:            txn.amount,
+          currency:          txn.currency || 'NGN',
+          status:            'processing',
+          plan:              planName,
+          credits_added:     0,
+          paystack_response: txn,
+          created_at:        new Date().toISOString()
+        });
+      });
+      claimError = claim && claim.error;
+    }
 
     if (claimError) {
       // 23505 is postgres for "unique constraint violated" — another
@@ -247,11 +333,14 @@ exports.handler = async function(event) {
     // STEP 7 — Read the balance, then ADD to it
     // Never overwrite: 2 free credits left plus a 5-credit pack is 7.
     // ══════════════════════════════════════════════
-    const { data: currentUser, error: userError } = await supabase
-      .from('users')
-      .select('credits_remaining, credits_used, role')
-      .eq('id', uid)
-      .single();
+    const userRead = await slateRetry(function () {
+      return supabase.from('users')
+        .select('credits_remaining, credits_used, role')
+        .eq('id', uid)
+        .single();
+    });
+    const currentUser = userRead && userRead.data;
+    const userError = userRead && userRead.error;
 
     if (userError || !currentUser) {
       // The payment is real and claimed, but we cannot find the user.
@@ -268,20 +357,32 @@ exports.handler = async function(event) {
 
     const newCreditsRemaining = (currentUser.credits_remaining || 0) + creditsToAdd;
 
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({
-        role:              'paid',
-        credits_remaining: newCreditsRemaining,
-        updated_at:        new Date().toISOString()
-      })
-      .eq('id', uid);
+    const creditWrite = await slateRetry(function () {
+      return supabase.from('users')
+        .update({
+          role:              'paid',
+          credits_remaining: newCreditsRemaining,
+          updated_at:        new Date().toISOString()
+        })
+        .eq('id', uid);
+    });
+    const updateError = creditWrite && creditWrite.error;
 
     if (updateError) {
-      await supabase.from('payments')
-        .update({ status: 'credit_failed', updated_at: new Date().toISOString() })
-        .eq('reference', reference);
-      throw new Error('Payment recorded but credits could not be added: ' + updateError.message);
+      // Left at credit_failed on purpose: the customer, or we, can call this
+      // again and the resume path above picks it up where it stopped.
+      await slateRetry(function () {
+        return supabase.from('payments')
+          .update({ status: 'credit_failed', updated_at: new Date().toISOString() })
+          .eq('reference', reference);
+      });
+      return {
+        statusCode: 503, headers,
+        body: JSON.stringify({
+          error: 'Your payment went through, but we could not add the credits just now. Nothing is lost — try confirming again in a moment.',
+          reference, retryable: true
+        })
+      };
     }
 
     // ══════════════════════════════════════════════
@@ -289,13 +390,15 @@ exports.handler = async function(event) {
     // A row left at "processing" means the credits may not have landed,
     // and is a reconciliation job rather than a silent loss.
     // ══════════════════════════════════════════════
-    await supabase.from('payments')
-      .update({
-        status:        'success',
-        credits_added: creditsToAdd,
-        updated_at:    new Date().toISOString()
-      })
-      .eq('reference', reference);
+    await slateRetry(function () {
+      return supabase.from('payments')
+        .update({
+          status:        'success',
+          credits_added: creditsToAdd,
+          updated_at:    new Date().toISOString()
+        })
+        .eq('reference', reference);
+    });
 
     // ══════════════════════════════════════════════
     // STEP 9 — Return success to frontend
