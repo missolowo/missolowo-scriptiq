@@ -417,6 +417,52 @@ a { color: inherit; }
 }
 .section--raised { background: var(--ink-1); }
 
+/* ── Pricing ─────────────────────────────────────────────── */
+.price__offer {
+  display: inline-flex; align-items: center; gap: var(--s-3);
+  border: 1px solid rgba(212,166,74,0.3); background: var(--gold-tint);
+  border-radius: 999px; padding: var(--s-2) var(--s-5);
+  margin-bottom: var(--s-6);
+  font-family: var(--font-data); font-size: 0.75rem;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold);
+}
+.price__grid {
+  display: grid; gap: var(--s-6); margin-top: var(--s-10);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 760px) {
+  .price__grid { grid-template-columns: repeat(3, 1fr); }
+}
+.price__card {
+  background: var(--ink-2); border: 1px solid var(--line-1);
+  border-radius: 16px; padding: var(--s-8);
+  display: flex; flex-direction: column; gap: var(--s-3);
+}
+.price__name {
+  font-family: var(--font-data); font-size: 0.75rem;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2);
+}
+.price__amount {
+  font-family: var(--font-display); font-size: 2.4rem; line-height: 1.1;
+  color: var(--gold);
+}
+.price__was { font-size: 0.85rem; color: var(--text-3); }
+.price__was s { opacity: 0.75; }
+.price__credits { color: var(--paper); font-weight: 600; }
+.price__copy { color: var(--text-2); font-size: 0.95rem; flex: 1; }
+.price__includes {
+  margin-top: var(--s-10); padding-top: var(--s-8);
+  border-top: 1px solid var(--line-1);
+}
+.price__includes ul {
+  list-style: none; padding: 0; margin: var(--s-4) 0 0;
+  display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-6);
+  color: var(--paper);
+}
+.price__includes li::before { content: '\2713'; color: var(--gold); margin-right: var(--s-2); }
+.price__note { color: var(--text-3); font-size: 0.9rem; margin-top: var(--s-5); max-width: 60ch; }
+.price__free { color: var(--text-2); font-size: 0.95rem; margin-top: var(--s-6); }
+
 @media (min-width: 768px) {
   .section { padding-block: var(--s-24); }
 }
@@ -955,6 +1001,45 @@ a { color: inherit; }
       </p>
     </div>
   </section>
+  <section class="section reveal" id="pricing" aria-labelledby="pricing-title">
+    <div class="shell">
+      <p class="eyebrow">Pricing</p>
+
+      <h2 class="section__title" id="pricing-title">
+        One credit prepares one screenplay for production.
+      </h2>
+
+      <p class="section__lede">
+        Not a subscription. Buy credits when a production starts, and keep
+        them until you use them.
+      </p>
+
+      <!-- Prices are fetched from /.netlify/functions/pricing, the same
+           source the app charges from, so what a filmmaker reads here and
+           what they pay cannot drift apart. The launch offer also ends by
+           itself once the hundredth customer has paid — nobody has to
+           remember to take the banner down. -->
+      <div id="pricingOffer"></div>
+      <div class="price__grid" id="pricingGrid"></div>
+
+      <div class="price__includes">
+        <p class="price__name">Every credit includes</p>
+        <ul id="pricingIncludes">
+          <li>Scene Breakdown</li>
+          <li>Shooting Schedule</li>
+          <li>Call Sheet</li>
+        </ul>
+        <p class="price__free" id="pricingFree">
+          Every new account starts with 3 free credits. No credit card required.
+        </p>
+        <p class="price__note">
+          Prices are in Nigerian naira. International debit and credit cards are
+          accepted — your bank converts from your local currency automatically.
+        </p>
+      </div>
+    </div>
+  </section>
+
       <section class="section section--raised reveal" aria-labelledby="security-title">
     <div class="shell">
       <p class="eyebrow">Your script</p>
@@ -1132,6 +1217,67 @@ document.addEventListener('click', function (e) {
     cta_action: el.getAttribute('data-cta-action') || ''
   });
 });
+
+// ── Pricing ──
+// Read from the server, never written here. One edit to
+// lib/slate-pricing.js changes the homepage, the app and what Paystack
+// charges at the same moment, and the launch offer disappears on its own
+// once the hundredth customer has paid.
+(function () {
+  var grid = document.getElementById('pricingGrid');
+  if (!grid) return;
+
+  function naira(n) { return '\u20a6' + Number(n || 0).toLocaleString('en-NG'); }
+
+  function render(data) {
+    var offer = document.getElementById('pricingOffer');
+    if (offer && data.launch_offer_active) {
+      offer.innerHTML = '<span class="price__offer">Launch offer \u00b7 first '
+        + data.launch_customer_limit + ' customers</span>';
+    }
+
+    grid.innerHTML = data.packs.map(function (p) {
+      var cheaper = p.on_launch_offer && p.regular_price > p.price;
+      return '<article class="price__card">'
+        + '<p class="price__name">' + p.name + '</p>'
+        + '<p class="price__amount">' + naira(p.price) + '</p>'
+        + (cheaper ? '<p class="price__was"><s>' + naira(p.regular_price) + '</s> after the launch offer</p>' : '')
+        + '<p class="price__copy"><span class="price__credits">' + p.credits + ' credits</span> \u2014 '
+        + p.credits + ' screenplay' + (p.credits > 1 ? 's' : '') + ' prepared for production.</p>'
+        + '<a class="btn btn--gold" href="/app.html?auth=signup#billing" '
+        + 'data-cta="pricing" data-cta-action="' + p.key + '"><span>Get started</span></a>'
+        + '</article>';
+    }).join('');
+
+    if (data.includes && data.includes.length) {
+      var inc = document.getElementById('pricingIncludes');
+      if (inc) inc.innerHTML = data.includes.map(function (i) { return '<li>' + i + '</li>'; }).join('');
+    }
+    if (typeof data.signup_free_credits === 'number') {
+      var free = document.getElementById('pricingFree');
+      if (free) {
+        free.textContent = 'Every new account starts with ' + data.signup_free_credits
+          + ' free credits. No credit card required.';
+      }
+    }
+  }
+
+  fetch('/.netlify/functions/pricing')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data || !data.packs || !data.packs.length) throw new Error('no packs');
+      render(data);
+    })
+    .catch(function () {
+      // Never show a wrong price. If the server cannot be reached, send
+      // people to the app rather than guessing at what things cost.
+      grid.innerHTML = '<article class="price__card">'
+        + '<p class="price__copy">Credit packs are shown in the app.</p>'
+        + '<a class="btn btn--gold" href="/app.html?auth=signup#billing" '
+        + 'data-cta="pricing" data-cta-action="fallback"><span>See pricing</span></a>'
+        + '</article>';
+    });
+})();
 </script>
 
 </body>
