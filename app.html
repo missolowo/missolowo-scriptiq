@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -360,7 +360,7 @@
             <button class="file-change" id="fileChangeBtn">Change</button>
           </div>
           <button class="btn-primary generate-btn" id="generateBtn">Start Scene Breakdown</button>
-          <div class="credit-warning" id="creditWarning">You're out of credits. Please contact support to add more while billing is being finalized.</div>
+          <div class="credit-warning" id="creditWarning">You've used all your credits. <a href="#billing" style="color:var(--error);font-weight:600;text-decoration:underline">Add more credits</a> to carry on preparing this screenplay.</div>
         </div>
       </div>
       <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
@@ -451,6 +451,20 @@
       <div id="prodListOut">
       
         <div class="prod-note">Loading your productions…</div>
+      </div>
+    </section>
+
+    <section class="view" data-view="billing">
+      <div class="sync-mark">
+        <div class="rule"></div>
+        <div class="label">Credits</div>
+      </div>
+      <h1 class="page-title">Billing</h1>
+      <!-- Every price shown here comes from /.netlify/functions/pricing.
+           This page never holds a price of its own, so what a filmmaker
+           sees and what they are charged cannot drift apart. -->
+      <div id="billingOut">
+        <div class="prod-note">Loading credit packs…</div>
       </div>
     </section>
   </main>
@@ -3402,6 +3416,223 @@
         }
       }
       window.slateStartNewProduction = slateStartNewProduction;
+    // ── BILLING ──
+    // Credit packs, read from the server. The page holds no prices: it
+    // asks /.netlify/functions/pricing and renders the answer, so a price
+    // change is an edit to lib/slate-pricing.js and nothing here moves.
+    // The amount is never sent to the server either — only the pack name,
+    // and the server looks the price up again before charging.
+    var slatePricing = null;
+
+    function slateNaira(n) {
+      return '\u20a6' + Number(n || 0).toLocaleString('en-NG');
+    }
+
+    async function loadBilling() {
+      var out = document.getElementById('billingOut');
+      if (!out) return;
+      out.innerHTML = '<div class="prod-note">Loading credit packs…</div>';
+      try {
+        var res = await fetch('/.netlify/functions/pricing');
+        slatePricing = await res.json();
+        if (!slatePricing || !slatePricing.packs) throw new Error('No packs returned');
+      } catch (e) {
+        out.innerHTML = '<div class="prod-note" style="color:var(--error)">'
+          + 'Could not load credit packs. Check your connection and try again.</div>';
+        return;
+      }
+      renderBilling();
+    }
+
+    function renderBilling() {
+      var out = document.getElementById('billingOut');
+      var p = slatePricing;
+      var user = null;
+      try { user = JSON.parse(localStorage.getItem('scriptiq_user') || 'null'); } catch (e) {}
+
+      var html = '';
+
+      if (user) {
+        html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);'
+          + 'border-radius:12px;padding:18px 22px;margin-bottom:24px;display:flex;'
+          + 'justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">'
+          + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--text-3,#7D786E)">Your balance</div>'
+          + '<div style="font-family:var(--font-data);font-size:26px;color:var(--gold,#D4A64A);margin-top:4px">'
+          + (user.credits_remaining != null ? user.credits_remaining : 0)
+          + '<span style="font-size:13px;color:var(--text-2,#B5AFA3);margin-left:8px">credits</span></div></div>'
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);max-width:300px">'
+          + 'One credit prepares one screenplay for production.</div></div>';
+      }
+
+      if (p.launch_offer_active) {
+        html += '<div style="border:1px solid rgba(212,166,74,0.35);background:var(--gold-tint,rgba(212,166,74,0.08));'
+          + 'border-radius:12px;padding:14px 20px;margin-bottom:24px">'
+          + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Launch offer</div>'
+          + '<div style="color:var(--paper,#F4EFE6);font-size:14px;margin-top:4px">'
+          + 'Launch pricing for our first ' + p.launch_customer_limit + ' customers.</div></div>';
+      }
+
+      html += '<div class="card-grid">';
+      p.packs.forEach(function (pack) {
+        var saving = pack.on_launch_offer && pack.regular_price > pack.price;
+        html += '<div class="tool-card">'
+          + '<div class="tool-card-title">' + pack.name + '</div>'
+          + '<div style="font-family:var(--font-data);font-size:28px;color:var(--gold,#D4A64A);margin:2px 0 2px">'
+          + slateNaira(pack.price) + '</div>'
+          + (saving ? '<div style="font-size:12px;color:var(--text-3,#7D786E)"><s>'
+              + slateNaira(pack.regular_price) + '</s> after the launch offer</div>' : '')
+          + '<div class="tool-card-desc" style="margin-top:8px">'
+          + '<strong style="color:var(--paper,#F4EFE6)">' + pack.credits + ' credits</strong> — '
+          + pack.credits + ' screenplay' + (pack.credits > 1 ? 's' : '') + ' prepared for production.</div>'
+          + '<button class="tool-card-action" style="border:none;cursor:pointer" '
+          + 'data-pack="' + pack.key + '">Buy ' + pack.name + '</button>'
+          + '</div>';
+      });
+      html += '</div>';
+
+      html += '<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--line-1,#2E323A);'
+        + 'color:var(--text-2,#B5AFA3);font-size:13px;max-width:620px">'
+        + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:8px">Every credit includes</div>'
+        + (p.includes || []).join('  \u00b7  ')
+        + '<div style="margin-top:14px;color:var(--text-3,#7D786E);font-size:12px">'
+        + 'Prices are in Nigerian naira. International debit and credit cards are accepted \u2014 '
+        + 'your bank converts from your local currency automatically.</div>'
+        + '<div id="billingStatus" style="margin-top:14px;font-size:13px"></div></div>';
+
+      out.innerHTML = html;
+    }
+
+    // Start a purchase. Only the pack NAME is sent — the server decides
+    // the price, so nothing here can change what is charged.
+    async function slateBuyPack(packKey) {
+      var status = document.getElementById('billingStatus');
+      var user = null;
+      try { user = JSON.parse(localStorage.getItem('scriptiq_user') || 'null'); } catch (e) {}
+      if (!user || !user.id || !user.email) {
+        if (typeof openAuthModal === 'function') openAuthModal('login');
+        return;
+      }
+      document.querySelectorAll('[data-pack]').forEach(function (b) { b.disabled = true; });
+      if (status) status.innerHTML = '<span style="color:var(--text-2,#B5AFA3)">Opening secure payment…</span>';
+
+      try {
+        var res = await fetch('/.netlify/functions/payment-initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, pack: packKey, user_id: user.id })
+        });
+        var data = await res.json();
+        if (!res.ok || !data.authorization_url) {
+          throw new Error(data.error || 'Could not start the payment.');
+        }
+        // Remembered so the success page can verify even if Paystack's
+        // redirect loses the reference in the URL.
+        try { localStorage.setItem('slate_last_payment_ref', data.reference); } catch (e) {}
+        window.location.href = data.authorization_url;
+      } catch (e) {
+        document.querySelectorAll('[data-pack]').forEach(function (b) { b.disabled = false; });
+        if (status) status.innerHTML = '<span style="color:var(--error,#D96A57)">' + e.message + '</span>';
+      }
+    }
+
+    // Paystack sends the filmmaker back here. Credits are added by the
+    // server after it verifies with Paystack — this only asks for the
+    // result and shows it.
+    async function slateVerifyReturn() {
+      var params = new URLSearchParams(window.location.search);
+      var reference = params.get('reference') || params.get('trxref');
+      if (!reference) {
+        try { reference = localStorage.getItem('slate_last_payment_ref'); } catch (e) {}
+      }
+      if (!reference) return;
+
+      var user = null;
+      try { user = JSON.parse(localStorage.getItem('scriptiq_user') || 'null'); } catch (e) {}
+
+      var out = document.getElementById('billingOut');
+      if (out) out.innerHTML = '<div class="prod-note">Confirming your payment…</div>';
+
+      try {
+        var res = await fetch('/.netlify/functions/payment-verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference: reference, user_id: user ? user.id : null })
+        });
+        var data = await res.json();
+
+        if (data.success) {
+          // Keep the stored session in step with the server.
+          if (user && typeof data.credits_remaining === 'number') {
+            user.credits_remaining = data.credits_remaining;
+            user.role = 'paid';
+            try { localStorage.setItem('scriptiq_user', JSON.stringify(user)); } catch (e) {}
+          }
+          try { localStorage.removeItem('slate_last_payment_ref'); } catch (e) {}
+          if (out) {
+            out.innerHTML = '<div style="background:var(--ink-2,#1B1D22);border:1px solid rgba(127,174,126,0.35);'
+              + 'border-radius:12px;padding:22px 24px;margin-bottom:24px">'
+              + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--ok,#7FAE7E)">Payment confirmed</div>'
+              + '<div style="font-size:17px;color:var(--paper,#F4EFE6);margin-top:6px">'
+              + (data.duplicate ? 'These credits were already added to your account.' : data.message) + '</div>'
+              + (typeof data.credits_remaining === 'number'
+                  ? '<div style="font-family:var(--font-data);font-size:26px;color:var(--gold,#D4A64A);margin-top:10px">'
+                    + data.credits_remaining + '<span style="font-size:13px;color:var(--text-2,#B5AFA3);margin-left:8px">credits available</span></div>'
+                  : '')
+              + '<a class="tool-card-action" href="#home" style="margin-top:16px">Start a breakdown</a>'
+              + '</div>';
+          }
+          if (typeof renderAccountStrip === 'function') renderAccountStrip();
+        } else {
+          if (out) {
+            out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:14px;margin-bottom:18px">'
+              + (data.error || 'We could not confirm that payment.')
+              + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:8px">'
+              + 'If money left your account, send this reference to support and it will be sorted: <code>'
+              + reference + '</code></div></div>';
+          }
+          setTimeout(loadBilling, 50);
+        }
+      } catch (e) {
+        if (out) out.innerHTML = '<div style="color:var(--error,#D96A57)">Could not reach the server to confirm the payment. '
+          + 'Your reference is <code>' + reference + '</code> — nothing is lost, try again shortly.</div>';
+      }
+
+      // Clean the query string so a refresh does not look like a new payment.
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#billing');
+      }
+    }
+
+    // Delegated, so buttons rendered later work without rebinding.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-pack]');
+      if (!btn) return;
+      e.preventDefault();
+      slateBuyPack(btn.getAttribute('data-pack'));
+    });
+
+    document.querySelectorAll('.nav-item[href="#billing"]').forEach(function (link) {
+      link.addEventListener('click', function () { setTimeout(loadBilling, 0); });
+    });
+
+    // Returning from Paystack, or landing straight on #billing.
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('reference') || params.get('trxref')) {
+        var view = document.querySelector('[data-view="billing"]');
+        if (view) {
+          document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+          view.classList.add('active');
+        }
+        setTimeout(slateVerifyReturn, 0);
+      } else if (location.hash === '#billing') {
+        setTimeout(loadBilling, 0);
+      }
+    })();
+
+    window.loadBilling = loadBilling;
+    window.slateBuyPack = slateBuyPack;
+
     // ── FEEDBACK ──
       // Always reachable, because a problem can happen anywhere — during
       // upload, in the schedule, at export. Tying this to one moment would
