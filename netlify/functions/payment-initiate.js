@@ -95,6 +95,34 @@ exports.handler = async function(event) {
     // ── Build a unique, traceable reference ──
     const reference = `slate_${pack}_${user_id}_${Date.now()}`;
 
+    // ── Where Paystack sends the filmmaker afterwards ──
+    // This MUST return them to the site they bought from. A hardcoded
+    // production URL sent anyone testing on a deploy preview to
+    // missolowo.com instead — a different site, where the verification
+    // code never ran, so the payment completed and no credits appeared.
+    //
+    // The origin is taken from the request itself, so a purchase begun on
+    // a preview returns to that preview and one begun on missolowo.com
+    // returns there. Only our own domains are accepted: a Host header can
+    // be forged, and an open redirect on a payment callback would let
+    // someone send a paying customer to a page they control.
+    const rawHost = String(
+      (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || ''
+    ).split(',')[0].trim().toLowerCase();
+    const hostAllowed = /^missolowo\.com$/.test(rawHost)
+      || /^www\.missolowo\.com$/.test(rawHost)
+      || /^[a-z0-9-]+--missolowo-scriptiq\.netlify\.app$/.test(rawHost)
+      || /^missolowo-scriptiq\.netlify\.app$/.test(rawHost);
+    const origin = hostAllowed ? 'https://' + rawHost : 'https://missolowo.com';
+    // Back into the Workspace, where the code that verifies the payment
+    // and shows the new balance lives.
+    //
+    // No "#billing" on the end: Paystack appends ?reference=... to this
+    // URL, and anything after a # would swallow those parameters into the
+    // fragment where the browser cannot read them. The Workspace sees the
+    // reference and opens the billing panel itself.
+    const callbackUrl = origin + '/app.html';
+
     // ── Call Paystack using node-fetch ──
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -107,7 +135,7 @@ exports.handler = async function(event) {
         amount:       selectedPack.amount,
         reference,
         currency:     selectedPack.currency,
-        callback_url: 'https://missolowo.com/payment-success',
+        callback_url: callbackUrl,
         metadata: {
           user_id,
           pack,
@@ -142,7 +170,8 @@ exports.handler = async function(event) {
         credits:           selectedPack.credits,
         amount:            selectedPack.amount,
         currency:          selectedPack.currency,
-        on_launch_offer:   selectedPack.on_launch_offer
+        on_launch_offer:   selectedPack.on_launch_offer,
+        callback_url:      callbackUrl
       })
     };
 
