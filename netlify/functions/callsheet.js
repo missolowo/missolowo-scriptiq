@@ -18,7 +18,7 @@ const fetch = (() => {
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
 // One definition of name matching, scene sorting and the admin list.
 // See lib/slate-core.js — mirrored in app.html, change both together.
-const { isAdmin, slateKey, slateBetterLabel, bySceneNumberField } = require('./lib/slate-core');
+const { isAdmin, slateKey, slateBetterLabel, slateTitleCase, bySceneNumberField } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -168,7 +168,9 @@ exports.handler = async function(event, context) {
         }
       });
     });
-    const castToday = Object.keys(castMap).map(function (k) { return castMap[k]; });
+    const castToday = Object.keys(castMap).map(function (k) {
+      return { character: slateTitleCase(castMap[k].character), scenes: castMap[k].scenes };
+    });
 
     const dayLocation = dayData.location || (scenesToday[0] && scenesToday[0].location) || '';
 
