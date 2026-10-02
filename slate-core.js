@@ -54,6 +54,29 @@ function slateBetterLabel(a, b) {
   return A.length >= B.length ? A : B;
 }
 
+// A name the script only ever SHOUTS still has to read like a name on the
+// document a crew is handed. Screenplays write cues in capitals, so a
+// character who never appears in dialogue text reached the call sheet as
+// ARTEM SOKOLOV beside Irina Petrova — both correct, one shouting.
+//
+// Only touched when there is no lowercase letter anywhere: if the script
+// offers a better spelling, slateBetterLabel has already chosen it.
+// Scripts without letter case are never altered.
+// MIRRORED IN app.html (slateTitleCase) — change both together.
+function slateTitleCase(name) {
+  const str = String(name || '');
+  if (!str) return str;
+  if (/\p{Ll}/u.test(str)) return str;
+  if (!/\p{Lu}/u.test(str)) return str;
+  if ((str.match(/\p{L}/gu) || []).length < 3) return str;
+  return str.replace(/\p{L}[\p{L}\p{M}'’.-]*/gu, function (word) {
+    if (/^(?:\p{L}\.){1,3}$/u.test(word)) return word;
+    return word.toLowerCase()
+      .replace(/^(\p{L})/u, function (m, ch) { return ch.toUpperCase(); })
+      .replace(/([-'’])(\p{L})(?=\p{L})/gu, function (m, sep, ch) { return sep + ch.toUpperCase(); });
+  });
+}
+
 // Ascending scene order as a production manager reads it:
 // 9 before 10, and 47A after 47 but before 48.
 function bySceneNumber(a, b) {
@@ -72,4 +95,4 @@ function isAdmin(email) {
   return !!email && ADMIN_EMAILS.indexOf(email) !== -1;
 }
 
-module.exports = { ADMIN_EMAILS, isAdmin, slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField };
+module.exports = { ADMIN_EMAILS, isAdmin, slateKey, slateBetterLabel, slateTitleCase, bySceneNumber, bySceneNumberField };

@@ -44,7 +44,22 @@
   .sidebar-logo img { height: 28px; width: auto; }
   .account-strip { padding: 0 var(--s-6) var(--s-6); font-size: var(--t-small); }
   .account-name { color: var(--paper); font-weight: 600; }
-  .account-credits { color: var(--gold); font-family: var(--font-data); font-size: var(--t-slug); margin-top: 2px; }
+  /* The credit count is the one number a filmmaker needs at a glance, so
+     it sits in the sidebar on every view and updates after each breakdown.
+     Deliberately not a floating top-right badge: the sidebar becomes a
+     horizontal bar on mobile and a fixed corner element would land on top
+     of it. */
+  .account-credits {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    margin-top: 6px; padding: 4px 10px;
+    background: var(--gold-tint); border: 1px solid rgba(212,166,74,0.25);
+    border-radius: var(--r-control);
+    color: var(--gold-bright); font-family: var(--font-data);
+  }
+  .account-credits b { font-size: 1rem; font-weight: 600; line-height: 1; }
+  .account-credits span { font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
+  .account-credits.is-empty { background: rgba(217,106,87,0.1); border-color: rgba(217,106,87,0.3); color: var(--error); }
+  .account-topup { display: block; margin-top: 6px; font-size: var(--t-small); color: var(--gold); font-weight: 600; }
   .account-signin { color: var(--text-2); font-size: var(--t-small); }
   .account-signin a { color: var(--gold); font-weight: 600; }
   .nav-section-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-slug-tracking); text-transform: uppercase; color: var(--text-3); padding: var(--s-4) var(--s-6) var(--s-2); }
@@ -364,6 +379,7 @@
         </div>
       </div>
       <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
+      <div id="wsWelcome" style="display:none;margin:0 0 24px;border:1px solid rgba(212,166,74,0.25);border-radius:12px;overflow:hidden"></div>
       <div id="wsHealthPanel" style="display:none;margin:24px 0;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden"></div>
       <div id="wsProgressWrap" style="display:none;margin:24px 0">
         <div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-bottom:8px" id="wsProgressLabel">Preparing...</div>
@@ -489,6 +505,10 @@
         <button type="submit" class="auth-submit" id="loginSubmitBtn">Sign In</button>
       </form>
       <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
+        <div style="background:var(--gold-tint);border:1px solid rgba(212,166,74,0.25);border-radius:var(--r-control);padding:var(--s-3) var(--s-4);margin-bottom:var(--s-2)">
+          <div style="color:var(--gold-bright);font-weight:600;font-size:var(--t-small)">Includes 3 free credits</div>
+          <div style="color:var(--text-2);font-size:var(--t-small);margin-top:2px">One credit prepares one screenplay for production. No credit card required.</div>
+        </div>
         <div class="auth-field">
           <label for="signupName2">Full Name</label>
           <input type="text" id="signupName2" placeholder="Elizabeth Olalere">
@@ -600,9 +620,14 @@
           var isAdmin = user.role === 'admin' || ADMIN_EMAILS.indexOf(user.email) !== -1;
           var credits = isAdmin ? '∞' : (user.credits_remaining != null ? user.credits_remaining : 0);
           var name = user.name || (user.email ? user.email.split('@')[0] : 'Filmmaker');
+          var low = !isAdmin && (user.credits_remaining || 0) <= 0;
           strip.innerHTML =
             '<div class="account-name">' + name + '</div>' +
-            '<div class="account-credits">' + credits + ' credits</div>';
+            '<div class="account-credits' + (low ? ' is-empty' : '') + '">'
+              + '<b>' + credits + '</b><span>credits</span></div>'
+            // When the balance is gone, the way forward belongs right here,
+            // not on a page they have to go looking for.
+            + (low ? '<a class="account-topup" href="#billing">Add more credits</a>' : '');
           // Engine Check is a diagnostics panel, not a feature. Testers do
           // not need it and it would only clutter their workspace.
           var engineNav = document.getElementById('navEngineCheck');
@@ -676,6 +701,12 @@
           closeAuthModal();
           renderAccount();
           gateHomeView();
+          // Greet a brand-new account once. Set here rather than on every
+          // sign-in, so a returning filmmaker is not welcomed every time.
+          if (window.slateJustSignedUp && typeof renderWelcome === 'function') {
+            window.slateJustSignedUp = false;
+            renderWelcome();
+          }
         });
       }
 
@@ -691,6 +722,7 @@
         if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
         btn.textContent = 'Creating account…';
         btn.disabled = true;
+        window.slateJustSignedUp = true;
         fetch(SUPABASE_URL + '/auth/v1/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
@@ -1192,6 +1224,36 @@
         if (mixedB && !mixedA) return B;
         return A.length >= B.length ? A : B;
       } 
+      // A name the script only ever SHOUTS still has to read like a name on
+      // the document a crew is handed. Screenplays write cues in capitals,
+      // so a character who never appears in dialogue text — a dispatcher, a
+      // publicist — reached the call sheet as ARTЁM SOKOLOV sitting beside
+      // Irina Petrova. Both correct, one shouting.
+      //
+      // Only touched when there is no lowercase letter anywhere: if the
+      // script offers a better spelling, slateBetterLabel has already
+      // chosen it and this leaves it alone. Scripts without letter case —
+      // Korean, Japanese, Chinese — have no uppercase to find, so they are
+      // never altered.
+      function slateTitleCase(name) {
+        var str = String(name || '');
+        if (!str) return str;
+        if (/\p{Ll}/u.test(str)) return str;          // already has lowercase
+        if (!/\p{Lu}/u.test(str)) return str;         // no case at all
+        if ((str.match(/\p{L}/gu) || []).length < 3) return str;  // initials, short codes
+        return str.replace(/\p{L}[\p{L}\p{M}'’.-]*/gu, function (word) {
+          // Leave initials alone: "J." and "J.K." are not misspellings.
+          if (/^(?:\p{L}\.){1,3}$/u.test(word)) return word;
+          // Capitalise the first letter, and the letter after a hyphen or
+          // apostrophe — but only where more letters follow. That gives
+          // O'Neil and Abiola-Smith, while leaving the possessive in
+          // Adewale's House alone.
+          return word.toLowerCase()
+            .replace(/^(\p{L})/u, function (m, ch) { return ch.toUpperCase(); })
+            .replace(/([-'’])(\p{L})(?=\p{L})/gu, function (m, sep, ch) { return sep + ch.toUpperCase(); });
+        });
+      }
+
       function mergeBreakdownChunks(chunks) {
         const merged = {
            // Front matter is stripped before splitting, so the first chunk
@@ -1289,9 +1351,10 @@
               if (slateKey(merged.production_elements.all_cast[ci]) === k) { found = ci; break; }
             }
             if (found >= 0) {
-              merged.production_elements.all_cast[found] = slateBetterLabel(merged.production_elements.all_cast[found], clean);
+              merged.production_elements.all_cast[found] = slateTitleCase(
+                slateBetterLabel(merged.production_elements.all_cast[found], clean));
             } else {
-              merged.production_elements.all_cast.push(clean);
+              merged.production_elements.all_cast.push(slateTitleCase(clean));
             }
           });
           merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
@@ -1342,12 +1405,12 @@
 
         merged.character_breakdown = Object.keys(charMap).map(function (k) {
           var c = charMap[k];
-          return { character: c.character, scenes: c.scenes, total: c.scenes.length };
+          return { character: slateTitleCase(c.character), scenes: c.scenes, total: c.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
         merged.outline_schedule = Object.keys(locMap).map(function (k) {
           var l = locMap[k];
-          return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
+          return { set_location: slateTitleCase(l.set_location), scenes: l.scenes, total: l.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
          // One canonical spelling per character and location, everywhere.
@@ -2011,8 +2074,41 @@
               var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
               if (!/[^\u0000-\u00FF]/.test(probe)) return slateDrawText(txt, x, y, opts);
               var was = doc.getFont() || {};
-              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var wantsBold = was.fontStyle === 'bold';
+              doc.setFont(slateUni, (wantsBold && slateUniBold) ? 'bold' : 'normal');
+              // Korean, Japanese and Devanagari strokes are thinner than Latin
+              // at the same point size, so a Korean name sat next to an English
+              // word reads as faded — on documents whose whole purpose is to
+              // show the language is properly supported.
+              //
+              // There is also no bold file for those scripts, so setFont(bold)
+              // silently returns the regular weight.
+              //
+              // Outlining the glyph in its own colour thickens the stroke just
+              // enough to match. Kept deliberately slight: too much and CJK
+              // characters, which carry far more strokes per character than
+              // Latin letters, fill in and turn to ink.
+              // Only the scripts that genuinely need it. Korean, Japanese and
+              // Devanagari glyphs are visibly lighter than Latin at the same
+              // size. Cyrillic is not — its strokes already match, and the
+              // same outline made Russian names sit heavier than the English
+              // sentences beside them.
+              var slateInked = false;
+              if (slateUni === SLATE_FONTS.korean.name
+                  || slateUni === SLATE_FONTS.japanese.name
+                  || slateUni === SLATE_FONTS.devanagari.name) {
+                try {
+                  var tc = doc.getTextColor ? doc.getTextColor() : null;
+                  if (tc) {
+                    doc.setDrawColor(tc);
+                    doc.setLineWidth(wantsBold && !slateUniBold ? 0.14 : 0.06);
+                    opts = Object.assign({}, opts || {}, { renderingMode: 'fillThenStroke' });
+                    slateInked = true;
+                  }
+                } catch (e) { slateInked = false; }
+              }
               var out = slateDrawText(txt, x, y, opts);
+              if (slateInked) { try { doc.setLineWidth(0.2); } catch (e) {} }
               try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
               return out;
             };
@@ -2991,6 +3087,58 @@
      }
       window.slateHealthCheck = slateHealthCheck;
     
+      // ── WELCOME ──
+      // Shown once, immediately after signup, where a new filmmaker will
+      // actually read it. Dismissed for good once closed: an onboarding
+      // message that reappears stops being onboarding and becomes noise.
+      function renderWelcome() {
+        var el = document.getElementById('wsWelcome');
+        if (!el) return;
+        try { if (localStorage.getItem('slate_welcome_seen') === '1') return; } catch (e) {}
+
+        var credits = 3;
+        try {
+          var u = JSON.parse(localStorage.getItem('scriptiq_user') || 'null');
+          if (u && typeof u.credits_remaining === 'number') credits = u.credits_remaining;
+        } catch (e) {}
+
+        el.innerHTML =
+          '<div style="padding:22px 24px;background:var(--ink-2,#1B1D22)">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">'
+          + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Welcome to Missolowo Slate</div>'
+          + '<div style="font-family:var(--font-display);font-size:20px;color:var(--paper,#F4EFE6);margin-top:6px">'
+          + 'You have ' + credits + ' free credits ready to use.</div></div>'
+          + '<button id="wsWelcomeClose" aria-label="Dismiss" style="background:none;border:none;color:var(--text-3,#7D786E);font-size:20px;cursor:pointer;line-height:1">&times;</button>'
+          + '</div>'
+          + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:12px">'
+          + 'Each credit prepares one screenplay for production, and includes:</div>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:10px;color:var(--paper,#F4EFE6);font-size:13px">'
+          + '<span><span style="color:var(--gold,#D4A64A)">\u2713</span> Script Breakdown</span>'
+          + '<span><span style="color:var(--gold,#D4A64A)">\u2713</span> Shooting Schedule</span>'
+          + '<span><span style="color:var(--gold,#D4A64A)">\u2713</span> Call Sheet</span>'
+          + '</div>'
+          + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:14px">'
+          + 'When your free credits are used up, you can buy more at any time \u2014 '
+          + '<a href="#billing" style="color:var(--gold,#D4A64A);font-weight:600">see credit packs</a>.</div>'
+          + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-1,#2E323A)">'
+          + 'As one of our Founding Testers, your feedback is genuinely valuable. If something breaks, '
+          + 'looks wrong, or could be better, use '
+          + '<a href="#" onclick="slateOpenFeedback(); return false;" style="color:var(--gold,#D4A64A);font-weight:600">Send Feedback</a> '
+          + 'in the sidebar \u2014 it reaches us directly.</div>'
+          + '<div style="color:var(--text-3,#7D786E);font-size:13px;margin-top:14px">Happy filmmaking.</div>'
+          + '</div>';
+        el.style.display = 'block';
+
+        var close = document.getElementById('wsWelcomeClose');
+        if (close) {
+          close.addEventListener('click', function () {
+            el.style.display = 'none';
+            try { localStorage.setItem('slate_welcome_seen', '1'); } catch (e) {}
+          });
+        }
+      }
+      window.renderWelcome = renderWelcome;
+
       function renderHealthPanel(text) {
         var el = document.getElementById('wsHealthPanel');
         if (!el) return;
@@ -3084,6 +3232,15 @@
             'SCENE 1\nEXT. 한강 공원 - DAY\n민준이 달리고 있다.\n\n' +
             'SCENE 2\nINT. 작은 카페 - DAY\n하은이 앉아 있다.\n\n' +
             'SCENE 3\nEXT. 골목길 - NIGHT\n비가 내린다.\n'
+        },
+        'Shouted names': {
+          title: 'THE DISPATCHER',
+          scenes: 3,
+          cast: ['АРТЁМ СОКОЛОВ', 'АРТЁМ СОКОЛОВ'], castLabel: 'Артём Соколов',
+          text: 'THE DISPATCHER\n\n' +
+            'SCENE 1\nEXT. DEPOT - DAY\nA tram waits.\n\n' +
+            'SCENE 2\nINT. TRAM - DAY\nShe checks the panel.\n\n' +
+            'SCENE 3\nEXT. DEPOT - NIGHT\nHe smokes by the gate.\n'
         },
         'Malformed — typos and duplicates': {
           title: 'BROKEN DRAFT',
