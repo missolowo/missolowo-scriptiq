@@ -19,6 +19,12 @@ const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limit
 // One definition of name matching, scene sorting and the admin list.
 // See lib/slate-core.js — mirrored in app.html, change both together.
 const { isAdmin, slateKey, slateBetterLabel, slateTitleCase, bySceneNumberField } = require('./lib/slate-core');
+// A DISPLAY helper must never be able to take down a paid feature. If an
+// older copy of slate-core is still in the deployed bundle — which happens
+// when a shared module and the function using it land in separate commits —
+// names simply print as the script wrote them instead of the schedule
+// failing with a 500 and costing the filmmaker their credit.
+const slateName = (typeof slateTitleCase === 'function') ? slateTitleCase : function (n) { return n; };
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -169,7 +175,7 @@ exports.handler = async function(event, context) {
       });
     });
     const castToday = Object.keys(castMap).map(function (k) {
-      return { character: slateTitleCase(castMap[k].character), scenes: castMap[k].scenes };
+      return { character: slateName(castMap[k].character), scenes: castMap[k].scenes };
     });
 
     const dayLocation = dayData.location || (scenesToday[0] && scenesToday[0].location) || '';
