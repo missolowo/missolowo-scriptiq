@@ -2043,8 +2043,34 @@
               var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
               if (!/[^\u0000-\u00FF]/.test(probe)) return slateDrawText(txt, x, y, opts);
               var was = doc.getFont() || {};
-              doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
+              var wantsBold = was.fontStyle === 'bold';
+              doc.setFont(slateUni, (wantsBold && slateUniBold) ? 'bold' : 'normal');
+              // Korean, Japanese and Devanagari strokes are thinner than Latin
+              // at the same point size, so a Korean name sat next to an English
+              // word reads as faded — on documents whose whole purpose is to
+              // show the language is properly supported.
+              //
+              // There is also no bold file for those scripts, so setFont(bold)
+              // silently returns the regular weight.
+              //
+              // Outlining the glyph in its own colour thickens the stroke just
+              // enough to match. Kept deliberately slight: too much and CJK
+              // characters, which carry far more strokes per character than
+              // Latin letters, fill in and turn to ink.
+              var slateInked = false;
+              if (slateUni !== 'NotoLatin') {
+                try {
+                  var tc = doc.getTextColor ? doc.getTextColor() : null;
+                  if (tc) {
+                    doc.setDrawColor(tc);
+                    doc.setLineWidth(wantsBold && !slateUniBold ? 0.14 : 0.06);
+                    opts = Object.assign({}, opts || {}, { renderingMode: 'fillThenStroke' });
+                    slateInked = true;
+                  }
+                } catch (e) { slateInked = false; }
+              }
               var out = slateDrawText(txt, x, y, opts);
+              if (slateInked) { try { doc.setLineWidth(0.2); } catch (e) {} }
               try { doc.setFont(was.fontName || 'helvetica', was.fontStyle || 'normal'); } catch (e) {}
               return out;
             };
