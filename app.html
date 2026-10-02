@@ -1224,6 +1224,36 @@
         if (mixedB && !mixedA) return B;
         return A.length >= B.length ? A : B;
       } 
+      // A name the script only ever SHOUTS still has to read like a name on
+      // the document a crew is handed. Screenplays write cues in capitals,
+      // so a character who never appears in dialogue text — a dispatcher, a
+      // publicist — reached the call sheet as ARTЁM SOKOLOV sitting beside
+      // Irina Petrova. Both correct, one shouting.
+      //
+      // Only touched when there is no lowercase letter anywhere: if the
+      // script offers a better spelling, slateBetterLabel has already
+      // chosen it and this leaves it alone. Scripts without letter case —
+      // Korean, Japanese, Chinese — have no uppercase to find, so they are
+      // never altered.
+      function slateTitleCase(name) {
+        var str = String(name || '');
+        if (!str) return str;
+        if (/\p{Ll}/u.test(str)) return str;          // already has lowercase
+        if (!/\p{Lu}/u.test(str)) return str;         // no case at all
+        if ((str.match(/\p{L}/gu) || []).length < 3) return str;  // initials, short codes
+        return str.replace(/\p{L}[\p{L}\p{M}'’.-]*/gu, function (word) {
+          // Leave initials alone: "J." and "J.K." are not misspellings.
+          if (/^(?:\p{L}\.){1,3}$/u.test(word)) return word;
+          // Capitalise the first letter, and the letter after a hyphen or
+          // apostrophe — but only where more letters follow. That gives
+          // O'Neil and Abiola-Smith, while leaving the possessive in
+          // Adewale's House alone.
+          return word.toLowerCase()
+            .replace(/^(\p{L})/u, function (m, ch) { return ch.toUpperCase(); })
+            .replace(/([-'’])(\p{L})(?=\p{L})/gu, function (m, sep, ch) { return sep + ch.toUpperCase(); });
+        });
+      }
+
       function mergeBreakdownChunks(chunks) {
         const merged = {
            // Front matter is stripped before splitting, so the first chunk
@@ -1321,9 +1351,10 @@
               if (slateKey(merged.production_elements.all_cast[ci]) === k) { found = ci; break; }
             }
             if (found >= 0) {
-              merged.production_elements.all_cast[found] = slateBetterLabel(merged.production_elements.all_cast[found], clean);
+              merged.production_elements.all_cast[found] = slateTitleCase(
+                slateBetterLabel(merged.production_elements.all_cast[found], clean));
             } else {
-              merged.production_elements.all_cast.push(clean);
+              merged.production_elements.all_cast.push(slateTitleCase(clean));
             }
           });
           merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
@@ -1374,12 +1405,12 @@
 
         merged.character_breakdown = Object.keys(charMap).map(function (k) {
           var c = charMap[k];
-          return { character: c.character, scenes: c.scenes, total: c.scenes.length };
+          return { character: slateTitleCase(c.character), scenes: c.scenes, total: c.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
         merged.outline_schedule = Object.keys(locMap).map(function (k) {
           var l = locMap[k];
-          return { set_location: l.set_location, scenes: l.scenes, total: l.scenes.length };
+          return { set_location: slateTitleCase(l.set_location), scenes: l.scenes, total: l.scenes.length };
         }).sort(function (a, b) { return b.total - a.total; });
 
          // One canonical spelling per character and location, everywhere.
@@ -2057,8 +2088,15 @@
               // enough to match. Kept deliberately slight: too much and CJK
               // characters, which carry far more strokes per character than
               // Latin letters, fill in and turn to ink.
+              // Only the scripts that genuinely need it. Korean, Japanese and
+              // Devanagari glyphs are visibly lighter than Latin at the same
+              // size. Cyrillic is not — its strokes already match, and the
+              // same outline made Russian names sit heavier than the English
+              // sentences beside them.
               var slateInked = false;
-              if (slateUni !== 'NotoLatin') {
+              if (slateUni === SLATE_FONTS.korean.name
+                  || slateUni === SLATE_FONTS.japanese.name
+                  || slateUni === SLATE_FONTS.devanagari.name) {
                 try {
                   var tc = doc.getTextColor ? doc.getTextColor() : null;
                   if (tc) {
@@ -3194,6 +3232,15 @@
             'SCENE 1\nEXT. 한강 공원 - DAY\n민준이 달리고 있다.\n\n' +
             'SCENE 2\nINT. 작은 카페 - DAY\n하은이 앉아 있다.\n\n' +
             'SCENE 3\nEXT. 골목길 - NIGHT\n비가 내린다.\n'
+        },
+        'Shouted names': {
+          title: 'THE DISPATCHER',
+          scenes: 3,
+          cast: ['АРТЁМ СОКОЛОВ', 'АРТЁМ СОКОЛОВ'], castLabel: 'Артём Соколов',
+          text: 'THE DISPATCHER\n\n' +
+            'SCENE 1\nEXT. DEPOT - DAY\nA tram waits.\n\n' +
+            'SCENE 2\nINT. TRAM - DAY\nShe checks the panel.\n\n' +
+            'SCENE 3\nEXT. DEPOT - NIGHT\nHe smokes by the gate.\n'
         },
         'Malformed — typos and duplicates': {
           title: 'BROKEN DRAFT',
