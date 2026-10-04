@@ -86,14 +86,52 @@
   .btn-primary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
   @media (max-width: 768px) {
     body { flex-direction: column; }
-    .sidebar { width: 100%; min-width: 0; flex-direction: row; overflow-x: auto; padding: var(--s-3); min-height: auto; }
+    .sidebar {
+      width: 100%; min-width: 0; flex-direction: row; align-items: center;
+      overflow-x: auto; padding: var(--s-3); min-height: auto;
+      gap: var(--s-2); -webkit-overflow-scrolling: touch;
+    }
     .sidebar-logo { display: none; }
     .nav-section-label { display: none; }
     .nav-item { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; }
     .nav-item.active { border-left: none; border-bottom: 2px solid var(--gold); }
-    .sidebar-footer { display: none; }
+    /* The footer holds Billing, Send Feedback, Settings, Help and Log Out.
+       Hiding it on mobile meant a filmmaker on a phone — which is most of
+       them — could not buy credits, report a problem, or sign out. It now
+       joins the same scrolling row as everything else. */
+    .sidebar-footer {
+      display: flex; align-items: center; gap: var(--s-2);
+      margin: 0 0 0 var(--s-2); padding: 0 0 0 var(--s-3);
+      border-top: none; border-left: 1px solid var(--line-1);
+    }
+    .sidebar-footer .nav-item { padding: var(--s-3) var(--s-3) !important; }
+    /* Credits stay in view rather than scrolling away with the rest. */
+    .account-strip {
+      padding: 0 var(--s-3) 0 var(--s-2); margin: 0;
+      display: flex; align-items: center; gap: var(--s-2);
+      flex-shrink: 0; position: sticky; left: 0;
+      background: var(--ink-1); z-index: 2;
+    }
+    .account-name { display: none; }
+    .account-credits { margin-top: 0; }
+    .account-topup { margin-top: 0; white-space: nowrap; }
     .main { padding: var(--s-6) var(--s-4); }
+    /* Two routes in, equally visible. A returning tester should not have to
+       find "Sign in" in a line of small text under a large button. */
+    .empty-state { padding: var(--s-8) var(--s-6); }
+    .auth-choice { display: flex; flex-direction: column; gap: var(--s-3); }
+    .auth-choice .btn-primary, .auth-choice .btn-secondary { width: 100%; justify-content: center; }
   }
+  .auth-choice { display: flex; gap: var(--s-3); justify-content: center; flex-wrap: wrap; }
+  .btn-secondary {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+    height: var(--btn-h); padding: 0 var(--s-6);
+    background: transparent; color: var(--gold); font-weight: 600; font-size: var(--t-small);
+    border: 1px solid var(--gold); border-radius: var(--r-control); cursor: pointer;
+    font-family: var(--font-text);
+  }
+  .btn-secondary:hover { background: var(--gold-tint); }
+  .btn-secondary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
   .view { display: none; }
   .view.active { display: block; }
   .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-6); }
@@ -403,8 +441,11 @@
         </svg>
         <div class="empty-title">Sign in to get started</div>
         <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with 3 free credits.</div>
-        <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
-        <div class="auth-note"><a href="#" onclick="openAuthModal('login'); return false;" style="color:var(--gold); font-weight:600">Already have an account? Sign in</a></div>
+        <div class="auth-choice">
+          <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
+          <button class="btn-secondary" onclick="openAuthModal('login')">Sign In</button>
+        </div>
+        <div class="auth-note">Already have an account? Sign in above.</div>
       </div>
     </section>
 
