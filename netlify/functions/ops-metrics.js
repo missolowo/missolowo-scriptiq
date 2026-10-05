@@ -46,6 +46,18 @@ const TABLES = [
 
 // Payments are counted by outcome, because the outcomes are what matter.
 // "stalled" is the one to watch: money taken, credits not yet added.
+// A production's own account of what happened to it. Written by the
+// breakdown function: "processing" when the upload begins, "completed" when
+// the run finishes and the credit is charged.
+//
+// This is better evidence than the gap between two tables. A production left
+// at "processing" is one filmmaker who uploaded a screenplay and received
+// nothing — a thing that happened to someone, not a percentage.
+const PRODUCTION_STATES = {
+  completed:  ['completed'],
+  unfinished: ['processing']
+};
+
 const PAYMENT_STATES = {
   succeeded:  ['success'],
   stalled:    ['processing', 'crediting', 'credit_failed', 'unmatched_user'],
@@ -168,6 +180,16 @@ exports.handler = async function (event) {
       internal[t.key] = await block(t.table, true);
     }
 
+    // Productions by what became of them.
+    const productionStatus = {}, internalProductionStatus = {};
+    for (const state of Object.keys(PRODUCTION_STATES)) {
+      const statuses = PRODUCTION_STATES[state];
+      productionStatus[state] = await block('productions', false, { statuses });
+      internalProductionStatus[state] = await block('productions', true, { statuses });
+    }
+    out.production_status = productionStatus;
+    internal.production_status = internalProductionStatus;
+
     const payments = {}, internalPayments = {};
     for (const state of Object.keys(PAYMENT_STATES)) {
       const statuses = PAYMENT_STATES[state];
@@ -228,7 +250,11 @@ exports.handler = async function (event) {
     // Worth an alert on the automation side: money taken, credits not added.
     out.needs_attention = {
       stalled_payments: (payments.stalled && payments.stalled.all_time) || 0,
-      suspicious_payments: (payments.suspicious && payments.suspicious.all_time) || 0
+      suspicious_payments: (payments.suspicious && payments.suspicious.all_time) || 0,
+      // Uploads that began today and have not finished. A run takes minutes,
+      // so one of these an hour old is a filmmaker who got nothing — and they
+      // will not write in to say so.
+      unfinished_uploads_today: (productionStatus.unfinished && productionStatus.unfinished.today) || 0
     };
 
     return { statusCode: 200, headers, body: JSON.stringify(out) };
