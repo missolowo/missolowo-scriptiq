@@ -177,6 +177,31 @@ exports.handler = async function (event) {
     out.payments = payments;
     internal.payments = internalPayments;
 
+    // ── Completion rate ──
+    // A production row is created when a script is uploaded; a breakdown row
+    // only when the run finishes and saves. So the gap between them is
+    // uploads that never produced a document — failed partway, abandoned, or
+    // completed but failed to save.
+    //
+    // It is the difference between "filmmakers are trying it" and
+    // "filmmakers are getting something out of it", and a falling rate is an
+    // early warning that nothing else here would show.
+    function rate(block) {
+      const out = {};
+      ['today', 'week', 'month', 'all_time'].forEach(function (w) {
+        const started = block.productions && block.productions[w];
+        const finished = block.breakdowns && block.breakdowns[w];
+        // null, not 0, when either count is unreadable or nothing started:
+        // a rate of zero would read as total failure rather than no activity.
+        out[w] = (typeof started === 'number' && typeof finished === 'number' && started > 0)
+          ? Math.round((finished / started) * 100)
+          : null;
+      });
+      return out;
+    }
+    out.completion_rate = rate(out);
+    internal.completion_rate = rate(internal);
+
     out.internal = internal;
     // Honest about its own blind spot: if we could not read the user list,
     // nothing is excluded and the headline numbers include our testing.
