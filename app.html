@@ -1578,6 +1578,96 @@
         if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);      
       }
 
+      // ── SAVING WORK, PROPERLY ──
+      // The server charges the credit the moment the last section finishes.
+      // The breakdown itself is only stored when the BROWSER sends the
+      // assembled version here. Those are two separate events, and until now
+      // the browser tried once and gave up quietly.
+      //
+      // On a phone on a Nigerian mobile network, posting a large breakdown
+      // often does not succeed first time. Six filmmakers were charged a
+      // credit and their work was never stored — they saw it on screen, then
+      // found nothing under Productions when they came back.
+      //
+      // Now: three attempts, and if it still fails the filmmaker is TOLD,
+      // with a button to try again. Their work is on screen and in local
+      // storage either way, so a retry costs them nothing and no credit.
+      async function slateSave(kind, body, opts) {
+        opts = opts || {};
+        var lastError = null;
+        for (var attempt = 1; attempt <= 3; attempt++) {
+          try {
+            var res = await fetch('/.netlify/functions/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            var json = await res.json();
+            if (json && json.saved) {
+              slateClearSaveWarning(kind);
+              return { saved: true };
+            }
+            lastError = (json && json.error) || 'Save failed';
+            // A rejection the server means — not signed in, production not
+            // found, nothing to save — will not change on a retry.
+            if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) break;
+          } catch (e) {
+            lastError = e.message;
+          }
+          if (attempt < 3) await new Promise(function (r) { setTimeout(r, attempt * 800); });
+        }
+        slateShowSaveWarning(kind, body, lastError, opts.label);
+        return { saved: false, error: lastError };
+      }
+
+      // Pending saves, so a retry can send exactly what failed.
+      var slatePendingSaves = {};
+
+      function slateShowSaveWarning(kind, body, error, label) {
+        slatePendingSaves[kind] = body;
+        var host = document.getElementById('wsResults');
+        if (!host) return;
+        var id = 'wsSaveWarn-' + kind;
+        var el = document.getElementById(id);
+        if (!el) {
+          el = document.createElement('div');
+          el.id = id;
+          el.style.cssText = 'margin:16px 0;padding:14px 16px;border:1px solid rgba(201,126,61,0.4);'
+            + 'border-radius:10px;background:rgba(201,126,61,0.08)';
+          host.insertBefore(el, host.firstChild);
+        }
+        el.innerHTML =
+          '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--warn,#C97E3D)">Not saved yet</div>'
+          + '<div style="color:var(--paper,#F4EFE6);font-size:13px;margin-top:6px">'
+          + 'Your ' + (label || kind) + ' is ready and shown below, but we could not store it to your account. '
+          + 'It is still here while this page stays open.</div>'
+          + '<div style="color:var(--text-2,#B5AFA3);font-size:12px;margin-top:6px">'
+          + 'This is usually a weak connection. Retrying costs no credit.</div>'
+          + '<button class="btn-primary" style="margin-top:12px" data-save-retry="' + kind + '">Save it now</button>';
+      }
+
+      function slateClearSaveWarning(kind) {
+        delete slatePendingSaves[kind];
+        var el = document.getElementById('wsSaveWarn-' + kind);
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      }
+
+      document.addEventListener('click', async function (e) {
+        var btn = e.target.closest('[data-save-retry]');
+        if (!btn) return;
+        e.preventDefault();
+        var kind = btn.getAttribute('data-save-retry');
+        var body = slatePendingSaves[kind];
+        if (!body) return;
+        btn.disabled = true;
+        btn.textContent = 'Saving\u2026';
+        var out = await slateSave(kind, body);
+        if (!out.saved) {
+          btn.disabled = false;
+          btn.textContent = 'Try again';
+        }
+      });
+
       async function runWorkspaceBreakdown(user) {
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var script = extractedScriptText;
@@ -1656,23 +1746,13 @@
           // version exists. Failure here must not lose the user their result,
           // so it never throws — the breakdown is already on screen.
           if (!partialFailure && productionId && user) {
-            try {
-              const saveRes = await fetch('/.netlify/functions/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  kind: 'breakdown',
-                  production_id: productionId,
-                  user_id: user.id,
-                  user_email: user.email,
-                  payload: slateBreakdown
-                })
-              });
-              const saveJson = await saveRes.json();
-              if (!saveJson.saved) console.warn('[Slate] Breakdown not saved:', saveJson.error);
-            } catch (e) {
-              console.warn('[Slate] Breakdown save request failed:', e.message);
-            }
+            await slateSave('breakdown', {
+              kind: 'breakdown',
+              production_id: productionId,
+              user_id: user.id,
+              user_email: user.email,
+              payload: slateBreakdown
+            }, { label: 'breakdown' });
           }
           try { localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown)); } catch (e) {}
           wsProgress(100, partialFailure ? 'Partial breakdown ready.' : 'Breakdown complete.');
@@ -1793,25 +1873,13 @@
           // costs the user the result they just paid a credit for.
           var schedProductionId = (window.slateProductionId || null);
           if (schedProductionId && user) {
-            try {
-              const schedSave = await fetch('/.netlify/functions/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  kind: 'schedule',
-                  production_id: schedProductionId,
-                  user_id: user.id,
-                  user_email: user.email,
-                  payload: slateSchedule
-                })
-              });
-              const schedJson = await schedSave.json();
-              if (!schedJson.saved) {
-                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (schedJson.error || 'unknown') + '</div>';
-              }
-            } catch (e) {
-              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
-            }
+            await slateSave('schedule', {
+              kind: 'schedule',
+              production_id: schedProductionId,
+              user_id: user.id,
+              user_email: user.email,
+              payload: slateSchedule
+            }, { label: 'shooting schedule' });
            }
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Schedule error') + '</div>';
@@ -1896,26 +1964,14 @@
           // so regenerating a day overwrites it rather than adding a copy.
           var csProductionId = (window.slateProductionId || null);
           if (csProductionId && user) {
-            try {
-              const csSave = await fetch('/.netlify/functions/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  kind: 'callsheet',
-                  production_id: csProductionId,
-                  user_id: user.id,
-                  user_email: user.email,
-                  day_number: day,
-                  payload: cs
-                })
-              });
-              const csJson = await csSave.json();
-              if (!csJson.saved) {
-                out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Not saved: ' + (csJson.error || 'unknown') + '</div>';
-              }
-            } catch (e) {
-              out.innerHTML += '<div style="margin-top:12px;color:var(--error,#D96A57);font-size:12px">Save request failed: ' + e.message + '</div>';
-            }
+            await slateSave('callsheet', {
+              kind: 'callsheet',
+              production_id: csProductionId,
+              user_id: user.id,
+              user_email: user.email,
+              day_number: day,
+              payload: cs
+            }, { label: 'call sheet' });
           }
         } catch (err) {
           out.innerHTML = '<div style="color:var(--error,#D96A57);font-size:13px">' + (err.message || 'Call sheet error') + '</div>';
