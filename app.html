@@ -1002,6 +1002,22 @@
       // diagnostics. Adapted to Workspace auth + UI hooks only.
       // ============================================================
       var CHUNK_SIZE = 3000; // Tuned Jul 2026: ~6-13s/section, safe under Netlify ceiling
+      // ── AND a ceiling on SCENES per section ──
+      // Characters measure the INPUT. What takes the time is the OUTPUT:
+      // the model writes a full structured record for every scene it finds,
+      // so a section's cost tracks scene count, not length.
+      //
+      // A Yorùbá drama that cuts between short scenes — a heading and one
+      // line, over and over — packed 19 scenes into 2,909 characters. Well
+      // under the size limit, roughly five times the output of a section of
+      // When Love Finds You, and far enough past the Netlify ceiling that
+      // the function was killed every time. The filmmaker saw "Could not
+      // process the script", three times, on a script that was perfectly fine.
+      //
+      // Scripts like that are not unusual in Nollywood. Sections are now
+      // capped both ways, so a dense script gets MORE sections rather than
+      // one that times out.
+      var SLATE_MAX_SCENES_PER_CHUNK = 6;
       var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
 
       function siqTrack(name, params) {
@@ -1117,7 +1133,15 @@
             break;
           }
         }
-        if (text.length <= maxChunkSize) return slateRecordNumbers([text]);
+        // A short script can still be a dense one. Forty one-line scenes fit
+        // inside the size limit comfortably, and sending all forty in a
+        // single call is precisely the request that times out — so the
+        // shortcut has to check scenes as well as length.
+        if (text.length <= maxChunkSize
+            && slateSceneNumbersIn(text).length <= (typeof SLATE_MAX_SCENES_PER_CHUNK === 'number'
+                                                    ? SLATE_MAX_SCENES_PER_CHUNK : 6)) {
+          return slateRecordNumbers([text]);
+        }
          // Cut only at scene headings, never mid-scene. A chunk boundary
         // inside a scene makes the model see two half-scenes and report
         // them as two, which is where phantom scenes come from.
@@ -1145,14 +1169,24 @@
        if (segments.length <= 1) {
           segments = splitBySize(text, maxChunkSize);
         }
+        // Each segment is one scene, so counting them caps the work the
+        // model is asked to do in a single call. Both limits apply: a
+        // section ends when it would get too long OR hold too many scenes.
+        var maxScenes = (typeof SLATE_MAX_SCENES_PER_CHUNK === 'number')
+          ? SLATE_MAX_SCENES_PER_CHUNK : 6;
         const chunks = [];
         let currentChunk = '';
+        let scenesHere = 0;
         for (const seg of segments) {
-          if ((currentChunk + seg).length > maxChunkSize && currentChunk.length > 0) {
+          var tooLong = (currentChunk + seg).length > maxChunkSize;
+          var tooMany = scenesHere >= maxScenes;
+          if (currentChunk.length > 0 && (tooLong || tooMany)) {
             chunks.push(currentChunk.trim());
             currentChunk = seg;
+            scenesHere = 1;
           } else {
             currentChunk += (currentChunk ? '\n' : '') + seg;
+            scenesHere++;
           }
         }
         if (currentChunk.trim()) chunks.push(currentChunk.trim());
@@ -1668,6 +1702,25 @@
         }
       });
 
+      // Turn the reason a section failed into something a filmmaker can act
+      // on. Anything unrecognised is passed through rather than replaced:
+      // a message we did not anticipate is still better than a generic one.
+      function slateFailureMessage(reason) {
+        var r = String(reason || '');
+        if (!r) return 'Could not process the script. Please try again.';
+        if (/no credits/i.test(r)) {
+          return 'You have no credits left. Add more credits to run this breakdown — your script is still here.';
+        }
+        if (/too many requests|rate.?limit/i.test(r)) {
+          return 'Too many breakdowns from this connection in the last hour. Please try again shortly — nothing has been charged.';
+        }
+        if (/took too long|timed out|timeout/i.test(r)) {
+          return 'A section of this screenplay took too long to process. Nothing has been charged. Please try again — if it keeps happening, send us the script and we will look at it.';
+        }
+        if (/disabled/i.test(r)) return r;
+        return r + ' Nothing has been charged.';
+      }
+
       async function runWorkspaceBreakdown(user) {
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var script = extractedScriptText;
@@ -1707,7 +1760,7 @@
                 error_type: result.message, duration_ms: chunkDuration, completed_sections: completedChunks.length
               }));
               siqTrack('breakdown_failed', { section_number: i + 1, duration_ms: chunkDuration, failure_reason: result.message, production_id: productionId });
-              partialFailure = { failedSection: i + 1, totalSections: totalChunks };
+              partialFailure = { failedSection: i + 1, totalSections: totalChunks, reason: result.message };
               break;
             }
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
@@ -1718,7 +1771,12 @@
           }
           
           if (completedChunks.length === 0) {
-            throw new Error('Could not process the script. Please try again.');
+            // The reason was known all along and thrown away. Every failure —
+            // out of credits, too many requests, a section that timed out,
+            // the model returning badly — reached the filmmaker as the same
+            // sentence, so nobody could act on it and we could not diagnose
+            // it from a description. Say what happened.
+            throw new Error(slateFailureMessage(partialFailure && partialFailure.reason));
           }
           wsProgress(92, 'Combining production data...');
            // Always merge, even for a single section. The shortcut meant a
