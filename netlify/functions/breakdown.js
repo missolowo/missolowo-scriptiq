@@ -110,7 +110,24 @@ exports.handler = async function(event) {
     // ── Rate limit — only on first chunk so multi-chunk jobs aren't self-blocked ──
     if (!isAdmin && isFirstChunk) {
       const clientIP = getClientIP(event);
-      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 5, user_id || null);
+      // Twenty an hour, per account — not five.
+      //
+      // The counter increments on every ATTEMPT, before any work happens, so
+      // a failed run costs an attempt while charging no credit. A filmmaker
+      // on a weak connection could be locked out for an hour having received
+      // nothing, with unused credits sitting in their account — which is
+      // very nearly what happened to a Founding Tester whose runs kept
+      // failing: four attempts used, three credits untouched, one more and
+      // she would have been shut out.
+      //
+      // It is also per ACCOUNT, not per address (see the key below), so this
+      // never limits how many people can use Slate at once. It limits how
+      // fast one of them can go, which is what protects us: the credit is
+      // only charged when the LAST section finishes, so abandoned runs cost
+      // us AI calls and charge nothing.
+      //
+      // Twenty is invisible to a filmmaker and immediate to a script.
+      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 20, user_id || null);
       if (!rateLimit.allowed) {
         return {
           statusCode: 429, headers,
