@@ -1,0 +1,11 @@
+# Missolowo Slate
+#
+# Everything on the public site is open to crawlers. The Workspace needs
+# an account, so there is nothing to index behind it, and the Netlify
+# functions are an API rather than pages.
+
+User-agent: *
+Allow: /
+Disallow: /.netlify/
+
+Sitemap: https://missolowo.com/sitemap.xml
