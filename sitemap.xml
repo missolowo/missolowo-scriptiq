@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tells search engines which pages exist and matter.
+
+  Only the homepage is listed. app.html is the Workspace: it needs an
+  account, so there is nothing there for a search result to show, and a
+  thin login page competing with the homepage helps nobody.
+
+  lastmod is the date the page last changed in a way worth re-reading.
+  Update it when the homepage changes substantially; it does not need
+  touching for a typo.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://missolowo.com/</loc>
+    <lastmod>2026-10-08</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
