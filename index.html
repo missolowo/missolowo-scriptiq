@@ -50,6 +50,33 @@
   }
 </script>
 
+<!-- Structured data. Search engines read this rather than guessing at the
+     page, and it is how a price can appear in a result or an AI answer.
+     Same duplication caveat as the pricing cards below: update it alongside
+     lib/slate-pricing.js. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Missolowo Slate",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "url": "https://missolowo.com/",
+  "description": "Script breakdown, shooting schedules and call sheets for filmmakers. Upload a screenplay and get production-ready documents in minutes, in 17 languages.",
+  "inLanguage": "en",
+  "author": {
+    "@type": "Person",
+    "name": "Elizabeth Olalere",
+    "jobTitle": "Film Producer and Production Manager"
+  },
+  "offers": [
+    { "@type": "Offer", "name": "Starter \u00b7 5 credits", "price": "3000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing" },
+    { "@type": "Offer", "name": "Professional \u00b7 15 credits", "price": "8500", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing" },
+    { "@type": "Offer", "name": "Studio \u00b7 40 credits", "price": "20000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing" }
+  ]
+}
+</script>
+
 <link rel="stylesheet" href="/tokens.css">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1103,8 +1130,53 @@ a { color: inherit; }
            what they pay cannot drift apart. The launch offer also ends by
            itself once the hundredth customer has paid — nobody has to
            remember to take the banner down. -->
-      <div id="pricingOffer"></div>
-      <div class="price__grid" id="pricingGrid"></div>
+      <!-- ── The prices below are a STARTING STATE, not the source of truth ──
+           The script at the foot of this page replaces them with live values
+           from /.netlify/functions/pricing the moment it runs.
+
+           They are written out here because crawlers and AI summarisers do
+           not run JavaScript. With an empty grid, Google's own AI read this
+           page and reported that we "do not list the actual price per
+           credit" — so anyone asking it what Slate costs was told we would
+           not say, which reads as evasive rather than as a technical quirk.
+
+           THIS IS THE ONE PLACE A PRICE IS DUPLICATED.
+           If you change pricing, edit netlify/functions/lib/slate-pricing.js
+           AND these three cards, or a crawler will keep quoting the old
+           figure long after the page shows the new one. Visitors always see
+           the live price; only machines see this. -->
+      <div id="pricingOffer">
+        <span class="price__offer">Launch offer &middot; first 100 customers</span>
+      </div>
+      <div class="price__grid" id="pricingGrid">
+        <article class="price__card">
+          <p class="price__name">Starter</p>
+          <p class="price__amount">&#8358;3,000</p>
+          <p class="price__was"><s>&#8358;5,000</s> after the launch offer</p>
+          <p class="price__copy"><span class="price__credits">5 credits</span> &mdash;
+            5 screenplays prepared for production.</p>
+          <a class="btn btn--gold" href="/app.html?auth=signup#billing"
+             data-cta="pricing" data-cta-action="starter"><span>Get started</span></a>
+        </article>
+        <article class="price__card">
+          <p class="price__name">Professional</p>
+          <p class="price__amount">&#8358;8,500</p>
+          <p class="price__was"><s>&#8358;10,000</s> after the launch offer</p>
+          <p class="price__copy"><span class="price__credits">15 credits</span> &mdash;
+            15 screenplays prepared for production.</p>
+          <a class="btn btn--gold" href="/app.html?auth=signup#billing"
+             data-cta="pricing" data-cta-action="professional"><span>Get started</span></a>
+        </article>
+        <article class="price__card">
+          <p class="price__name">Studio</p>
+          <p class="price__amount">&#8358;20,000</p>
+          <p class="price__was"><s>&#8358;25,000</s> after the launch offer</p>
+          <p class="price__copy"><span class="price__credits">40 credits</span> &mdash;
+            40 screenplays prepared for production.</p>
+          <a class="btn btn--gold" href="/app.html?auth=signup#billing"
+             data-cta="pricing" data-cta-action="studio"><span>Get started</span></a>
+        </article>
+      </div>
 
       <div class="price__includes">
         <p class="price__name">Every credit includes</p>
