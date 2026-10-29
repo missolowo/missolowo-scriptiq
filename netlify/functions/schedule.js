@@ -243,11 +243,22 @@ exports.handler = async function(event, context) {
           ? crowdedDays + ' day' + (crowdedDays > 1 ? 's have' : ' has') + ' more than three locations. Consider adding shoot days — company moves cost time and money.'
           : '',
         schedule: days.map(function (d, i) {
+          // How many of this day's scenes have no location in the script.
+          // A blank location is correctly kept OUT of the day header — but
+          // the SCENES still land in the day, so a day could read
+          // "DAY 01 · IGI ODAN" while seven of its nine scenes belong
+          // nowhere near Igi Odan. A crew reads that header and drives.
+          var unplaced = d.scenes.filter(function (s) {
+            return !String(s.loc || '').trim();
+          }).length;
           return {
             day: i + 1,
             date: addDays(baseDate, i) || baseDate,
             location: d.locations.join(' · '),
             locations: d.locations.slice(),
+            // Counted and reported, never hidden. The documents that read
+            // this can say so plainly instead of implying a place.
+            scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
            scenes: d.scenes.map(function (s) {
               return {
@@ -287,12 +298,23 @@ exports.handler = async function(event, context) {
 
       // ── Small AI pass for production notes only — fails safe ──
       try {
-        const notePrompt = 'You are a Nollywood production manager. For each shoot day below, write one short production note (logistics, moves, night-shoot warnings). Return JSON: {"notes":[{"day":1,"note":"..."}]}\n\n'
+        // scenes_without_location is sent, and the instruction says what to
+        // do about it. Without it the model was told only "day 1, location
+        // Igi Odan, 9 scenes" and wrote "All scenes to be shot in Igi Odan"
+        // for a day where seven scenes have no location in the script at
+        // all. A production note that names the wrong place is worse than
+        // no note: a crew acts on it.
+        const notePrompt = 'You are a Nollywood production manager. For each shoot day below, write one short production note (logistics, moves, night-shoot warnings).\n'
+          + 'IMPORTANT: scenes_without_location is the number of scenes that day whose location the screenplay never states. '
+          + 'NEVER write that all scenes are at a named location when scenes_without_location is above zero — say instead that '
+          + 'those scenes still need a location before the day can be planned. If scenes_without_location is 0, do not mention it.\n'
+          + 'Return JSON: {"notes":[{"day":1,"note":"..."}]}\n\n'
           + JSON.stringify(schedule.schedule.map(function (d) {
               return {
                 day: d.day,
                 location: d.location,
                 scenes: d.scenes.length,
+                scenes_without_location: d.scenes_without_location,
                 night: d.scenes.filter(function (s) { return String(s.time_of_day).toUpperCase().indexOf('NIGHT') >= 0; }).length
               };
             }));
