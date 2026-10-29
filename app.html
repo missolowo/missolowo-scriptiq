@@ -1071,8 +1071,16 @@
       //
       // Defined once and used by both the recorder and the splitter, which
       // previously carried their own near-identical copies.
+      // Group 1 is the number. Group 2 is the annotation in brackets, which
+      // is continuity information and must not be thrown away: "(FLASHBACK)",
+      // "(Back to original scene)", "(DREAM)", "(MONTAGE)". A continuity
+      // supervisor needs to know which scenes are flashbacks — the cast look
+      // different, the costume is different, and the scenes usually shoot
+      // together. We read it off the page rather than asking the model,
+      // because the model is only told to look at the HEADING and this is
+      // written on the number line above it.
       var SLATE_NUM_ONLY_SRC =
-        '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*(?:\\([^)]*\\))?[ \\t]*$';
+        '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*(?:\\(([^)]*)\\))?[ \\t]*$';
 
       // A heading is either an INT/EXT word, or a SCENE word followed by a number.
       var slateHeadingSrc =
@@ -1087,6 +1095,55 @@
       // Now each section's numbers are recorded in order, and the merge fills
       // any null the model returns. The model is asked to read; the code keeps
       // the facts it already had.
+      // What a bracketed annotation on a scene-number line means, as a
+      // scene type a crew would recognise. Anything that reads as a return
+      // to the present clears the type rather than setting one — "Back to
+      // original scene" is not a kind of scene, it is the end of a flashback.
+      function slateSceneTypeFrom(note) {
+        var n = String(note || '').trim();
+        if (!n) return null;
+        // A return is not a kind of scene, but it is not nothing either: it
+        // is where the flashback ENDS. Recorded distinctly so the scenes in
+        // between can be filled in.
+        if (/back to (the )?(original|previous|present|normal)/i.test(n)) return 'RETURN';
+        if (/flash\s*back/i.test(n))   return 'FLASHBACK';
+        if (/flash\s*forward/i.test(n)) return 'FLASHFORWARD';
+        if (/dream/i.test(n))          return 'DREAM';
+        if (/montage/i.test(n))        return 'MONTAGE';
+        if (/inter\s*cut/i.test(n))    return 'INTERCUT';
+        if (/vision|memory|fantasy/i.test(n)) return n.toUpperCase();
+        return null;
+      }
+
+      // One scan, two answers. slateSceneNumbersIn keeps returning plain
+      // numbers because the merge and the splitter both count on that; this
+      // returns the same list with the annotation alongside each one.
+      function slateSceneMarksIn(sectionText) {
+        var raw = String(sectionText || '').split(/\r?\n/);
+        var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
+        var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
+        var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
+        var out = [];
+        for (var i = 0; i < raw.length; i++) {
+          var m = raw[i].match(numOnly);
+          if (m) {
+            var note = slateSceneTypeFrom(m[2]);
+            var look = i + 1;
+            while (look < raw.length && !raw[look].trim()) look++;
+            if (look < raw.length && headStart.test(raw[look])) {
+              out.push({ number: m[1], type: note }); i = look; continue;
+            }
+            out.push({ number: m[1], type: note });
+            continue;
+          }
+          if (headStart.test(raw[i])) {
+            var wn = raw[i].match(withNum);
+            out.push({ number: wn ? wn[1] : null, type: null });
+          }
+        }
+        return out;
+      }
+
       function slateSceneNumbersIn(sectionText) {
         var raw = String(sectionText || '').split(/\r?\n/);
         // Fold "SCENE 5" on its own line into the heading beneath it, so the
@@ -1119,8 +1176,17 @@
 
       function slateRecordNumbers(chunks) {
         try {
-          window.slateChunkNumbers = chunks.map(slateSceneNumbersIn);
-        } catch (e) { window.slateChunkNumbers = null; }
+          var marks = chunks.map(slateSceneMarksIn);
+          window.slateChunkNumbers = marks.map(function (list) {
+            return list.map(function (m) { return m.number; });
+          });
+          // Recorded alongside, so a flashback the writer marked on the
+          // number line reaches the breakdown, the schedule and the call
+          // sheet instead of being discarded.
+          window.slateChunkTypes = marks.map(function (list) {
+            return list.map(function (m) { return m.type; });
+          });
+        } catch (e) { window.slateChunkNumbers = null; window.slateChunkTypes = null; }
         return chunks;
       }
 
@@ -1540,6 +1606,17 @@
             // 47-scene screenplay came back with "scene 1" appearing under
             // nine separate locations. We already knew the right answer and
             // were letting the model overrule it.
+            // A scene type the writer wrote on the page beats one the model
+            // inferred, for the same reason the number does: we read it, it
+            // guessed. Only ever sets a type, never clears one the model
+            // found in the heading.
+            if (slateUseRec) {
+              var recTypes = (window.slateChunkTypes || [])[slateChunkIdx];
+              var recType = recTypes && recTypes[slateSceneInChunk];
+              if (recType === 'RETURN') scene.slate_returns_to_present = true;
+              else if (recType) scene.scene_type = recType;
+            }
+
             if (slateUseRec) {
               label = slateRec[slateSceneInChunk] ? String(slateRec[slateSceneInChunk]) : null;
             } else if (!slateScriptHasNumbers || slateLooksRenumbered) {
@@ -1673,6 +1750,74 @@
         // "#13", and a filmmaker reasonably asked why.
         merged.scenes.forEach(function (s) { s.scene_label = labelFor(s); });
 
+        // ── Carry a flashback across the scenes it actually covers ──
+        // A writer marks where a flashback BEGINS and where it returns to the
+        // present. The scenes between carry no marking, but they are still in
+        // the flashback and a crew reading the breakdown has to know that.
+        //
+        // What this does NOT do is tell anyone what a flashback looks like.
+        // A flashback is a different time — it could be two months ago or
+        // 1970 — so its costume, hair and makeup are a period decision for
+        // the designer, not something derivable from the script. Only the
+        // present-day scenes, and the scenes that return to the present, can
+        // be relied on to match each other.
+        //
+        //    Scene 38  FLASHBACK         marked in the script
+        //    Scene 39  FLASHBACK         we worked this out
+        //    Scene 40  FLASHBACK         we worked this out
+        //    Scene 41  BACK TO PRESENT   marked in the script
+        //
+        // Every note says which of those two it is, so a reader can always
+        // tell what the script stated from what we inferred.
+        (function () {
+          var spans = [];
+          var open = null;
+          merged.scenes.forEach(function (s, i) {
+            if (s.slate_returns_to_present) {
+              if (open) { open.endsBefore = i; open.returnsAt = s.scene_label; open = null; }
+              return;
+            }
+            if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') {
+              if (open) open.endsBefore = i;
+              open = { type: s.scene_type, from: i, label: s.scene_label,
+                       endsBefore: merged.scenes.length, returnsAt: null };
+              spans.push(open);
+            }
+          });
+
+          var inSpan = {};
+          spans.forEach(function (sp) {
+            for (var i = sp.from; i < sp.endsBefore; i++) inSpan[i] = sp;
+          });
+
+          merged.scenes.forEach(function (s, i) {
+            var sp = inSpan[i];
+            if (s.slate_returns_to_present) {
+              delete s.slate_returns_to_present;
+              var closed = spans.filter(function (x) { return x.endsBefore === i; })[0];
+              s.scene_type = 'BACK TO PRESENT';
+              s.slate_time_frame = 'present';
+              s.scene_continuity = closed
+                ? 'The ' + closed.type.toLowerCase() + ' that began at scene ' + closed.label
+                  + ' ends here. Present day again, so this scene matches the present-day scenes '
+                  + 'on either side of it.'
+                : 'Back to the present. Marked in the script.';
+              return;
+            }
+            if (!sp) return;
+            s.scene_type = sp.type;
+            s.slate_time_frame = 'other';
+            var ends = sp.returnsAt
+              ? ' It runs until the script returns to the present at scene ' + sp.returnsAt + '.'
+              : ' The script never marks a return, so it runs to the end of the script.';
+            s.scene_continuity = (i === sp.from)
+              ? 'Marked ' + sp.type.toLowerCase() + ' in the script.' + ends
+              : 'Still inside the ' + sp.type.toLowerCase() + ' that begins at scene ' + sp.label
+                + '. The script does not mark this scene \u2014 we worked it out from the '
+                + sp.type.toLowerCase() + ' marker above and the return below.';
+          });
+        })();
+
         merged.scenes.forEach(function (s) {
           var label = s.scene_label;
 
@@ -1703,7 +1848,7 @@
             // they existed. A visible group they can fill in is useful; a
             // silent omission is how a crew ends up with nowhere to be.
             if (!locMap[SLATE_NO_LOCATION_KEY]) {
-              locMap[SLATE_NO_LOCATION_KEY] = { set_location: 'Location not in script heading', scenes: [] };
+              locMap[SLATE_NO_LOCATION_KEY] = { set_location: 'Location not specified in script', scenes: [] };
             }
             if (locMap[SLATE_NO_LOCATION_KEY].scenes.indexOf(label) < 0) {
               locMap[SLATE_NO_LOCATION_KEY].scenes.push(label);
@@ -1807,8 +1952,24 @@
           + chip(locs.filter(function(l){return !l.no_location;}).length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
         html += scenes.map(function(s) {
-          return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
-            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number))) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || '—') + '. ' + (s.location || s.set_location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—') + '</span></div>'
+          // Colour marks the time frame, the way BG marks background actors.
+          // A flashback is another time: scanning the breakdown, a reader
+          // should see where the story leaves the present without reading a
+          // word. Violet because gold is the brand, green is complete, amber
+          // is caution and red is an error — none of those mean "another time".
+          var slateOther = s.slate_time_frame === 'other';
+          return '<div style="padding:14px 16px;margin-bottom:8px;background:' + (slateOther ? 'rgba(139,125,216,0.07)' : 'var(--ink-2,#1B1D22)') + ';border:1px solid ' + (slateOther ? 'rgba(139,125,216,0.32)' : 'var(--line-1,#2E323A)') + ';border-left:' + (slateOther ? '3px solid #8B7DD8' : '1px solid var(--line-1,#2E323A)') + ';border-radius:8px">'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number))) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || '—') + '. ' + (s.location || s.set_location || 'Location not specified in script') + ' — ' + (s.time_of_day || '—') + '</span>'
+            // Continuity information, and it was being collected and thrown
+            // away. A flashback shoots with different costume, hair and
+            // makeup, and the scenes usually shoot together — an AD needs to
+            // see it on the breakdown, not work it out from the script.
+            + (s.scene_type ? '<span style="margin-left:10px;padding:2px 8px;border:1px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:999px;font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + ';vertical-align:middle">' + s.scene_type + '</span>' : '')
+            + '</div>'
+            // Said in words, not just a badge. A reader should never have to
+            // work out whether they are inside a flashback by counting back
+            // through the script.
+            + (s.scene_continuity ? '<div style="margin-top:6px;padding:7px 10px;background:' + (slateOther ? 'rgba(139,125,216,0.09)' : 'rgba(127,174,126,0.08)') + ';border-left:2px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:3px;font-size:12px;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + '">' + s.scene_continuity + '</div>' : '')
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
             + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
             // Background is extracted by the breakdown and was being thrown
@@ -2875,7 +3036,9 @@
           pdf.sceneNumeral(s.scene_label || s.scene_number);
           // Never invent INT or DAY. A breakdown sheet that states a time of
           // day the script does not give is a lie a crew will act on.
-          pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—'));
+          pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not specified in script') + ' — ' + (s.time_of_day || '—')
+            + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
+          if (s.scene_continuity) pdf.body(s.scene_continuity);
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 158);
           pdf.gap(2);
@@ -2969,7 +3132,7 @@
             // which room, not which building.
              var schSet = sc.set || sc.location || sc.set_location || '';
             if (!schSet || schSet === 'null' || schSet === 'undefined') schSet = '—';
-            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet); 
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet + (sc.scene_type ? '   [' + sc.scene_type + ']' : '')); 
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -3122,7 +3285,7 @@
           // a crew reads. Blank is honest; null looks like a fault.
           var csSet = s.set || s.location || '';
           if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
-          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + ((s.time_of_day || '\u2014').charAt(0)) + '   ' + csSet);
+          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + ((s.time_of_day || '\u2014').charAt(0)) + '   ' + csSet + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
