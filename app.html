@@ -2482,7 +2482,7 @@
         }
        html += days.map(function(d) {
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
-            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || '') + '</span></div>'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || 'No location set') + (d.scenes_without_location ? '</span><span style="color:var(--warn,#C97E3D);font-family:inherit;font-size:12px;margin-left:10px">\u00b7 ' + d.scenes_without_location + ' scene' + (d.scenes_without_location > 1 ? 's' : '') + ' with no location in the script' : '') + '</span></div>'
             + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number; }).join(', ') + '</div>'
            + (function () {
                 var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
@@ -3194,7 +3194,27 @@
         ]);
 
         days.forEach(function(day, di) {
-          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || ''));
+          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set'));
+          // A day header naming real places while most of its scenes belong
+          // to none of them is how a crew ends up driving somewhere for
+          // nothing. Said plainly, directly under the header.
+          if (day.scenes_without_location) {
+            // Number agreement all the way through the sentence, not only in
+            // the first clause. One scene reads "1 scene ... has ... That scene
+            // is NOT at X. Add its location"; two or more reads plural.
+            var slateNoLoc = day.scenes_without_location;
+            var slateMany = slateNoLoc > 1;
+            pdf.annotation(slateNoLoc + ' scene' + (slateMany ? 's' : '')
+              + ' on this day ' + (slateMany ? 'have' : 'has')
+              + ' no location in the script. '
+              + (day.location
+                  ? (slateMany ? 'Those scenes are' : 'That scene is')
+                    + ' NOT at ' + day.location + '. '
+                  : '')
+              + 'Add ' + (slateMany ? 'their locations' : 'its location')
+              + ' in Production Details before planning the day.', 34, 150);
+            pdf.gap(3);
+          }
           (day.scenes || []).forEach(function(sc) {
             pdf.check(24);
               pdf.sceneNumeral(sc.scene_label || sc.scene_number);
@@ -3226,9 +3246,15 @@
         if (s.cast_release_schedule && s.cast_release_schedule.length) {
           pdf.sectionHeader('Cast Release Schedule');
           s.cast_release_schedule.forEach(function(c) {
-            pdf.check(12);
+            // Each row costs gap(9) + a body line + gap(2) + rule ~= 17, and the
+            // days_required list can wrap to a second line. check(12) let a row
+            // start too near the bottom and run off the page.
+            pdf.check(24);
             pdf.slugline(c.character || '', 15);
-            pdf.gap(6);
+            // gap(9), not gap(6). slugline draws at y+4, so six units leaves
+            // two between baselines and the line below printed through the
+            // actor's name. Every other caller of slugline already uses 9.
+            pdf.gap(9);
             pdf.body('Days required: ' + (c.days_required || []).join(', ') + '   ·   Release: Day ' + (c.release_day || '—'), 15, 175);
             pdf.gap(2);
             pdf.rule();
