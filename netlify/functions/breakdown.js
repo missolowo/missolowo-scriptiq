@@ -125,7 +125,7 @@ exports.handler = async function(event) {
   try {
     const {
       script, language, user_email, user_id,
-      chunk_index, total_chunks, production_id
+      chunk_index, total_chunks, production_id, retry_english
     } = JSON.parse(event.body);
     errProductionId = production_id || null;
 
@@ -240,7 +240,24 @@ exports.handler = async function(event) {
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
 
-      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
+    // ── Second attempt at a section that came back in the source language ──
+    // The workspace checks the answer and asks again when a whole section
+    // drifts. Repeating the identical request would mostly reproduce the
+    // identical answer, so the instruction is sharpened and the temperature
+    // dropped to zero for the retry. This text is deliberately blunt: the
+    // polite version is already in the prompt and it did not hold.
+    const retryNote = retry_english
+      ? '\n\nCRITICAL — YOUR PREVIOUS ANSWER FOR THIS SECTION WAS REJECTED.\n'
+        + 'You returned the scene descriptions in the screenplay\'s own language. '
+        + 'That is wrong and it is the single most important rule in this task. '
+        + 'EVERY description, location, set, prop, costume, equipment and note '
+        + 'must be written in ENGLISH. Read the original, understand it, and '
+        + 'then WRITE IT IN ENGLISH. Do not copy, quote or paraphrase the '
+        + 'screenplay in its own language anywhere in your answer. '
+        + 'Character names are the only thing copied exactly as written.\n'
+      : '';
+
+      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}${retryNote}Analyze the following screenplay and extract ALL production elements.
 ${langInstruction}
 
 SCENE BOUNDARIES — the most important rule in this task:
@@ -354,7 +371,9 @@ RULES:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 16000,
-        temperature: 0.1,
+        // Zero on a retry: the first answer broke the one rule that
+        // matters, so there is nothing to be gained from variation.
+        temperature: retry_english ? 0 : 0.1,
         response_format: { type: "json_object" },
               messages: [
           {
