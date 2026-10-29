@@ -1057,6 +1057,23 @@
       // SLATE_NUM  — the SCENE/SC word, for scripts that number their scenes.
       var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
       var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+      // A scene-number line standing on its own: "SCENE 5", "Scene 12.",
+      // and — the shape that broke this — "Scene 36 (FLASHBACK)".
+      //
+      // The trailing parenthetical is why five scenes in one real Yorùbá
+      // screenplay were counted TWICE. Without it this test failed, so the
+      // number line and the heading beneath it were read as two separate
+      // scenes: a 47-scene script was recorded as 52, the per-section counts
+      // stopped matching what the model returned, and the scene-number
+      // recording could never align. Writers annotate scene numbers
+      // constantly — (FLASHBACK), (CONTINUED), (Back to original scene) —
+      // and every one of those is still just a scene number.
+      //
+      // Defined once and used by both the recorder and the splitter, which
+      // previously carried their own near-identical copies.
+      var SLATE_NUM_ONLY_SRC =
+        '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*(?:\\([^)]*\\))?[ \\t]*$';
+
       // A heading is either an INT/EXT word, or a SCENE word followed by a number.
       var slateHeadingSrc =
         '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
@@ -1074,7 +1091,7 @@
         var raw = String(sectionText || '').split(/\r?\n/);
         // Fold "SCENE 5" on its own line into the heading beneath it, so the
         // pair counts as one scene — the same shape the splitter produces.
-        var numOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*$', 'i');
+        var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
         var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
         var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
         var out = [];
@@ -1084,6 +1101,13 @@
             var look = i + 1;
             while (look < raw.length && !raw[look].trim()) look++;
             if (look < raw.length && headStart.test(raw[look])) { out.push(m[1]); i = look; continue; }
+            // A numbered scene with NO heading line beneath it. Common in
+            // Nollywood scripts, where a writer numbers the scene and goes
+            // straight into the action. It is still a scene and the number
+            // is still right there — this used to fall through and record a
+            // null for a number printed on the page.
+            out.push(m[1]);
+            continue;
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
@@ -1161,7 +1185,7 @@
         // one section while its scene starts the next, so the AI never sees
         // the number and correctly returns null. Ten scenes lost their
         // numbers this way in one real script; one scene vanished entirely.
-        var slateNumOnly = new RegExp('^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*[0-9][0-9A-Za-z.\\-]*[.):]?[ \\t]*$', 'i');
+        var slateNumOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
         var slateJoined = [];
         for (var si = 0; si < segments.length; si++) {
           var seg = segments[si];
@@ -1287,6 +1311,11 @@
           .trim();
       } 
   
+      // Reserved key for scenes whose heading names no place. Cannot collide
+      // with a real location: slateLocationKey only ever returns letters and
+      // digits, never a space.
+      var SLATE_NO_LOCATION_KEY = '\u0000no location';
+
       // ── Locations that are not locations ──
       // The model returns these when a scene heading genuinely carries no
       // place, and they were being printed on call sheets as though they
@@ -1637,8 +1666,15 @@
 
         var charMap = {}, locMap = {};
 
+        // Work the label out ONCE and carry it on the scene, so the scene
+        // list, the character report, the location report and the exports
+        // all say the same thing. They used to disagree: the scene list
+        // printed "—" for an unnumbered scene while the other two printed
+        // "#13", and a filmmaker reasonably asked why.
+        merged.scenes.forEach(function (s) { s.scene_label = labelFor(s); });
+
         merged.scenes.forEach(function (s) {
-          var label = labelFor(s);
+          var label = s.scene_label;
 
           (s.cast || []).forEach(function (c) {
             var name = String(c || '').trim();
@@ -1659,6 +1695,19 @@
             if (!locMap[lk]) locMap[lk] = { set_location: loc, scenes: [] };
             else locMap[lk].set_location = slateBetterLabel(locMap[lk].set_location, loc);
             if (locMap[lk].scenes.indexOf(label) < 0) locMap[lk].scenes.push(label);
+          } else {
+            // A scene whose heading names no place still has to appear.
+            // These used to drop out of the location report entirely — on
+            // one 47-scene screenplay, SEVENTEEN scenes were simply absent,
+            // and a production manager reading the report had no way to know
+            // they existed. A visible group they can fill in is useful; a
+            // silent omission is how a crew ends up with nowhere to be.
+            if (!locMap[SLATE_NO_LOCATION_KEY]) {
+              locMap[SLATE_NO_LOCATION_KEY] = { set_location: 'Location not in script heading', scenes: [] };
+            }
+            if (locMap[SLATE_NO_LOCATION_KEY].scenes.indexOf(label) < 0) {
+              locMap[SLATE_NO_LOCATION_KEY].scenes.push(label);
+            }
           }
         });
 
@@ -1669,8 +1718,22 @@
 
         merged.outline_schedule = Object.keys(locMap).map(function (k) {
           var l = locMap[k];
-          return { set_location: slateTitleCase(l.set_location), scenes: l.scenes, total: l.scenes.length };
-        }).sort(function (a, b) { return b.total - a.total; });
+          var noLoc = (k === SLATE_NO_LOCATION_KEY);
+          return {
+            set_location: noLoc ? l.set_location : slateTitleCase(l.set_location),
+            scenes: l.scenes,
+            total: l.scenes.length,
+            // Marked so the schedule never tries to send a crew here and the
+            // report can show it apart from real places.
+            no_location: noLoc || undefined
+          };
+        }).sort(function (a, b) {
+          // The unplaced group always sits last, however many scenes it
+          // holds — it is a list of questions, not a shooting location.
+          if (a.no_location && !b.no_location) return 1;
+          if (b.no_location && !a.no_location) return -1;
+          return b.total - a.total;
+        });
 
          // One canonical spelling per character and location, everywhere.
         // Reports 2 and 3 were already normalised, but each scene still
@@ -1680,7 +1743,12 @@
         // this applies it back to the scenes the crew actually reads.
         var slateCanonCast = {}, slateCanonLoc = {};
         merged.character_breakdown.forEach(function (c) { slateCanonCast[slateKey(c.character)] = c.character; });
-        merged.outline_schedule.forEach(function (l) { slateCanonLoc[slateKey(l.set_location)] = l.set_location; });
+        // The unplaced group is not a place, so it must not become the
+        // canonical spelling of anything.
+        merged.outline_schedule.forEach(function (l) {
+          if (l.no_location) return;
+          slateCanonLoc[slateKey(l.set_location)] = l.set_location;
+        });
         merged.scenes.forEach(function (s) {
           if (Array.isArray(s.cast)) {
             var seen = {};
@@ -1736,11 +1804,11 @@
         }
         html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">'
           + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
-          + chip(locs.length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
+          + chip(locs.filter(function(l){return !l.no_location;}).length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
         html += scenes.map(function(s) {
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
-            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || '—') + '. ' + (s.location || s.set_location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—') + '</span></div>'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number))) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || '—') + '. ' + (s.location || s.set_location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—') + '</span></div>'
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
             + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
             // Background is extracted by the breakdown and was being thrown
@@ -2347,7 +2415,7 @@
               var bg = bgText
                 ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
                 : '';
-              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_number == null ? '—' : s.scene_number) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
           + cast.map(function(c) {
               return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
@@ -2798,13 +2866,13 @@
          pdf.cover((slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Scenes', scenes.length],
           ['Characters', chars.length],
-          ['Locations', locs.length]
+          ['Locations', locs.filter(function(l){return !l.no_location;}).length]
         ]);
 
         pdf.sectionHeader('Report 1 — Scene Breakdown');
         scenes.forEach(function(s) {
           pdf.check(28);
-          pdf.sceneNumeral(s.scene_number);
+          pdf.sceneNumeral(s.scene_label || s.scene_number);
           // Never invent INT or DAY. A breakdown sheet that states a time of
           // day the script does not give is a lie a crew will act on.
           pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—'));
@@ -2896,7 +2964,7 @@
           pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || ''));
           (day.scenes || []).forEach(function(sc) {
             pdf.check(24);
-              pdf.sceneNumeral(sc.scene_number);
+              pdf.sceneNumeral(sc.scene_label || sc.scene_number);
              // Day header carries the location; the row names the SET —
             // which room, not which building.
              var schSet = sc.set || sc.location || sc.set_location || '';
@@ -3048,7 +3116,7 @@
         pdf.sectionHeader("Today's Scene Schedule");
         scenes.forEach(function(s) {
           pdf.check(20);
-          pdf.sceneNumeral(s.scene_number);
+          pdf.sceneNumeral(s.scene_label || s.scene_number);
           // Location is the address in the header; the row names the SET.
           // A missing set must never print as the word "null" on a document
           // a crew reads. Blank is honest; null looks like a fault.
@@ -3298,7 +3366,7 @@
         var lines = [];
         for (var hl = 0; hl < rawLines.length; hl++) {
           var cur = rawLines[hl];
-          if (/^[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*$/i.test(cur)) {
+          if (new RegExp(SLATE_NUM_ONLY_SRC, 'i').test(cur)) {
             var look = hl + 1;
             while (look < rawLines.length && !rawLines[look].trim()) look++;
             if (look < rawLines.length) {
@@ -3378,6 +3446,7 @@
             score: 0,
             band: 'red',
             sceneCount: 0,
+            sceneTotal: 0,
             findings: [{ level: 'high', title: 'No scene headings found',
               detail: 'We could not find scene headings in a format we recognise yet. Your script can still be broken down — scenes will be detected from the text.' }]
           };
@@ -3523,7 +3592,15 @@
         score = Math.max(0, Math.min(100, Math.round(score)));
         var band = score >= 85 ? 'green' : score >= 60 ? 'amber' : 'red';
  
-        return { score: score, band: band, sceneCount: scenes.length, findings: findings };
+        // sceneCount counts HEADINGS. sceneTotal counts SCENES, using the
+        // same reader the splitter uses — and they differ: a writer who
+        // numbers a scene and goes straight into the action has a scene
+        // with no heading. Showing the heading count as though it were the
+        // scene count made one 47-scene screenplay report as 38.
+        var sceneTotal = scenes.length;
+        try { sceneTotal = Math.max(scenes.length, slateSceneNumbersIn(text).length); } catch (e) {}
+        return { score: score, band: band, sceneCount: scenes.length,
+                 sceneTotal: sceneTotal, findings: findings };
      }
       window.slateHealthCheck = slateHealthCheck;
     
@@ -3592,7 +3669,7 @@
           + '<span style="font-size:18px;font-weight:600;color:' + c + '">' + r.score + '</span></div>'
           + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Script Health Check</div>'
           + '<div style="font-size:15px;font-weight:600;color:var(--paper,#F4EFE6);margin-top:4px">' + labels[r.band] + '</div>'
-          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">' + r.sceneCount + ' scene headings found</div>'
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">' + (r.sceneTotal || r.sceneCount) + ' scenes found</div>'
           + '</div></div>';
 
         if (r.findings.length) {
@@ -3726,9 +3803,16 @@
           chunks.forEach(function (c) {
             var L = c.split('\n');
             L.forEach(function (l, i) {
-              if (/^[ \t]*(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*$/i.test(l)) {
-                var n = (L[i + 1] || '').trim();
-                if (!/^(?:INT|EXT|INTERIOR|EXTERIOR|ИНТ|НАТ|ПАВ)/i.test(n)) orphan++;
+              if (new RegExp(SLATE_NUM_ONLY_SRC, 'i').test(l)) {
+                // Orphaned means STRANDED: the number sits alone at the end
+                // of a section, cut off from the scene it labels.
+                //
+                // This used to require an INT/EXT heading on the next line.
+                // That is wrong for Nollywood scripts, where a writer often
+                // numbers a scene and goes straight into the action — ten
+                // scenes in one real screenplay do exactly that, and none of
+                // them is an orphan.
+                if (!L.slice(i + 1).join('').trim()) orphan++;
               }
             });
           });
