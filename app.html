@@ -1225,7 +1225,7 @@
         return final;
       }
 
-      async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId) {
+      async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId, retryEnglish) {
         try {
           const response = await fetch('/.netlify/functions/breakdown', {
             method: 'POST',
@@ -1237,7 +1237,11 @@
               user_id: user && user.id,
               chunk_index: chunkIndex,
               total_chunks: totalChunks,
-              production_id: productionId
+              production_id: productionId,
+              // Set only on a second attempt at a section that came back in
+              // the source language. Sending the identical request again
+              // would mostly reproduce the same answer.
+              retry_english: !!retryEnglish
             })
           });
           if (response.status === 402) {
@@ -1283,6 +1287,79 @@
           .trim();
       } 
   
+      // ── Locations that are not locations ──
+      // The model returns these when a scene heading genuinely carries no
+      // place, and they were being printed on call sheets as though they
+      // were addresses. "Travel destination, in English" is worse still —
+      // that is our own JSON template, copied out verbatim by the model and
+      // handed to a crew as somewhere to drive to.
+      function slateIsPlaceholderLocation(v) {
+        var s = String(v || '').trim().toLowerCase();
+        if (!s) return true;
+        if (['null','undefined','n/a','na','-','—','none','tbd','unknown'].indexOf(s) !== -1) return true;
+        if (/^unknown\b/.test(s)) return true;
+        // Prompt-template text that leaked through.
+        if (/,?\s*in english$/.test(s)) return true;
+        if (/^(travel destination|location name|space within|space inside|one sentence)/.test(s)) return true;
+        return false;
+      }
+
+      // ── Junk the model returns as if it were data ──
+      // "null", "N/A" and "undefined" arrive as STRINGS, so every `x || 'DAY'`
+      // fallback in the renderers sailed straight past them and printed them
+      // on the page. One tester's scene read, in full: "null. null — null".
+      function slateCleanField(v) {
+        var s = String(v === undefined || v === null ? '' : v).trim();
+        if (!s) return null;
+        var low = s.toLowerCase();
+        if (['null','undefined','nan','n/a','na','none','tbd','-','—'].indexOf(low) !== -1) return null;
+        // Our own JSON template, copied out by the model and handed to a crew.
+        if (/,?\s*in english$/i.test(s)) return null;
+        if (/^(one sentence|character name|prop item|costume item|equipment item|notes)\b/i.test(s)) return null;
+        return s;
+      }
+
+      // ── One place, one key ──
+      // slateKey is built for people's names and keeps word boundaries, so
+      // "Ìdí Ọ̀ Gán" and "Idi Ogan" stayed apart, as did "Family's Apartment"
+      // and "Family Apartment". Locations need a blunter instrument, because
+      // the schedule GROUPS BY LOCATION: every spelling that survives is
+      // another day the crew drives somewhere they have already been.
+      //
+      // Three things this folds, each seen in real tester output:
+      //   diacritics and spacing   Ìdí Ọ̀ Gán   = Idi Ogan
+      //   the possessive s         Family's Apartment = Family Apartment
+      //   Yorùbá "Ilé X"           Ilé Oníṣègùn = Onisegun's House
+      //
+      // It deliberately does NOT merge names that differ by more than this.
+      // "Igi Odan" and "Idi Ogan" are different words, and guessing that two
+      // differently spelled Yorùbá names are one place would send a crew to
+      // the wrong village. Under-merging costs a duplicate row; over-merging
+      // costs a wasted shoot day.
+      var SLATE_LOC_STRUCTURAL = ['house','home','compound','apartment','flat',
+                                  'place','residence','quarters','building'];
+      function slateLocationKey(name) {
+        var s = String(name || '')
+          .normalize('NFD')
+          .replace(/[̀-ͯ]/g, '')
+          .toLowerCase()
+          .replace(/[‘’'`]s\b/g, '')   // possessive
+          .replace(/[‘’'`]/g, '')
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!s) return '';
+        var words = s.split(' ');
+        // "Ilé Shina" is "Shina's house" in Yorùbá.
+        if (words.length > 1 && (words[0] === 'ile' || words[0] === 'ilé')) words = words.slice(1);
+        // Trailing structural words, but never the last one standing: a scene
+        // set simply at "House" must stay "house", not collapse to nothing.
+        while (words.length > 1 && SLATE_LOC_STRUCTURAL.indexOf(words[words.length - 1]) !== -1) {
+          words.pop();
+        }
+        return words.join('');
+      }
+
         function slateBetterLabel(a, b) {
         var A = String(a || ''), B = String(b || '');
         // "Mixed case" must be tested in any alphabet, not just A-Z.
@@ -1372,6 +1449,27 @@
           var slateRec = (window.slateChunkNumbers || [])[slateChunkIdx];
           var slateUseRec = !!(slateRec && slateRec.length === scenes.length);
           var slateSceneInChunk = -1;
+
+          // Did the splitter find ANY scene number anywhere in this script?
+          // If not, the screenplay is unnumbered and every number the model
+          // offers is one it made up.
+          var slateAllRec = window.slateChunkNumbers || [];
+          var slateScriptHasNumbers = slateAllRec.some(function (list) {
+            return (list || []).some(function (n) { return !!n; });
+          });
+
+          // Does this section's output look like the model restarted counting
+          // at 1? A later section numbered 1,2,3... is renumbering, not
+          // reading — and that is what put one tester's "scene 1" under nine
+          // different locations.
+          var slateLooksRenumbered = (function () {
+            if (slateChunkIdx === 0) return false;
+            if (!scenes.length) return false;
+            for (var i = 0; i < scenes.length; i++) {
+              if (String(scenes[i].scene_number || '').trim() !== String(i + 1)) return false;
+            }
+            return true;
+          })();
            // Collapse duplicates that arrive WITHIN a single chunk — the AI
           // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
           function slateDedupe(list, nameField) {
@@ -1397,12 +1495,45 @@
             slateSceneInChunk++;
             var label = scene.scene_number;
             label = (label === undefined || label === null) ? '' : String(label).trim();
-            if (!label || label === 'null' || label === 'undefined' || label === 'NaN') label = null;
-            // The model dropped a number the splitter had already read. Restore it.
-            if (label === null && slateUseRec && slateRec[slateSceneInChunk]) {
-              label = String(slateRec[slateSceneInChunk]);
+            if (!label || label === 'null' || label === 'undefined' || label === 'NaN'
+                || label === 'N/A' || label === 'n/a' || label === '-') label = null;
+
+            // DERIVE, DON'T ASK — properly this time.
+            //
+            // The splitter reads the real scene numbers off the page before
+            // the model ever sees the text, and records a null where the
+            // heading carries no number. When that recording lines up with
+            // what came back, it is the whole truth and the model's version
+            // is discarded — including when the model sounds certain.
+            //
+            // This used to fill nulls only. So a model that confidently
+            // renumbered a section 1, 2, 3 kept its invented numbers, and a
+            // 47-scene screenplay came back with "scene 1" appearing under
+            // nine separate locations. We already knew the right answer and
+            // were letting the model overrule it.
+            if (slateUseRec) {
+              label = slateRec[slateSceneInChunk] ? String(slateRec[slateSceneInChunk]) : null;
+            } else if (!slateScriptHasNumbers || slateLooksRenumbered) {
+              // Either the screenplay has no numbering at all, or this
+              // section was plainly renumbered from 1. No number is honest;
+              // a wrong one is not. The crew works from their own pages.
+              label = null;
             }
-            
+
+            // Scrub the strings the model returns as data before anything
+            // renders them. Done once, here, rather than guarded at each of
+            // the eight places that print a scene.
+            ['int_ext','time_of_day','location','set','description',
+             'scene_type','story_day','background','production_notes'
+            ].forEach(function (f) {
+              if (f in scene) scene[f] = slateCleanField(scene[f]);
+            });
+            ['cast','props','costume','equipment'].forEach(function (f) {
+              if (Array.isArray(scene[f])) {
+                scene[f] = scene[f].map(slateCleanField).filter(Boolean);
+              }
+            });
+
             merged.scenes.push({
               ...scene,
               scene_number: label,
@@ -1460,6 +1591,50 @@
           return n;
         } 
 
+        // ── One place, one name ──
+        // Done here because this is the first moment every chunk is in and
+        // the whole script's locations can be seen together. A chunk only
+        // ever knows its own spellings.
+        //
+        // Two passes: count every spelling of each place, then rewrite every
+        // scene to the winning one. The winner is the spelling used most
+        // often, and slateBetterLabel settles a tie — so a place written
+        // once in shouting capitals does not beat the form the script
+        // mostly uses.
+        var slateLocCount = {};
+        merged.scenes.forEach(function (s) {
+          var raw = String(s.location || '').trim();
+          if (slateIsPlaceholderLocation(raw)) return;
+          var k = slateLocationKey(raw);
+          if (!k) return;
+          if (!slateLocCount[k]) slateLocCount[k] = {};
+          slateLocCount[k][raw] = (slateLocCount[k][raw] || 0) + 1;
+        });
+        var slateLocLabel = {};
+        Object.keys(slateLocCount).forEach(function (k) {
+          var variants = Object.keys(slateLocCount[k]);
+          var best = variants[0];
+          for (var i = 1; i < variants.length; i++) {
+            var v = variants[i];
+            if (slateLocCount[k][v] > slateLocCount[k][best]) best = v;
+            else if (slateLocCount[k][v] === slateLocCount[k][best]) best = slateBetterLabel(best, v);
+          }
+          slateLocLabel[k] = best;
+        });
+        merged.scenes.forEach(function (s) {
+          var raw = String(s.location || '').trim();
+          // A heading with no place is recorded as having no place. Printing
+          // "Unknown Location" on a call sheet tells a crew nothing while
+          // looking like it told them something.
+          if (slateIsPlaceholderLocation(raw)) { s.location = ''; return; }
+          var k = slateLocationKey(raw);
+          if (k && slateLocLabel[k]) s.location = slateLocLabel[k];
+        });
+        // Same treatment for the set, which also reaches the call sheet.
+        merged.scenes.forEach(function (s) {
+          if (slateIsPlaceholderLocation(s.set)) s.set = '';
+        });
+
         var charMap = {}, locMap = {};
 
         merged.scenes.forEach(function (s) {
@@ -1477,7 +1652,10 @@
 
           var loc = String(s.location || '').trim();
           if (loc) {
-            var lk = slateKey(loc);
+            // slateLocationKey, not slateKey — see the note above. Grouping
+            // the schedule by a name key left one building split across
+            // several rows, and each row is a separate trip.
+            var lk = slateLocationKey(loc);
             if (!locMap[lk]) locMap[lk] = { set_location: loc, scenes: [] };
             else locMap[lk].set_location = slateBetterLabel(locMap[lk].set_location, loc);
             if (locMap[lk].scenes.indexOf(label) < 0) locMap[lk].scenes.push(label);
@@ -1562,7 +1740,7 @@
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
         html += scenes.map(function(s) {
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
-            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || 'INT') + '. ' + (s.location || s.set_location || '') + ' — ' + (s.time_of_day || 'DAY') + '</span></div>'
+            + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:15px;font-weight:600">' + (s.scene_number == null ? '—' : String(s.scene_number)) + ' &nbsp;<span style="color:var(--paper,#F4EFE6);font-family:inherit;font-size:13px">' + (s.int_ext || '—') + '. ' + (s.location || s.set_location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—') + '</span></div>'
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
             + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
             // Background is extracted by the breakdown and was being thrown
@@ -1727,6 +1905,62 @@
         return r + ' Nothing has been charged.';
       }
 
+      // ── Did this section come back in the wrong language? ──
+      // The promise is: any language in, English out, so a crew drawn from
+      // anywhere reads one call sheet. A Yorùbá breakdown came back with six
+      // consecutive scenes still in Yorùbá — one whole section where the
+      // model drifted back into the source language. The prompt states the
+      // English rule three times and a system message repeats it. Stating it
+      // a fourth time would not help; checking the answer does.
+      //
+      // Detection is by English FUNCTION WORDS, not by diacritics. A
+      // perfectly good English sentence can be thick with them —
+      // "Adahunse arrives at Ìdí Ọ̀ Gán" — and counting marks would re-run
+      // that section for nothing, at our cost.
+      var SLATE_EN_FUNCTION_WORDS = {};
+      ('the a an is are was were be been and or of to in on at with as from into onto ' +
+       'his her their its he she they it that this who which for by but then while ' +
+       'after before over under out up down about through')
+        .split(' ').forEach(function (w) { SLATE_EN_FUNCTION_WORDS[w] = 1; });
+
+      function slateDescriptionLooksEnglish(text) {
+        var t = String(text || '').trim();
+        if (!t) return true;
+        // Too short to judge. "Flashback." carries no function words in any
+        // language and must not be read as evidence.
+        if (t.split(/\s+/).length < 6) return true;
+
+        // Split on anything that is not a letter or digit IN ANY SCRIPT,
+        // rather than matching words with \b. JavaScript's \b only knows
+        // ASCII, so inside the Yorùbá word "orí" it puts a boundary between
+        // the r and the í — and \bor\b then matches the English word "or"
+        // in the middle of a Yorùbá sentence. That is precisely how a fully
+        // Yorùbá description was passing this check.
+        var tokens = t.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+        var distinct = {};
+        for (var i = 0; i < tokens.length; i++) {
+          if (tokens[i] && SLATE_EN_FUNCTION_WORDS[tokens[i]]) distinct[tokens[i]] = 1;
+        }
+        // TWO distinct matches, not one. Yorùbá "a" means "we" and "to"
+        // means "to arrange" — both spelled exactly like English words, and
+        // either one alone let a fully Yorùbá sentence pass as English.
+        return Object.keys(distinct).length >= 2;
+      }
+
+      function slateSectionDrifted(result) {
+        var scenes = (result && result.scenes) || [];
+        var judged = 0, foreign = 0;
+        for (var i = 0; i < scenes.length; i++) {
+          var d = String((scenes[i] && scenes[i].description) || '').trim();
+          if (!d || d.split(/\s+/).length < 6) continue;
+          judged++;
+          if (!slateDescriptionLooksEnglish(d)) foreign++;
+        }
+        // Two judgeable scenes minimum: one odd sentence is not a drifted
+        // section, and a re-run costs real money.
+        return judged >= 2 && (foreign / judged) >= 0.5;
+      }
+
       async function runWorkspaceBreakdown(user) {
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var script = extractedScriptText;
@@ -1757,7 +1991,29 @@
           for (let i = 0; i < totalChunks; i++) {
             const sectionStart = Date.now();
             wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
-            const result = await sendChunkToBackend(user, chunks[i], (typeof selectedLang !== 'undefined' ? selectedLang : 'English'), i, totalChunks, productionId);
+            const sectionLang = (typeof selectedLang !== 'undefined' ? selectedLang : 'English');
+            let result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
+
+            // One retry, and only when the section plainly came back in the
+            // source language. The credit is charged on the last section and
+            // guarded by charged_at, so a retry never charges twice — but it
+            // does cost us an AI call, which is why the test above needs two
+            // scenes to agree before it fires.
+            if (!result.error && slateSectionDrifted(result)) {
+              siqTrack('section_language_drift', { section_number: i + 1, production_id: productionId });
+              wsProgress(10 + (i / totalChunks) * 75,
+                totalChunks > 1
+                  ? ('Section ' + (i + 1) + ' came back in the script’s language — redoing it in English…')
+                  : 'That came back in the script’s language — redoing it in English…');
+              const retry = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId, true);
+              if (!retry.error && !slateSectionDrifted(retry)) {
+                result = retry;
+                siqTrack('section_language_recovered', { section_number: i + 1, production_id: productionId });
+              }
+              // If the retry also drifted, keep the first result. A breakdown
+              // in the wrong language is still more use than none.
+            }
+
             const chunkDuration = Date.now() - sectionStart;
             if (result.error) {
               console.error('[Slate Diagnostics]', JSON.stringify({
@@ -2549,7 +2805,9 @@
         scenes.forEach(function(s) {
           pdf.check(28);
           pdf.sceneNumeral(s.scene_number);
-          pdf.slugline((s.int_ext || 'INT') + '. ' + (s.location || 'LOCATION') + ' — ' + (s.time_of_day || 'DAY'));
+          // Never invent INT or DAY. A breakdown sheet that states a time of
+          // day the script does not give is a lie a crew will act on.
+          pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not in script heading') + ' — ' + (s.time_of_day || '—'));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 158);
           pdf.gap(2);
@@ -2643,7 +2901,7 @@
             // which room, not which building.
              var schSet = sc.set || sc.location || sc.set_location || '';
             if (!schSet || schSet === 'null' || schSet === 'undefined') schSet = '—';
-            pdf.slugline((sc.int_ext || 'INT') + ' · ' + ((sc.time_of_day || 'DAY').charAt(0)) + '   ' + schSet); 
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet); 
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -2796,7 +3054,7 @@
           // a crew reads. Blank is honest; null looks like a fault.
           var csSet = s.set || s.location || '';
           if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
-          pdf.slugline((s.int_ext || 'INT') + ' · ' + ((s.time_of_day || 'DAY').charAt(0)) + '   ' + csSet);
+          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + ((s.time_of_day || '\u2014').charAt(0)) + '   ' + csSet);
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
