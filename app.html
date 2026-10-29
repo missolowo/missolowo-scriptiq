@@ -678,6 +678,12 @@
         }
       }
 
+      // Exported deliberately: the billing flow lives in a later script
+      // block and cannot see this scope. It must refresh the strip after a
+      // payment changes the balance, or a filmmaker who has just paid keeps
+      // looking at their old credit count.
+      window.renderAccount = renderAccount;
+
       renderAccount();
       gateHomeView();
 
@@ -2038,6 +2044,27 @@
         }
       }
 
+      // The header used to read cs.location_address, which nothing in this
+      // codebase ever writes — so it always printed "address required" no
+      // matter what the filmmaker saved, and no field existed that could
+      // satisfy it. Production Details is the only real source, and the PDF
+      // export already resolves it this way (see the locations block below).
+      function slateCallsheetAddress(cs) {
+        if (cs && cs.location_address) return cs.location_address;
+        var pd = (typeof slateProductionDetails !== 'undefined' && slateProductionDetails) || {};
+        var locs = (pd.locations || []).filter(Boolean);
+        if (!locs.length) return '';
+        // Prefer an entered location that names this set, so a production
+        // shooting in several places puts the right address on each day.
+        var want = String((cs && cs.location) || '').trim().toLowerCase();
+        if (want) {
+          for (var i = 0; i < locs.length; i++) {
+            if (String(locs[i]).toLowerCase().indexOf(want) !== -1) return locs[i];
+          }
+        }
+        return locs[0];
+      }
+
       function renderWorkspaceCallsheet(cs) {
         var out = document.getElementById('wsCallsheetOut');
         if (!out) return;
@@ -2049,9 +2076,9 @@
           + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
           + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
           + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '')
-            + (cs.location_address
-                ? ' — ' + cs.location_address
-                : ' <span style="color:#9C7A2F">— address required</span>') + '</div>'
+            + (slateCallsheetAddress(cs)
+                ? ' — ' + slateCallsheetAddress(cs)
+                : ' <span style="color:#9C7A2F">— add the address under Production Details &rsaquo; Locations</span>') + '</div>'
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Scenes</div>'
           + scenes.map(function(s) {
                // Row names the SET (Sitting Room), not the location —
@@ -3826,6 +3853,7 @@
       }
       document.querySelectorAll('[data-pack]').forEach(function (b) { b.disabled = true; });
       if (status) status.innerHTML = '<span style="color:var(--text-2,#B5AFA3)">Opening secure payment…</span>';
+      if (typeof siqTrack === 'function') siqTrack('buy_clicked', { pack: packKey });
 
       try {
         var res = await fetch('/.netlify/functions/payment-initiate', {
@@ -3840,10 +3868,14 @@
         // Remembered so the success page can verify even if Paystack's
         // redirect loses the reference in the URL.
         try { localStorage.setItem('slate_last_payment_ref', data.reference); } catch (e) {}
+        if (typeof siqTrack === 'function') siqTrack('payment_started', { pack: packKey });
         window.location.href = data.authorization_url;
       } catch (e) {
         document.querySelectorAll('[data-pack]').forEach(function (b) { b.disabled = false; });
         if (status) status.innerHTML = '<span style="color:var(--error,#D96A57)">' + e.message + '</span>';
+        if (typeof siqTrack === 'function') {
+          siqTrack('payment_failed', { pack: packKey, stage: 'initiate', reason: String(e.message || '') });
+        }
       }
     }
 
@@ -3876,6 +3908,12 @@
         var data = await res.json();
 
         if (data.success) {
+          if (typeof siqTrack === 'function') {
+            siqTrack('payment_completed', {
+              duplicate: !!data.duplicate,
+              credits_remaining: typeof data.credits_remaining === 'number' ? data.credits_remaining : null
+            });
+          }
           // Keep the stored session in step with the server.
           if (user && typeof data.credits_remaining === 'number') {
             user.credits_remaining = data.credits_remaining;
@@ -3896,8 +3934,15 @@
               + '<a class="tool-card-action" href="#home" style="margin-top:16px">Start a breakdown</a>'
               + '</div>';
           }
-          if (typeof renderAccountStrip === 'function') renderAccountStrip();
+          // Was calling a misspelled name that exists nowhere in this
+          // file. The typeof guard swallowed it, so the sidebar credit count
+          // never updated after a payment and customers believed they had
+          // bought nothing.
+          if (typeof window.renderAccount === 'function') window.renderAccount();
         } else {
+          if (typeof siqTrack === 'function') {
+            siqTrack('payment_failed', { stage: 'verify', reason: String(data.error || 'not confirmed') });
+          }
           if (out) {
             // A payment can fail to confirm for reasons that pass on their
             // own — a database latency spike, a dropped connection. The
@@ -3988,7 +4033,11 @@
       // Always reachable, because a problem can happen anywhere — during
       // upload, in the schedule, at export. Tying this to one moment would
       // miss most of what goes wrong.
-      var slateFbKind = 'bug';
+      // Starts unset on purpose. It used to default to 'bug', and because
+      // the first button was also pre-selected, every compliment arrived
+      // filed as a bug report — which made real bug reports impossible to
+      // find. Unset means an unchosen message is recorded as 'general'.
+      var slateFbKind = null;
  
       function slateOpenFeedback() {
         var o = document.getElementById('fbOverlay');
@@ -4059,7 +4108,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              kind: slateFbKind,
+              kind: slateFbKind || 'general',
               feedback_text: text,
               context: context,
               user_id: user ? user.id : null,
@@ -4096,7 +4145,7 @@
       <div class="fb-sub">This goes straight to the team. We read every one.</div>
  
       <div class="fb-kinds">
-        <button class="fb-kind active" data-kind="bug">Something broke
+        <button class="fb-kind" data-kind="bug">Something broke
           <small>An error, or output that looks wrong</small></button>
         <button class="fb-kind" data-kind="feature">I need something
           <small>A feature that would help your production</small></button>
