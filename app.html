@@ -3296,20 +3296,53 @@
         }
 
         function fourUp(items) {
-          pdf.check(18);
+          pdf.check(24);
           var startY = pdf.getY();
           var maxLines = 1;
           items.forEach(function(it, i) {
+            // An empty padding cell must draw nothing. labelValue renders
+            // String(value || '—'), so ['', ''] printed a bare dash under no
+            // label — three of them sat under the Hotels block.
+            if (!it || (!it[0] && !it[1])) return;
             pdf.setY(startY);
             var n = labelValue(it[0], it[1], 15 + (i * 45), 42);
             if (n > maxLines) maxLines = n;
           });
-          pdf.setY(startY + 8 + (maxLines - 1) * 4);
+          // +12, not +8. The label sits at startY and the 9pt value at
+          // startY+5, so advancing only 8 left three millimetres below a nine
+          // point baseline: the forecast note printed through the weather row
+          // and the emergency-contacts panel painted over Key Contacts.
+          pdf.setY(startY + 12 + (maxLines - 1) * 4);
         }
 
         pdf.sectionHeader('Locations');
         var locs = (pd.locations && pd.locations.length) ? pd.locations : [cs.location_address || cs.location || '—'];
-        fourUp(locs.slice(0, 4).map(function(l, i) { return ['Location ' + (i + 1), l]; }));
+        // Render every location in rows of four. slice(0, 4) silently dropped
+        // the fifth onwards — a unit sent to an address that was never printed
+        // on the sheet is exactly the failure this document exists to prevent.
+        for (var csL = 0; csL < locs.length; csL += 4) {
+          fourUp(locs.slice(csL, csL + 4).map(function(l, i) {
+            return ['Location ' + (csL + i + 1), l];
+          }));
+        }
+
+        // Same rule as the shooting schedule: never let the sheet imply that
+        // every scene on it happens at the addresses above.
+        var csNoLoc = scenes.filter(function(s) {
+          var v = s.set || s.location || '';
+          v = String(v).trim();
+          return !v || v === 'null' || v === 'undefined';
+        }).length;
+        if (csNoLoc) {
+          var csMany = csNoLoc > 1;
+          pdf.annotation(csNoLoc + ' scene' + (csMany ? 's' : '')
+            + ' on this call sheet ' + (csMany ? 'have' : 'has')
+            + ' no location in the script, so ' + (csMany ? 'they are' : 'it is')
+            + ' not covered by the addresses above. Add '
+            + (csMany ? 'their locations' : 'its location')
+            + ' in Production Details before this sheet goes out.', 15, 175);
+          pdf.gap(4);
+        }
 
         pdf.sectionHeader('Weather & Logistics');
         fourUp([
