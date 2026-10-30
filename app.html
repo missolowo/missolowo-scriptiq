@@ -1472,10 +1472,25 @@
         var s = String(v || '').trim().toLowerCase();
         if (!s) return true;
         if (['null','undefined','n/a','na','-','—','none','tbd','unknown'].indexOf(s) !== -1) return true;
-        if (/^unknown\b/.test(s)) return true;
+        // Anchored to the placeholder phrasings the author actually writes
+        // ("UNKNOWN LOCATION" appears three times in LORI NKAN MI), not to
+        // any name beginning with the word: an "Unknown Soldier Memorial" is
+        // a real place a crew can be sent to.
+        if (/^unknown(\s+(location|place|set|setting))?$/.test(s)) return true;
         // Prompt-template text that leaked through.
         if (/,?\s*in english$/.test(s)) return true;
         if (/^(travel destination|location name|space within|space inside|one sentence)/.test(s)) return true;
+        // The model describing the FIELD instead of naming a place. It sent
+        // back "Original Scene Location" for scene 47, which then printed as
+        // somewhere to drive to on a call sheet, as a row in the locations
+        // report, and inside "Those scenes are NOT at Room · Original Scene
+        // Location" on the schedule.
+        //
+        // Anchored to the whole string so a real place is never caught: a
+        // location called "Original Bar" or "The Sitting Room" still passes.
+        if (/^(the\s+)?(original\s+)?(scene\s+)?(location|set|place)(\s+(name|here|above))?$/.test(s)) return true;
+        if (/^(same|as)\s+(as\s+)?(above|before|previous|scene)/.test(s)) return true;
+        if (/^(not\s+specified|unspecified|no\s+location|none\s+given|see\s+above)$/.test(s)) return true;
         return false;
       }
 
