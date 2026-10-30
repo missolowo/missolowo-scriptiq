@@ -3417,7 +3417,19 @@
         }
 
         pdf.sectionHeader('Locations');
-        var locs = (pd.locations && pd.locations.length) ? pd.locations : [cs.location_address || cs.location || '—'];
+        // The day's location arrives from the schedule as ONE string with the
+        // places joined by " · ". Wrapping that in a single-element array put
+        // all four of a day's locations inside "Location 1". Split it back
+        // apart so each place gets its own cell, and prefer a real array when
+        // either Production Details or the call sheet itself supplies one.
+        var locs =
+            (pd.locations && pd.locations.length) ? pd.locations
+          : (cs.locations && cs.locations.length) ? cs.locations
+          : String(cs.location_address || cs.location || '')
+              .split(/\s*·\s*/)
+              .map(function (v) { return String(v).trim(); })
+              .filter(Boolean);
+        if (!locs.length) locs = ['—'];
         // Render every location in rows of four. slice(0, 4) silently dropped
         // the fifth onwards — a unit sent to an address that was never printed
         // on the sheet is exactly the failure this document exists to prevent.
@@ -3533,7 +3545,11 @@
           d.setFont('courier', 'normal');
           d.setFontSize(8);
           d.setTextColor.apply(d, SLATE_MUTED);
-          d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—') + '   ·   Scenes ' + (c.scenes || []).join(', '), 15, pdf.getY() + 5);
+          // "Scene 33", not "Scenes 33" — an actor called for one scene.
+          var csScenes = c.scenes || [];
+          d.text('Call ' + (c.call_time || '—') + '   ·   On set ' + (c.on_set || '—')
+            + '   ·   Scene' + (csScenes.length === 1 ? ' ' : 's ') + csScenes.join(', '),
+            15, pdf.getY() + 5);
           pdf.gap(11);
           pdf.rule();
         });
