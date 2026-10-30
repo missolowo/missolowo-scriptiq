@@ -4241,11 +4241,19 @@
               + 'will not be scheduled. ' + slateNamed.join('  ·  ')
               + (misread.length > 8 ? '  ·  …and ' + (misread.length - 8) + ' more.' : '') });
         }
-        // Unnumbered headings
-        var unnumbered = scenes.filter(function (s) { return !s.number; });
-        if (unnumbered.length) {
-          findings.push({ level: unnumbered.length > scenes.length * 0.3 ? 'high' : 'low',
-            title: unnumbered.length + ' scene' + (unnumbered.length > 1 ? 's' : '') + ' without a number',
+        // Unnumbered headings — counted by the SAME walk as the headline.
+        //
+        // This used to count headings with no number ON THE HEADING LINE, so
+        // a script that writes "SCENE 12" on its own line above the heading
+        // reported every scene as unnumbered. LORI NKAN MI showed "47 scenes
+        // numbered in the script" and "6 scenes without a number" in the same
+        // panel. Both came from the same box and could not both be true.
+        var unnumberedCount = 0;
+        try { unnumberedCount = slateCountScenes(text).unnumbered; }
+        catch (e) { unnumberedCount = scenes.filter(function (s) { return !s.number; }).length; }
+        if (unnumberedCount) {
+          findings.push({ level: unnumberedCount > scenes.length * 0.3 ? 'high' : 'low',
+            title: unnumberedCount + ' scene' + (unnumberedCount > 1 ? 's' : '') + ' without a number',
             detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
         }
  
