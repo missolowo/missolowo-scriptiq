@@ -127,6 +127,22 @@ exports.handler = async function(event, context) {
       // and collapsed into one another.
       const normKey = slateKey;
 
+      // ── One key for "is this the same place?" ──
+      // slateKey keeps spaces, so the model writing a Yorùbá name two ways —
+      // "Ìdí Ọ̀GÁN" and "Ìdí Ọ̀ GÁN" — produced two different places. Scene 1
+      // was grouped away from scenes 5, 7, 9 and 11 at that same location,
+      // and across a longer script the two spellings can land on different
+      // SHOOT DAYS: two trips to one place.
+      //
+      // Joining without spaces is the convention slateLocationKey already
+      // uses in the breakdown, which is why Report 3 groups these correctly
+      // while the schedule did not. This belongs in lib/slate-core.js beside
+      // slateKey so there is one implementation; it is here only because that
+      // file is not in hand.
+      function slatePlaceKey(v) {
+        return normKey(String(v == null ? '' : v)).replace(/\s+/g, '');
+      }
+
       // Group scenes by location, keeping day and night separate
       const groups = {};
       slimScenes.forEach(function (s) {
@@ -135,7 +151,9 @@ exports.handler = async function(event, context) {
         // header as somewhere the crew should go.
         var loc = String(s.loc || '').trim();
         if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
-        const key = normKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        // slatePlaceKey, not normKey — see the note above. Two spellings of
+        // one location must not become two groups, or they become two trips.
+        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
         if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
         groups[key].scenes.push(s);
       });
@@ -229,7 +247,7 @@ exports.handler = async function(event, context) {
       // The SET is the room the crew lights; the location is the building.
       // Grouping on the set is what keeps the bedroom scenes together.
       function slatePlaceOf(s) {
-        return normKey(String(s.set || s.loc || '').trim()) || '\u0000noplace';
+        return slatePlaceKey(s.set || s.loc || '') || '\u0000noplace';
       }
       function slateOrderBlock(list) {
         var byPlace = {}, places = [];
