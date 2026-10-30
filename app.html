@@ -2715,6 +2715,23 @@
       // White page, deep charcoal text, gold as an accent only — never
       // carrying small text, where it cannot reach enough contrast.
       // Prints cleanly, and reads on a phone at 6am on set.
+      // ── Which strings genuinely need the Unicode font ──
+      // "Any character above U+00FF" is the wrong question. The built-in
+      // fonts are WinAnsi-encoded, and WinAnsi covers the typographic
+      // punctuation we use everywhere: em dash, en dash, curly quotes,
+      // bullet, ellipsis. An em dash sits in EVERY slugline, so that test
+      // sent "EXT. Igi Odan — DAY" down the Unicode path and the whole
+      // document lost Courier sluglines and real bold the moment a Noto
+      // font loaded.
+      //
+      // One helper, used by both the draw and the measure override, so the
+      // two can never disagree about which font a string is in.
+      var SLATE_WINANSI_EXTRA = /[ŒœŠšŸŽžƒˆ˜–—‘’‚“”„†‡•…‰‹›€™]/g;
+      function slateNeedsUnicodeFont(txt) {
+        var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
+        return /[^\u0000-ÿ]/.test(probe.replace(SLATE_WINANSI_EXTRA, ''));
+      }
+
       var SLATE_PAPER = [255, 255, 255];   // white — the page
       var SLATE_INK   = [26, 26, 28];      // deep charcoal — body text
       var SLATE_LINE  = [216, 214, 208];   // rules and dividers
@@ -2858,8 +2875,7 @@
             // Patched in one place so no call site has to choose a font.
             var slateDrawText = doc.text.bind(doc);
             doc.text = function (txt, x, y, opts) {
-              var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
-              if (!/[^\u0000-\u00FF]/.test(probe)) return slateDrawText(txt, x, y, opts);
+              if (!slateNeedsUnicodeFont(txt)) return slateDrawText(txt, x, y, opts);
               var was = doc.getFont() || {};
               var wantsBold = was.fontStyle === 'bold';
               doc.setFont(slateUni, (wantsBold && slateUniBold) ? 'bold' : 'normal');
@@ -2903,8 +2919,7 @@
             // the wrong width for non-Latin text.
             var slateSplit = doc.splitTextToSize.bind(doc);
             doc.splitTextToSize = function (txt, w, opts) {
-              var s = String(txt == null ? '' : txt);
-              if (!/[^\u0000-\u00FF]/.test(s)) return slateSplit(txt, w, opts);
+              if (!slateNeedsUnicodeFont(txt)) return slateSplit(txt, w, opts);
               var was = doc.getFont() || {};
               doc.setFont(slateUni, (was.fontStyle === 'bold' && slateUniBold) ? 'bold' : 'normal');
               var lines = slateSplit(txt, w, opts);
