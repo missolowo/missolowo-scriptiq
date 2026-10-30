@@ -43,6 +43,28 @@ function slateIsRetryable(err) {
   return true;
 }
 
+// ── Reporting the balance on a duplicate ──
+// The duplicate paths used to return success with no credits_remaining.
+// The workspace only refreshes its credit display when that field is a
+// number, so a filmmaker who refreshed the success page — or whose first
+// verify had already landed — was told "payment confirmed" above a credit
+// count that still read the old value, and reasonably concluded they had
+// bought nothing. Reading the real balance costs one query and removes a
+// whole class of "I paid and got nothing" reports.
+async function slateReadBalance(supabase, uid) {
+  if (!uid) return null;
+  try {
+    const res = await supabase.from('users')
+      .select('credits_remaining')
+      .eq('id', uid)
+      .single();
+    if (res && res.data && typeof res.data.credits_remaining === 'number') {
+      return res.data.credits_remaining;
+    }
+  } catch (e) { /* a missing balance must never fail the confirmation */ }
+  return null;
+}
+
 async function slateRetry(action) {
   let last = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -127,13 +149,15 @@ exports.handler = async function(event) {
     const existingPayment = existing && existing.data;
 
     if (existingPayment && existingPayment.status === 'success') {
+      const already = await slateReadBalance(supabase, user_id);
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           success:  true,
           message:  'Payment already processed — credits have been added.',
-          duplicate: true
+          duplicate: true,
+          credits_remaining: already
         })
       };
     }
@@ -190,6 +214,59 @@ exports.handler = async function(event) {
         body: JSON.stringify({
           error:   'Payment was not successful',
           status:  txn.status
+        })
+      };
+    }
+
+    // ══════════════════════════════════════════════
+    // STEP 3b — Was this a REAL payment, or a test one?
+    // ══════════════════════════════════════════════
+    // Paystack's key is environment-scoped — live on Production, test on
+    // Deploy Previews — but SUPABASE_URL above is hardcoded, so BOTH write
+    // to the same database. Without this gate a Paystack test transaction
+    // passes every check below and is paid out in real credits.
+    //
+    // That is not hypothetical: on 29 October a tester on a preview build
+    // completed a test "₦8,500" purchase and received 15 genuine credits.
+    // Anyone who found a preview URL could have minted credits for free
+    // with Paystack's public test card.
+    //
+    // The row is still written, so the attempt is visible for
+    // reconciliation rather than vanishing — but credits_added stays 0.
+    //
+    // To test the real flow end to end, buy a Starter pack on
+    // missolowo.com with a live card. Previews cannot grant credits by
+    // design, and that is the point.
+    if (txn.domain && txn.domain !== 'live') {
+      // uid is not resolved until STEP 4, so work it out here. If we cannot
+      // identify the account we skip the audit row rather than risk a
+      // not-null violation — the refusal below still stands either way.
+      const testMeta = txn.metadata || {};
+      const testUid  = user_id || testMeta.user_id || null;
+
+      if (testUid) {
+        await supabase.from('payments').insert({
+          user_id:           testUid,
+          reference,
+          amount:            txn.amount,
+          currency:          txn.currency || 'NGN',
+          status:            'test_mode',
+          plan:              testMeta.pack || testMeta.plan || 'unknown',
+          credits_added:     0,
+          paystack_response: txn,
+          created_at:        new Date().toISOString()
+        });
+      }
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          success:   false,
+          test_mode: true,
+          retryable: false,
+          error:     'This was a test payment on a preview build, so no money was charged and no credits were added. '
+                   + 'Please use missolowo.com to buy credits.'
         })
       };
     }
@@ -286,11 +363,15 @@ exports.handler = async function(event) {
       }
       if (!takeover || !takeover.data || takeover.data.length === 0) {
         // Someone else is finishing it. Report honestly rather than guessing.
+        // The balance may not include this pack yet, so it is reported as
+        // whatever is true right now rather than as a promise.
+        const inflight = await slateReadBalance(supabase, uid);
         return {
           statusCode: 200, headers,
           body: JSON.stringify({
             success: true, duplicate: true,
-            message: 'This payment is being confirmed. Your credits will appear shortly.'
+            message: 'This payment is being confirmed. Your credits will appear shortly.',
+            credits_remaining: inflight
           })
         };
       }
@@ -316,13 +397,15 @@ exports.handler = async function(event) {
       // call already claimed this reference. It is crediting, or has
       // credited. Either way this call must not add credits.
       if (claimError.code === '23505' || /duplicate key/i.test(claimError.message || '')) {
+        const raced = await slateReadBalance(supabase, uid);
         return {
           statusCode: 200,
           headers,
           body: JSON.stringify({
             success:   true,
             message:   'Payment already processed — credits have been added.',
-            duplicate: true
+            duplicate: true,
+            credits_remaining: raced
           })
         };
       }

@@ -51,6 +51,31 @@ async function checkRateLimit(supabase, ip, functionName, maxRequests, userId = 
   }
 }
 
+// ── Recording what happened to a production ──
+// A production row used to be created at 'processing' on the first chunk and
+// only ever moved to 'completed' deep inside the credit-charging branch. That
+// branch is skipped for admins and for a production already charged, so those
+// runs stayed at 'processing' for ever — 86 of them on one admin account,
+// which made the product look far less reliable than it is. A failed run was
+// indistinguishable from an abandoned one for the same reason.
+//
+// Status is now written on every outcome, by this one function, so the table
+// says what actually happened.
+async function slateMarkProduction(supabase, productionId, userId, patch) {
+  if (!supabase || !productionId) return;
+  try {
+    await supabase.from('productions')
+      .upsert(Object.assign(
+        { production_id: productionId, updated_at: new Date().toISOString() },
+        userId ? { user_id: userId } : {},
+        patch
+      ), { onConflict: 'production_id' });
+  } catch (e) {
+    // Bookkeeping must never take down a breakdown the filmmaker has paid for.
+    console.error('[Slate] Could not update production status:', e.message);
+  }
+}
+
 function getClientIP(event) {
   return (
     event.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
@@ -90,11 +115,19 @@ exports.handler = async function(event) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Missing Supabase key' }) };
   }
 
+  // Hoisted so the catch block below can mark the production failed. Without
+  // these, a crash left the row at 'processing' and the filmmaker saw a
+  // production in their list that could never be opened or explained.
+  let errSupabase = null;
+  let errProductionId = null;
+  let errUserId = null;
+
   try {
     const {
       script, language, user_email, user_id,
-      chunk_index, total_chunks, production_id
+      chunk_index, total_chunks, production_id, retry_english
     } = JSON.parse(event.body);
+    errProductionId = production_id || null;
 
     if (!script || script.trim().length < 10) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No script provided' }) };
@@ -106,6 +139,7 @@ exports.handler = async function(event) {
     const isFirstChunk  = chunkIndex === 0;
     const isLastChunk   = chunkIndex === (totalChunks - 1);
     const supabase      = createClient(SUPABASE_URL, SUPABASE_SECRET);
+    errSupabase = supabase;
 
     // ── Rate limit — only on first chunk so multi-chunk jobs aren't self-blocked ──
     if (!isAdmin && isFirstChunk) {
@@ -167,15 +201,26 @@ exports.handler = async function(event) {
     }
 
    // ── Register production on first chunk (idempotent — safe if retried) ──
+    // script_language is recorded here because the filmmaker's choice arrives
+    // on every chunk but was never stored, leaving the column null on every
+    // production ever created. Without it there is no way to know which
+    // languages are actually being used, which is the only sensible way to
+    // decide which of the languages we claim to support get verified first.
+    // Output is always English by PM ruling, so it is recorded as a fact.
     if (isFirstChunk && production_id && user) {
+      errUserId = user.id;
       await supabase.from('productions')
         .upsert({
           production_id,
           user_id: user.id,
           status: 'processing',
+          script_language: (language && language !== 'auto') ? language : null,
+          output_language: 'English',
           created_at: new Date().toISOString()
         }, { onConflict: 'production_id', ignoreDuplicates: true });
-    } 
+    } else if (user) {
+      errUserId = user.id;
+    }
 
     // ── Build prompt ──
        // Output is ALWAYS English regardless of the script's language (PM ruling,
@@ -195,7 +240,24 @@ exports.handler = async function(event) {
       ? `This is section ${chunkIndex + 1} of ${totalChunks} of a longer screenplay. `
       : '';
 
-      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}Analyze the following screenplay and extract ALL production elements.
+    // ── Second attempt at a section that came back in the source language ──
+    // The workspace checks the answer and asks again when a whole section
+    // drifts. Repeating the identical request would mostly reproduce the
+    // identical answer, so the instruction is sharpened and the temperature
+    // dropped to zero for the retry. This text is deliberately blunt: the
+    // polite version is already in the prompt and it did not hold.
+    const retryNote = retry_english
+      ? '\n\nCRITICAL — YOUR PREVIOUS ANSWER FOR THIS SECTION WAS REJECTED.\n'
+        + 'You returned the scene descriptions in the screenplay\'s own language. '
+        + 'That is wrong and it is the single most important rule in this task. '
+        + 'EVERY description, location, set, prop, costume, equipment and note '
+        + 'must be written in ENGLISH. Read the original, understand it, and '
+        + 'then WRITE IT IN ENGLISH. Do not copy, quote or paraphrase the '
+        + 'screenplay in its own language anywhere in your answer. '
+        + 'Character names are the only thing copied exactly as written.\n'
+      : '';
+
+      const prompt = `You are a professional film script breakdown supervisor. ${sectionNote}${retryNote}Analyze the following screenplay and extract ALL production elements.
 ${langInstruction}
 
 SCENE BOUNDARIES — the most important rule in this task:
@@ -309,7 +371,9 @@ RULES:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 16000,
-        temperature: 0.1,
+        // Zero on a retry: the first answer broke the one rule that
+        // matters, so there is nothing to be gained from variation.
+        temperature: retry_english ? 0 : 0.1,
         response_format: { type: "json_object" },
               messages: [
           {
@@ -325,6 +389,12 @@ RULES:
 
     if (!response.ok) {
       console.error('[OpenAI Error]', aiData.error?.message);
+      // The run is over and it did not work. Say so on the row, or the
+      // filmmaker is left with a production that sits at 'processing' for
+      // ever and cannot be opened.
+      await slateMarkProduction(supabase, production_id, user ? user.id : null, {
+        status: 'failed'
+      });
       return {
         statusCode: response.status, headers,
         body: JSON.stringify({ error: aiData.error?.message || 'AI processing error' })
@@ -357,16 +427,11 @@ RULES:
           credits_used: (user.credits_used || 0) + 1
         }).eq('id', user.id);
 
-                // Mark production charged + completed (idempotency record)
-        if (production_id) {
-          await supabase.from('productions').upsert({
-            production_id,
-            user_id: user.id,
-            status: 'completed',
-            charged_at: new Date().toISOString()
-          }, { onConflict: 'production_id' });
-        } 
-        
+        // charged_at is the idempotency record — it is what stops a retry
+        // charging a second credit, so it is written only on a real charge.
+        await slateMarkProduction(supabase, production_id, user.id, {
+          charged_at: new Date().toISOString()
+        });
 
         breakdown.credits_remaining = finalCredits;
       } else {
@@ -381,11 +446,34 @@ RULES:
       breakdown.user_role = user.role;
     }
 
+    // ── Mark the production finished ──
+    // Deliberately OUTSIDE the charging branch above. Completion is a fact
+    // about the work, not about the money: an admin run is finished, and so
+    // is a retry of a production that was charged the first time. Both used
+    // to be left at 'processing' for ever.
+    //
+    // The title comes from the breakdown because the row is created before
+    // the screenplay has been read and so cannot carry one.
+    if (isLastChunk && production_id) {
+      await slateMarkProduction(supabase, production_id, user ? user.id : null, {
+        status: 'completed',
+        title: breakdown.title || null,
+        script_language: breakdown.language_detected
+          || ((language && language !== 'auto') ? language : null),
+        output_language: 'English'
+      });
+    }
+
 
     return { statusCode: 200, headers, body: JSON.stringify(breakdown) };
 
   } catch (error) {
     console.error('[FATAL] Breakdown crash:', error.message);
+    // Same reasoning as the OpenAI error path: a crash is an outcome, and
+    // the row should record it rather than claiming the work is still
+    // running. Uses the hoisted references because the destructured
+    // variables are not in scope here.
+    await slateMarkProduction(errSupabase, errProductionId, errUserId, { status: 'failed' });
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Failed to process script: ' + error.message }) };
   }
 };

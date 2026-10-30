@@ -127,7 +127,50 @@ exports.handler = async function(event, context) {
     }
 
     // ── STEP 4: Build the sheet from DATA ──
-    const scenesToday = todaysFullScenes.slice().sort(bySceneNumberField('scene_number')).map(function (s) {
+    // ── Keep the SCHEDULE's shooting order ──
+    // This used to sort by scene number, which is script order. The schedule
+    // had already decided the day: every day scene before every night scene,
+    // each set lit once, places ordered to hold an actor across a move.
+    // Re-sorting here threw all of that away, so the schedule said "shoot the
+    // bedroom scenes together, nights at the end" while the sheet the crew
+    // actually holds said "EXT NIGHT scene 19, second thing in the morning".
+    //
+    // It also fed the AI the wrong sequence below, so the staggered call
+    // times were built against script order too — actors called for the
+    // wrong part of the day.
+    //
+    // Rank by position in the schedule's day. Identity first, because a
+    // scene may carry no number; scene_number second for productions saved
+    // before scene_index existed; the number sort last, for any scene the
+    // schedule did not place.
+    const slateDayRank = {};
+    (dayData.scenes || []).forEach(function (s, i) {
+      if (s.scene_index !== undefined && s.scene_index !== null
+          && slateDayRank['i' + s.scene_index] === undefined) {
+        slateDayRank['i' + s.scene_index] = i;
+      }
+      if (s.scene_number !== undefined && s.scene_number !== null
+          && slateDayRank['n' + s.scene_number] === undefined) {
+        slateDayRank['n' + s.scene_number] = i;
+      }
+    });
+    function slateRankOf(s) {
+      if (s.scene_index !== undefined && s.scene_index !== null) {
+        var byIdx = slateDayRank['i' + s.scene_index];
+        if (byIdx !== undefined) return byIdx;
+      }
+      if (s.scene_number !== undefined && s.scene_number !== null) {
+        var byNum = slateDayRank['n' + s.scene_number];
+        if (byNum !== undefined) return byNum;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    }
+    const slateByNumber = bySceneNumberField('scene_number');
+    const scenesToday = todaysFullScenes.slice().sort(function (a, b) {
+      var ra = slateRankOf(a), rb = slateRankOf(b);
+      if (ra !== rb) return ra - rb;
+      return slateByNumber(a, b);
+    }).map(function (s) {
       return {
         // Identity travels with the scene onto the call sheet, so anything
         // downstream — exports, future Budget and Crew modules — has it too.

@@ -127,6 +127,22 @@ exports.handler = async function(event, context) {
       // and collapsed into one another.
       const normKey = slateKey;
 
+      // ── One key for "is this the same place?" ──
+      // slateKey keeps spaces, so the model writing a Yorùbá name two ways —
+      // "Ìdí Ọ̀GÁN" and "Ìdí Ọ̀ GÁN" — produced two different places. Scene 1
+      // was grouped away from scenes 5, 7, 9 and 11 at that same location,
+      // and across a longer script the two spellings can land on different
+      // SHOOT DAYS: two trips to one place.
+      //
+      // Joining without spaces is the convention slateLocationKey already
+      // uses in the breakdown, which is why Report 3 groups these correctly
+      // while the schedule did not. This belongs in lib/slate-core.js beside
+      // slateKey so there is one implementation; it is here only because that
+      // file is not in hand.
+      function slatePlaceKey(v) {
+        return normKey(String(v == null ? '' : v)).replace(/\s+/g, '');
+      }
+
       // Group scenes by location, keeping day and night separate
       const groups = {};
       slimScenes.forEach(function (s) {
@@ -135,7 +151,9 @@ exports.handler = async function(event, context) {
         // header as somewhere the crew should go.
         var loc = String(s.loc || '').trim();
         if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
-        const key = normKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        // slatePlaceKey, not normKey — see the note above. Two spellings of
+        // one location must not become two groups, or they become two trips.
+        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
         if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
         groups[key].scenes.push(s);
       });
@@ -210,9 +228,68 @@ exports.handler = async function(event, context) {
       if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
         p.scenes.forEach(function (s) { target.scenes.push(s); });
       });
-      // Scene order within a day. PMs read call sheets in ascending scene
-      // order; 47A sorts after 47 and before 48.
-      days.forEach(function (d) { d.scenes.sort(bySceneNumberField('n')); });
+      // ── Shooting order within a day ──
+      // This used to sort by scene number, which is SCRIPT order, not
+      // shooting order. It produced days like "D N D N D D D N D D": an
+      // exterior night scene scheduled second in the morning, and the same
+      // bedroom lit, struck, and lit again three times in one day.
+      //
+      // The rules, from the production side:
+      //   1. Every DAY scene before every NIGHT scene. Nights go at the end.
+      //   2. Inside each block, every scene at one place is shot together —
+      //      one company move per place, not one per scene.
+      //   3. Order the places so an actor already working carries over to
+      //      the next place rather than being released and recalled.
+      //   4. Inside a place, ascending scene number.
+      function slateIsNight(s) {
+        return String(s.tod || '').toUpperCase().indexOf('NIGHT') >= 0;
+      }
+      // The SET is the room the crew lights; the location is the building.
+      // Grouping on the set is what keeps the bedroom scenes together.
+      function slatePlaceOf(s) {
+        return slatePlaceKey(s.set || s.loc || '') || '\u0000noplace';
+      }
+      function slateOrderBlock(list) {
+        var byPlace = {}, places = [];
+        list.forEach(function (s) {
+          var k = slatePlaceOf(s);
+          if (!byPlace[k]) { byPlace[k] = { scenes: [], cast: {} }; places.push(byPlace[k]); }
+          byPlace[k].scenes.push(s);
+          (s.cast || []).forEach(function (c) {
+            var ck = normKey(c);
+            if (ck) byPlace[k].cast[ck] = true;
+          });
+        });
+        places.forEach(function (p) { p.scenes.sort(bySceneNumberField('n')); });
+        // Biggest place first, then repeatedly whichever shares the most cast
+        // with the place just finished — that is "hold the actor to the next
+        // location" expressed as an ordering.
+        var pool = places.slice().sort(function (a, b) { return b.scenes.length - a.scenes.length; });
+        var out = [], cur = pool.shift();
+        while (cur) {
+          out.push(cur);
+          if (!pool.length) break;
+          var best = null, bestShared = -1;
+          pool.forEach(function (p) {
+            var shared = 0;
+            Object.keys(p.cast).forEach(function (c) { if (cur.cast[c]) shared++; });
+            if (shared > bestShared ||
+                (shared === bestShared && best && p.scenes.length > best.scenes.length)) {
+              bestShared = shared; best = p;
+            }
+          });
+          pool.splice(pool.indexOf(best), 1);
+          cur = best;
+        }
+        var flat = [];
+        out.forEach(function (p) { p.scenes.forEach(function (s) { flat.push(s); }); });
+        return flat;
+      }
+      days.forEach(function (d) {
+        var dayPart = d.scenes.filter(function (s) { return !slateIsNight(s); });
+        var nightPart = d.scenes.filter(slateIsNight);
+        d.scenes = slateOrderBlock(dayPart).concat(slateOrderBlock(nightPart));
+      });
 
       // Dates
       function addDays(dateStr, n) {
@@ -243,11 +320,22 @@ exports.handler = async function(event, context) {
           ? crowdedDays + ' day' + (crowdedDays > 1 ? 's have' : ' has') + ' more than three locations. Consider adding shoot days — company moves cost time and money.'
           : '',
         schedule: days.map(function (d, i) {
+          // How many of this day's scenes have no location in the script.
+          // A blank location is correctly kept OUT of the day header — but
+          // the SCENES still land in the day, so a day could read
+          // "DAY 01 · IGI ODAN" while seven of its nine scenes belong
+          // nowhere near Igi Odan. A crew reads that header and drives.
+          var unplaced = d.scenes.filter(function (s) {
+            return !String(s.loc || '').trim();
+          }).length;
           return {
             day: i + 1,
             date: addDays(baseDate, i) || baseDate,
             location: d.locations.join(' · '),
             locations: d.locations.slice(),
+            // Counted and reported, never hidden. The documents that read
+            // this can say so plainly instead of implying a place.
+            scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
            scenes: d.scenes.map(function (s) {
               return {
@@ -287,12 +375,23 @@ exports.handler = async function(event, context) {
 
       // ── Small AI pass for production notes only — fails safe ──
       try {
-        const notePrompt = 'You are a Nollywood production manager. For each shoot day below, write one short production note (logistics, moves, night-shoot warnings). Return JSON: {"notes":[{"day":1,"note":"..."}]}\n\n'
+        // scenes_without_location is sent, and the instruction says what to
+        // do about it. Without it the model was told only "day 1, location
+        // Igi Odan, 9 scenes" and wrote "All scenes to be shot in Igi Odan"
+        // for a day where seven scenes have no location in the script at
+        // all. A production note that names the wrong place is worse than
+        // no note: a crew acts on it.
+        const notePrompt = 'You are a Nollywood production manager. For each shoot day below, write one short production note (logistics, moves, night-shoot warnings).\n'
+          + 'IMPORTANT: scenes_without_location is the number of scenes that day whose location the screenplay never states. '
+          + 'NEVER write that all scenes are at a named location when scenes_without_location is above zero — say instead that '
+          + 'those scenes still need a location before the day can be planned. If scenes_without_location is 0, do not mention it.\n'
+          + 'Return JSON: {"notes":[{"day":1,"note":"..."}]}\n\n'
           + JSON.stringify(schedule.schedule.map(function (d) {
               return {
                 day: d.day,
                 location: d.location,
                 scenes: d.scenes.length,
+                scenes_without_location: d.scenes_without_location,
                 night: d.scenes.filter(function (s) { return String(s.time_of_day).toUpperCase().indexOf('NIGHT') >= 0; }).length
               };
             }));
