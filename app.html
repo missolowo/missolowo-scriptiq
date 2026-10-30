@@ -5,6 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Missolowo Slate — Production Workspace</title>
 <link rel="stylesheet" href="tokens.css">
+
+<!-- Google Analytics 4 — the SAME property as index.html.
+     This page had eighteen siqTrack calls and no tag to receive them, so
+     typeof gtag was never 'function' and every one was silently dropped by
+     its own guard: breakdown_completed, breakdown_failed, pdf_export,
+     payment_completed, payment_failed. The workspace has been reporting
+     nothing at all, which is why the analytics only ever showed homepage
+     traffic. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G1F83JSDLX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+
+  /* Deploy previews must not pollute production analytics. Mirrors
+     index.html exactly — note that gtag is defined either way, so the
+     preview guard has to live in siqTrack as well, not only here. */
+  var siqIsPreview = /deploy-preview|--/.test(location.hostname) || location.hostname === 'localhost';
+
+  if (!siqIsPreview) {
+    gtag('js', new Date());
+    gtag('config', 'G-G1F83JSDLX');
+  }
+</script>
+
 <script>
   // jsPDF loader with fallbacks — mobile networks drop CDN requests
   // often enough that a single source isn't reliable.
@@ -1037,8 +1061,15 @@
       var SLATE_MAX_SCENES_PER_CHUNK = 6;
       var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
 
+      // Same guard as index.html. gtag is defined on a preview too, so
+      // testing for it alone would send every deploy-preview run into
+      // production analytics; siqIsPreview is what actually keeps them out.
+      // Analytics must never interrupt the product, hence the swallow.
       function siqTrack(name, params) {
-        try { if (typeof gtag === 'function') gtag('event', name, params || {}); } catch (e) {}
+        try {
+          if (typeof siqIsPreview !== 'undefined' && siqIsPreview) return;
+          if (typeof gtag === 'function') gtag('event', name, params || {});
+        } catch (e) {}
       }
       // Is this front-matter line something other than the title?
       // Title pages open with dates, drafts, page numbers, credits and
@@ -1129,6 +1160,25 @@
       // One scan, two answers. slateSceneNumbersIn keeps returning plain
       // numbers because the merge and the splitter both count on that; this
       // returns the same list with the annotation alongside each one.
+      // ── A scene number, cleaned ──
+      // "1", "1.00", "47A", "1.04A" are numbers. "1." is not.
+      //
+      // The capture pattern allows dots INSIDE a number so episodic numbering
+      // like "1.00" survives, but it is greedy: a heading written
+      // "1.EXT. COMPOUND - DAY" with no space after the number hands back
+      // "1." and every document then prints the trailing dot. A BROTHER'S
+      // LOVE writes all 60 headings that way; Better Half all 15 ("1.00.",
+      // "1.04A."). LORI NKAN MI spaces its numbers, which is why this never
+      // showed up before.
+      //
+      // Only TRAILING punctuation goes — the dot in "1.00" and the letter in
+      // "47A" are part of the number.
+      function slateCleanSceneNumber(v) {
+        if (v === null || v === undefined) return null;
+        var s = String(v).trim().replace(/[.)\]\-–—:;,]+$/, '').trim();
+        return s || null;
+      }
+
       function slateSceneMarksIn(sectionText) {
         var raw = String(sectionText || '').split(/\r?\n/);
         var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
@@ -1142,14 +1192,14 @@
             var look = i + 1;
             while (look < raw.length && !raw[look].trim()) look++;
             if (look < raw.length && headStart.test(raw[look])) {
-              out.push({ number: m[1], type: note }); i = look; continue;
+              out.push({ number: slateCleanSceneNumber(m[1]), type: note }); i = look; continue;
             }
-            out.push({ number: m[1], type: note });
+            out.push({ number: slateCleanSceneNumber(m[1]), type: note });
             continue;
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            out.push({ number: wn ? wn[1] : null, type: null });
+            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null, type: null });
           }
         }
         return out;
@@ -1168,18 +1218,18 @@
           if (m) {
             var look = i + 1;
             while (look < raw.length && !raw[look].trim()) look++;
-            if (look < raw.length && headStart.test(raw[look])) { out.push(m[1]); i = look; continue; }
+            if (look < raw.length && headStart.test(raw[look])) { out.push(slateCleanSceneNumber(m[1])); i = look; continue; }
             // A numbered scene with NO heading line beneath it. Common in
             // Nollywood scripts, where a writer numbers the scene and goes
             // straight into the action. It is still a scene and the number
             // is still right there — this used to fall through and record a
             // null for a number printed on the page.
-            out.push(m[1]);
+            out.push(slateCleanSceneNumber(m[1]));
             continue;
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            out.push(wn ? wn[1] : null);
+            out.push(wn ? slateCleanSceneNumber(wn[1]) : null);
           }
         }
         return out;
@@ -1460,6 +1510,95 @@
       // Reserved key for scenes whose heading names no place. Cannot collide
       // with a real location: slateLocationKey only ever returns letters and
       // digits, never a space.
+      // ── Did this breakdown come out well? ──
+      // Derived in code the moment a breakdown finishes: no model call, no
+      // network, a few milliseconds. It exists because a filmmaker who gets a
+      // weak breakdown does not report it — they leave, and we never learn
+      // which script format defeated us.
+      //
+      // READ ONLY. It never alters the breakdown, and every caller wraps it,
+      // because nothing here may put a breakdown someone has paid for at
+      // risk. Written to be incapable of throwing on any input: the whole
+      // body is guarded, and a failure returns null rather than propagating.
+      function slateBreakdownQuality(breakdown, headingsSeen, scriptChars) {
+        try {
+          var scenes = (breakdown && Array.isArray(breakdown.scenes)) ? breakdown.scenes : [];
+          var n = scenes.length;
+          var seen = (typeof headingsSeen === 'number' && isFinite(headingsSeen) && headingsSeen >= 0)
+            ? headingsSeen : null;
+          var chars = (typeof scriptChars === 'number' && isFinite(scriptChars)) ? scriptChars : 0;
+
+          function blank(v) {
+            var s = String(v == null ? '' : v).trim();
+            if (!s) return true;
+            try { return slateIsPlaceholderLocation(s); } catch (e) { return false; }
+          }
+          function count(fn) {
+            var c = 0;
+            for (var i = 0; i < n; i++) {
+              try { if (fn(scenes[i] || {})) c++; } catch (e) {}
+            }
+            return c;
+          }
+
+          return {
+            scenes: n,
+            headings_seen: seen,
+            // Slate could not read this format at all. The single most
+            // important signal we have: it is the user who never writes in.
+            unreadable_format: (seen === 0 && chars > 2000),
+            // Scenes lost or invented between the splitter and the model.
+            scene_delta: (seen === null) ? 0 : (n - seen),
+            no_location: count(function (s) { return blank(s.location); }),
+            no_time: count(function (s) { return blank(s.time_of_day); }),
+            no_cast: count(function (s) { return !(Array.isArray(s.cast) && s.cast.length); }),
+            no_description: count(function (s) { return blank(s.description); }),
+            // Not a fault: IRIRI and WHEN LOVES FIND YOU number no scenes at
+            // all, and labelling them #1..#59 is the correct answer.
+            unnumbered: count(function (s) { return String(s.scene_label || '').charAt(0) === '#'; }),
+            // Our own derivation working, not a problem: 27 in A BROTHER'S LOVE.
+            time_inherited: count(function (s) { return !!s.slate_time_continuous; }),
+            placeholder_values: count(function (s) {
+              return (s.location && blank(s.location) && String(s.location).trim())
+                  || (s.set && blank(s.set) && String(s.set).trim());
+            })
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // Counts only — never a location, a character name, a title or a line
+      // of script. The production id ties an event to a run; nothing in the
+      // payload describes what the script is about.
+      function slateReportQuality(q, productionId, language, partial) {
+        try {
+          if (!q) return;
+          if (q.unreadable_format) {
+            siqTrack('breakdown_unreadable', {
+              production_id: productionId || null,
+              script_chars: q.scenes ? null : undefined,
+              headings_seen: q.headings_seen
+            });
+          }
+          siqTrack('breakdown_quality', {
+            production_id: productionId || null,
+            partial: !!partial,
+            language_detected: language || null,
+            scenes: q.scenes,
+            headings_seen: q.headings_seen,
+            scene_delta: q.scene_delta,
+            no_location: q.no_location,
+            no_time: q.no_time,
+            no_cast: q.no_cast,
+            no_description: q.no_description,
+            unnumbered: q.unnumbered,
+            time_inherited: q.time_inherited,
+            placeholder_values: q.placeholder_values
+          });
+        } catch (e) {}
+      }
+
       var SLATE_NO_LOCATION_KEY = '\u0000no location';
 
       // ── Locations that are not locations ──
@@ -1784,15 +1923,18 @@
         // the first moment the numbers can actually be right.
         // Derived in code, not asked of the model: counting is arithmetic.
           function labelFor(s) {
-          var n = s.scene_number;
-          // The model sometimes returns the string "null" rather than a
-          // real null, which printed literally in the character and
-          // location reports.
-          if (n === null || n === undefined || n === '' || n === 'null' || n === 'undefined') {
+          // Cleaned here as well as at the splitter. The recorded numbers win
+          // and those are already clean, but when the script has numbers and
+          // the recorded list is not used, the MODEL's scene_number is what
+          // prints — and the model copies the heading, trailing dot included.
+          // Belt and braces: this is the single point every label passes
+          // through on its way to a page.
+          var n = slateCleanSceneNumber(s.scene_number);
+          if (n === null || n === '' || n === 'null' || n === 'undefined') {
             return '#' + s.scene_index;
           }
           return n;
-        } 
+        }
 
         // ── One place, one name ──
         // Done here because this is the first moment every chunk is in and
@@ -1846,6 +1988,40 @@
         // printed "—" for an unnumbered scene while the other two printed
         // "#13", and a filmmaker reasonably asked why.
         merged.scenes.forEach(function (s) { s.scene_label = labelFor(s); });
+
+        // ── CONTINUOUS inherits the time of day ──
+        // "CONTINUOUS" means the same moment as the scene before it. The
+        // model returns it verbatim, or returns nothing at all, and every
+        // consumer downstream reads anything that is not NIGHT as a day
+        // scene. So a night sequence written
+        //
+        //    5. INT. LIVING ROOM - NIGHT
+        //    6. INT. LIVING ROOM - CONTINUOUS
+        //
+        // put scene 5 in the night block and scene 6 in the day block: one
+        // conversation, split across the shoot day and lit two ways. 22 of
+        // the 60 scenes in A BROTHER'S LOVE are written like this.
+        //
+        // Derive it rather than ask: the answer is on the page, in the scene
+        // above. The same reasoning as the flashback spans, which already
+        // carry across scenes the script does not mark.
+        (function () {
+          var slateLastTime = null;
+          merged.scenes.forEach(function (s) {
+            var raw = String(s.time_of_day == null ? '' : s.time_of_day).trim();
+            var up = raw.toUpperCase();
+            // CONT'D, SAME, MOMENTS LATER and LATER all mean "carry on from
+            // the scene above" for lighting purposes.
+            var carries = !raw
+              || /^(CONTINUOUS|CONT'?D?\.?|SAME|SAME TIME|MOMENTS? LATER|LATER|A MOMENT LATER)$/.test(up);
+            if (!carries) { slateLastTime = raw; return; }
+            if (!slateLastTime) return;   // nothing before it to inherit from
+            s.time_of_day = slateLastTime;
+            // Kept so the fact it was continuous is not lost — a call sheet
+            // may want to say "NIGHT (continuous)" later.
+            s.slate_time_continuous = true;
+          });
+        })();
 
         // ── Carry a flashback across the scenes it actually covers ──
         // A writer marks where a flashback BEGINS and where it returns to the
@@ -2440,6 +2616,33 @@
           }
           try { localStorage.setItem('slate_breakdown', JSON.stringify(slateBreakdown)); } catch (e) {}
           wsProgress(100, partialFailure ? 'Partial breakdown ready.' : 'Breakdown complete.');
+
+          // How did this breakdown actually come out? Reported for a PARTIAL
+          // run as well — a partial failure is exactly the case worth seeing,
+          // and it is the one a filmmaker is least likely to write in about.
+          //
+          // Wrapped twice over. Nothing in here may break a breakdown the
+          // filmmaker has already paid for: if the check throws, the catch
+          // swallows it and the breakdown is delivered exactly as it would
+          // have been. It reads the data and changes nothing.
+          try {
+            var slateSeen = null;
+            if (Array.isArray(window.slateChunkNumbers)) {
+              slateSeen = 0;
+              window.slateChunkNumbers.forEach(function (list) {
+                if (Array.isArray(list)) slateSeen += list.length;
+              });
+            }
+            slateReportQuality(
+              slateBreakdownQuality(slateBreakdown, slateSeen, (script || '').length),
+              productionId,
+              slateBreakdown && slateBreakdown.language_detected,
+              partialFailure
+            );
+          } catch (e) {
+            console.warn('[Slate] Quality check skipped:', e && e.message);
+          }
+
           if (!partialFailure) {
             siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
             updateCreditsAfterRun(user, isAdmin);
