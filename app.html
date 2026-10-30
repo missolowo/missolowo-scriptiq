@@ -1121,8 +1121,25 @@
       // together. We read it off the page rather than asking the model,
       // because the model is only told to look at the HEADING and this is
       // written on the number line above it.
+      // The annotation a writer puts beside a scene number. Deliberately a
+      // CLOSED vocabulary, because the bare (unbracketed) form below would
+      // otherwise swallow the Nollywood layout "SCENE 5  BUS-STOP  EXT/DAY"
+      // and throw its location away.
+      var SLATE_SCENE_MARKER =
+        'CONT\\.?D?\\.?|CONTINUED|CONTINUES|CONTINUOUS|FLASH\\s?BACK|FLASH\\s?FORWARD'
+        + '|DREAM|MONTAGE|INTER\\s?CUT|VISION|MEMORY|FANTASY|BACK TO[ A-Z]*';
+
+      // "SCENE 12", "SCENE 12 (FLASHBACK)" and "SCENE 60 CONT." are all one
+      // scene number followed by an annotation. Only the bracketed form used
+      // to be accepted, so IRIRI's "SCENE60 CONT.", "SCENE61 FLASHBACK" and
+      // "SCENE62 CONT." failed to pair with the heading below them — the
+      // number line AND the heading were then each counted as a scene, and
+      // the script reported three scenes more than it has.
+      //
+      // Group 1 is the number, group 2 the annotation, bracketed or not.
       var SLATE_NUM_ONLY_SRC =
-        '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*(?:\\(([^)]*)\\))?[ \\t]*$';
+        '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?[ \\t]*'
+        + '(?:\\(?[ \\t]*((?:' + SLATE_SCENE_MARKER + ')[^)\\n]*?)[ \\t]*\\)?)?[ \\t]*$';
 
       // A heading is either an INT/EXT word, or a SCENE word followed by a number.
       var slateHeadingSrc =
@@ -1205,34 +1222,70 @@
         return out;
       }
 
-      function slateSceneNumbersIn(sectionText) {
+      // ── ONE count, ONE answer ──
+      // A production manager budgets off the scene count. Slate used to
+      // produce it three different ways — the health check took
+      // max(headings, numbers), the splitter walked the script itself, and
+      // the breakdown reported whatever came back from the model — so one
+      // script showed 68, 65 and 64. None of those was its real 63.
+      //
+      // Every count now comes from this single walk. The health check and the
+      // splitter cannot disagree, because there is only one of them.
+      //
+      // It also separates the two things a messy script does, which a single
+      // total hides:
+      //   numbered   — the writer numbered this scene. Trustworthy.
+      //   unnumbered — a heading with no scene number above it. Either the
+      //                writer forgot, or it is a location change inside an
+      //                existing scene. We cannot tell, so we never fold it
+      //                silently into the total.
+      //   unreadable — numbered, but its heading defeated our reader.
+      //                Still a scene; its location and time will be missing.
+      function slateCountScenes(sectionText) {
         var raw = String(sectionText || '').split(/\r?\n/);
-        // Fold "SCENE 5" on its own line into the heading beneath it, so the
-        // pair counts as one scene — the same shape the splitter produces.
         var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
         var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
         var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
-        var out = [];
+        var out = [], numbered = 0, unnumbered = 0, unreadable = [];
         for (var i = 0; i < raw.length; i++) {
           var m = raw[i].match(numOnly);
           if (m) {
             var look = i + 1;
             while (look < raw.length && !raw[look].trim()) look++;
-            if (look < raw.length && headStart.test(raw[look])) { out.push(slateCleanSceneNumber(m[1])); i = look; continue; }
-            // A numbered scene with NO heading line beneath it. Common in
-            // Nollywood scripts, where a writer numbers the scene and goes
-            // straight into the action. It is still a scene and the number
-            // is still right there — this used to fall through and record a
-            // null for a number printed on the page.
-            out.push(slateCleanSceneNumber(m[1]));
+            if (look < raw.length && headStart.test(raw[look])) {
+              out.push(slateCleanSceneNumber(m[1])); numbered++; i = look; continue;
+            }
+            // A numbered scene whose heading we could not read, or which has
+            // no heading line at all — common in Nollywood scripts, where a
+            // writer numbers the scene and goes straight into the action.
+            // Either way the writer numbered it, so it is a scene.
+            out.push(slateCleanSceneNumber(m[1])); numbered++;
+            var cand = (raw[look] || '').trim();
+            if (cand && cand.length <= 90 && !numOnly.test(cand) && unreadable.indexOf(cand) < 0) {
+              unreadable.push(cand);
+            }
             continue;
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            out.push(wn ? slateCleanSceneNumber(wn[1]) : null);
+            var slateN = wn ? slateCleanSceneNumber(wn[1]) : null;
+            out.push(slateN);
+            // "Numbered" means we know this scene's number, wherever the
+            // writer put it. A BROTHER'S LOVE writes "1.EXT. COMPOUND - DAY"
+            // and Better Half "1.00. INT. STUDIO" — the number is ON the
+            // heading, not on a line above it. Counting only separate-line
+            // numbers reported both scripts as numbering nothing.
+            if (slateN) numbered++; else unnumbered++;
           }
         }
-        return out;
+        return { numbers: out, numbered: numbered, unnumbered: unnumbered,
+                 unreadable: unreadable, total: out.length };
+      }
+
+      // Kept as the splitter's interface — same input, same output, one
+      // implementation underneath.
+      function slateSceneNumbersIn(sectionText) {
+        return slateCountScenes(sectionText).numbers;
       }
 
       function slateRecordNumbers(chunks) {
@@ -4114,11 +4167,79 @@
           var ok = scenes.some(function (s) { return s.raw && t.indexOf(s.raw.slice(0, 12)) >= 0; });
           if (!ok && misread.indexOf(t) < 0) misread.push(t);
         });
+        // A second pass, anchored to the scene NUMBERS. The scan above looks
+        // for anything heading-shaped; this one asks a narrower question with
+        // a far better answer: the writer wrote "SCENE 16", so the next line
+        // was MEANT to be its heading. If our reader cannot parse it, it is
+        // broken, whatever shape it has. On IRIRI the scan above found one of
+        // these and this finds all six.
+        try {
+          var numRe2 = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
+          var headRe2 = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
+          for (var ui = 0; ui < rawLines.length; ui++) {
+            if (!numRe2.test(rawLines[ui])) continue;
+            var un = ui + 1;
+            while (un < rawLines.length && !rawLines[un].trim()) un++;
+            if (un >= rawLines.length) continue;
+            var cand = rawLines[un].trim();
+            if (!cand || cand.length > 90) continue;
+            if (headRe2.test(cand) || numRe2.test(cand)) continue;
+            // Only flag a line that was TRYING to be a heading. A great many
+            // Nollywood scripts — LORI NKAN MI among them — number a scene
+            // and go straight into the action with no heading at all, which
+            // is handled deliberately elsewhere. Without this gate the panel
+            // told that script five of its headings were broken when the
+            // lines in question were a character cue, two lines of Yoruba
+            // action and a line of dialogue.
+            //
+            // Heading-shaped means: it names a time of day, or it is
+            // slash-separated like INTERIOR/DAYLIGHT/KITCHEN, or it opens
+            // with an INT/EXT-ish word even a misspelled one.
+            var slateLooksLikeHeading =
+                 /\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(cand)
+              || (cand.match(/\//g) || []).length >= 2
+              || /^[IE][A-Za-z]{2,9}\b/i.test(cand);
+            if (!slateLooksLikeHeading) continue;
+            // The scan above may already hold this heading with its scene
+            // number folded on ("SCENE43 INTRIOR/..."). Same broken heading,
+            // so compare without the prefix or it is reported twice.
+            var slateBare = function (v) {
+              return String(v).replace(/^(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*/i, '').trim();
+            };
+            var already = misread.some(function (v) { return slateBare(v) === slateBare(cand); });
+            if (!already) misread.push(cand);
+          }
+        } catch (e) { /* never break the health check over a hint */ }
+
         if (misread.length) {
-          findings.push({ level: 'medium',
+          // Name every one, and say WHY, in the writer's own terms. A count
+          // alone — "6 headings could not be read" — is not something anyone
+          // can act on; "ITERIOR — did you mean INTERIOR?" takes five minutes
+          // to fix.
+          var slateNamed = misread.slice(0, 8).map(function (raw) {
+            // Read past a folded scene number, or the hint describes
+            // "SCENE43" instead of the heading that is actually broken.
+            var t = String(raw)
+              .replace(/^(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*/i, '').trim() || String(raw);
+            var first = t.split(/[\/\s,.]+/)[0] || '';
+            var why;
+            if (/^(DAY|NIGHT|DAYLIGHT|MORNING|EVENING|AFTERNOON|DAWN|DUSK)$/i.test(first)) {
+              why = 'the time comes before INTERIOR or EXTERIOR';
+            } else if (/^[IE][A-Za-z]{2,9}$/i.test(first)
+                       && !/^(INT|EXT|INTERIOR|EXTERIOR)$/i.test(first)) {
+              why = '"' + first + '" — did you mean INTERIOR or EXTERIOR?';
+            } else if (!/\b(INT|EXT|INTERIOR|EXTERIOR)\b/i.test(t)) {
+              why = 'no INTERIOR or EXTERIOR in the heading';
+            } else {
+              why = 'not in a form we can read';
+            }
+            return '“' + t.slice(0, 46) + (t.length > 46 ? '…' : '') + '” — ' + why;
+          });
+          findings.push({ level: 'high',
             title: misread.length + ' scene heading' + (misread.length > 1 ? 's' : '') + ' we could not read',
-            detail: 'e.g. "' + misread[0].slice(0, 60) + '". This usually means a typo in INT or EXT. '
-              + 'Scenes we cannot read are not broken down or scheduled. Review before export.' });
+            detail: 'Their location and time will be missing from the breakdown, and they '
+              + 'will not be scheduled. ' + slateNamed.join('  ·  ')
+              + (misread.length > 8 ? '  ·  …and ' + (misread.length - 8) + ' more.' : '') });
         }
         // Unnumbered headings
         var unnumbered = scenes.filter(function (s) { return !s.number; });
@@ -4224,10 +4345,21 @@
         // numbers a scene and goes straight into the action has a scene
         // with no heading. Showing the heading count as though it were the
         // scene count made one 47-scene screenplay report as 38.
-        var sceneTotal = scenes.length;
-        try { sceneTotal = Math.max(scenes.length, slateSceneNumbersIn(text).length); } catch (e) {}
+        // The count comes from the one walk, not from max() of two readers.
+        // That max was the reason the panel and the breakdown disagreed.
+        var sceneTotal = scenes.length, numbered = 0, unnumbered = 0;
+        try {
+          var slateCount = slateCountScenes(text);
+          sceneTotal = slateCount.total;
+          numbered = slateCount.numbered;
+          unnumbered = slateCount.unnumbered;
+          // Fall back only if this script has no headings our walk can see
+          // at all, so a format we cannot read still reports something.
+          if (!sceneTotal) sceneTotal = scenes.length;
+        } catch (e) {}
         return { score: score, band: band, sceneCount: scenes.length,
-                 sceneTotal: sceneTotal, findings: findings };
+                 sceneTotal: sceneTotal, numbered: numbered,
+                 unnumbered: unnumbered, findings: findings };
      }
       window.slateHealthCheck = slateHealthCheck;
     
@@ -4296,7 +4428,20 @@
           + '<span style="font-size:18px;font-weight:600;color:' + c + '">' + r.score + '</span></div>'
           + '<div><div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A)">Script Health Check</div>'
           + '<div style="font-size:15px;font-weight:600;color:var(--paper,#F4EFE6);margin-top:4px">' + labels[r.band] + '</div>'
-          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">' + (r.sceneTotal || r.sceneCount) + ' scenes found</div>'
+          // One defensible number, with the doubt named rather than folded
+          // into it. "65 scenes found" was a guess presented as a fact; a
+          // production manager budgets off this line.
+          + '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:2px">'
+            + (r.numbered
+                ? r.numbered + ' scene' + (r.numbered > 1 ? 's' : '') + ' numbered in the script'
+                  + (r.unnumbered
+                      ? '<span style="color:var(--warn,#C97E3D)"> · ' + r.unnumbered
+                        + ' heading' + (r.unnumbered > 1 ? 's' : '') + ' with no number</span>'
+                      : '')
+                : (r.sceneTotal || r.sceneCount) + ' scene'
+                  + ((r.sceneTotal || r.sceneCount) === 1 ? '' : 's') + ' found'
+                  + (r.sceneTotal ? ' · this script numbers no scenes' : ''))
+          + '</div>'
           + '</div></div>';
 
         if (r.findings.length) {
