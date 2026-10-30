@@ -1411,6 +1411,52 @@
           .trim();
       } 
   
+      // ── Element lists (props, costume, equipment, requirements) ──
+      // The cast list is deduped by slateKey; these four were on a raw Set,
+      // so only byte-identical strings merged. "Ghana must go bag" and
+      // "Ghana must go bags" printed as two line items on ALL PROPS, as
+      // would "Red basket" and "red basket".
+      //
+      // slateBetterLabel is not reusable here — it knows about dialogue
+      // modifiers, which a prop never has. Elements need their own rule.
+      //
+      // The key drops a trailing "s" so bag/bags merge. Deliberately NOT
+      // "es" as well: that would fold "glass" into "glasses", which are
+      // different objects. glass -> glass, glasses -> glasse, so they stay
+      // apart — the safe failure.
+      // The length guard is > 3, not > 2: at three characters the rule would
+      // strip real words ("gas" -> "ga", "bus" -> "bu") and merge them with
+      // anything that happened to key the same. "bags" (4) still folds onto
+      // "bag" (3, left alone), which is the case this exists for.
+      function slateElementKey(v) {
+        var k = slateKey(v);
+        return k.length > 3 ? k.replace(/S$/, '') : k;
+      }
+
+      // Longer wins, which prefers the plural ("Ghana must go bags") and the
+      // more specific wording. Ties keep the form already recorded.
+      function slateMergeElements(existing, incoming) {
+        var out = (existing || []).slice();
+        var index = {};
+        out.forEach(function (v, i) {
+          var k = slateElementKey(v);
+          if (k && !(k in index)) index[k] = i;
+        });
+        (incoming || []).forEach(function (raw) {
+          var v = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+          if (!v) return;
+          var k = slateElementKey(v);
+          if (!k) return;
+          if (k in index) {
+            if (v.length > String(out[index[k]]).length) out[index[k]] = v;
+          } else {
+            index[k] = out.length;
+            out.push(v);
+          }
+        });
+        return out;
+      }
+
       // Reserved key for scenes whose heading names no place. Cannot collide
       // with a real location: slateLocationKey only ever returns letters and
       // digits, never a space.
@@ -1709,10 +1755,12 @@
               merged.production_elements.all_cast.push(slateTitleCase(clean));
             }
           });
-          merged.production_elements.all_props = [...new Set([...merged.production_elements.all_props, ...(pe.all_props || [])])];
-          merged.production_elements.all_costume = [...new Set([...merged.production_elements.all_costume, ...(pe.all_costume || [])])];
-          merged.production_elements.all_equipment = [...new Set([...merged.production_elements.all_equipment, ...(pe.all_equipment || [])])];
-          merged.production_elements.special_requirements = [...new Set([...merged.production_elements.special_requirements, ...(pe.special_requirements || [])])];
+          // slateMergeElements, not new Set. A Set only merges byte-identical
+          // strings, which is why ALL PROPS carried the same item twice.
+          merged.production_elements.all_props = slateMergeElements(merged.production_elements.all_props, pe.all_props);
+          merged.production_elements.all_costume = slateMergeElements(merged.production_elements.all_costume, pe.all_costume);
+          merged.production_elements.all_equipment = slateMergeElements(merged.production_elements.all_equipment, pe.all_equipment);
+          merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
         } 
          // ── Rebuild the indexes from the assembled scenes ──
         // These were previously merged per chunk, but a chunk only ever
@@ -1808,13 +1856,28 @@
           var open = null;
           merged.scenes.forEach(function (s, i) {
             if (s.slate_returns_to_present) {
-              if (open) { open.endsBefore = i; open.returnsAt = s.scene_label; open = null; }
+              if (open) {
+                open.endsBefore = i;
+                open.returnsAt = s.scene_label;
+                open.endedBy = 'return';
+                open = null;
+              }
               return;
             }
             if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') {
-              if (open) open.endsBefore = i;
+              // A span can end three ways, and which one it was has to be
+              // recorded here or the note below guesses. Closing the previous
+              // span without saying why left returnsAt null, which the note
+              // read as "never returns, runs to the end of the script" — while
+              // the span had in fact ended at this very scene.
+              if (open) {
+                open.endsBefore = i;
+                open.endedBy = 'next';
+                open.nextLabel = s.scene_label;
+              }
               open = { type: s.scene_type, from: i, label: s.scene_label,
-                       endsBefore: merged.scenes.length, returnsAt: null };
+                       endsBefore: merged.scenes.length, returnsAt: null,
+                       endedBy: 'end', nextLabel: null };
               spans.push(open);
             }
           });
@@ -1828,7 +1891,11 @@
             var sp = inSpan[i];
             if (s.slate_returns_to_present) {
               delete s.slate_returns_to_present;
-              var closed = spans.filter(function (x) { return x.endsBefore === i; })[0];
+              // Only a span this return actually closed. A span that ended
+              // here because a new marker opened is not the one returning.
+              var closed = spans.filter(function (x) {
+                return x.endsBefore === i && x.endedBy === 'return';
+              })[0];
               s.scene_type = 'BACK TO PRESENT';
               s.slate_time_frame = 'present';
               s.scene_continuity = closed
@@ -1841,14 +1908,33 @@
             if (!sp) return;
             s.scene_type = sp.type;
             s.slate_time_frame = 'other';
-            var ends = sp.returnsAt
-              ? ' It runs until the script returns to the present at scene ' + sp.returnsAt + '.'
-              : ' The script never marks a return, so it runs to the end of the script.';
+            var slateKind = sp.type.toLowerCase();
+            // Three ways a span ends, three sentences. The closing clause of
+            // the inherited-scene note is taken from the SAME fact, so a
+            // scene can no longer claim a return its own opener denies.
+            var ends, worked;
+            if (sp.endedBy === 'return') {
+              ends = ' It runs until the script returns to the present at scene '
+                + sp.returnsAt + '.';
+              worked = ' and the return to the present at scene ' + sp.returnsAt + '.';
+            } else if (sp.endedBy === 'next') {
+              var slateLast = merged.scenes[sp.endsBefore - 1];
+              var slateLastLabel = slateLast ? slateLast.scene_label : sp.label;
+              ends = ' The script marks another ' + slateKind + ' at scene ' + sp.nextLabel
+                + ' before it ever returns to the present, so this one covers '
+                + (String(slateLastLabel) === String(sp.label)
+                    ? 'this scene only.'
+                    : 'scenes ' + sp.label + ' to ' + slateLastLabel + '.');
+              worked = ' and the next ' + slateKind + ' marker at scene ' + sp.nextLabel + '.';
+            } else {
+              ends = ' The script never marks a return, so it runs to the end of the script.';
+              worked = ', and the script never marks a return after it.';
+            }
             s.scene_continuity = (i === sp.from)
-              ? 'Marked ' + sp.type.toLowerCase() + ' in the script.' + ends
-              : 'Still inside the ' + sp.type.toLowerCase() + ' that begins at scene ' + sp.label
+              ? 'Marked ' + slateKind + ' in the script.' + ends
+              : 'Still inside the ' + slateKind + ' that begins at scene ' + sp.label
                 + '. The script does not mark this scene \u2014 we worked it out from the '
-                + sp.type.toLowerCase() + ' marker above and the return below.';
+                + slateKind + ' marker at scene ' + sp.label + worked;
           });
         })();
 
