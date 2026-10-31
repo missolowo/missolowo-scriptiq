@@ -5145,6 +5145,18 @@
         slateShowBilling();
         setTimeout(loadBilling, 0);
       }
+
+      // The homepage has always linked to ?auth=signin and ?auth=signup, but
+      // nothing here ever read 'auth' — so both links landed on the same
+      // default view and a returning filmmaker who pressed "Sign in" was
+      // shown no way to sign in. Honour the parameter, and never raise the
+      // modal over somebody who is already signed in.
+      var slateWantAuth = params.get('auth');
+      if (slateWantAuth && typeof openAuthModal === 'function') {
+        var slateSignedIn = false;
+        try { slateSignedIn = !!localStorage.getItem('scriptiq_user'); } catch (e) {}
+        if (!slateSignedIn) openAuthModal(slateWantAuth === 'signup' ? 'signup' : 'login');
+      }
     })();
 
     window.loadBilling = loadBilling;
