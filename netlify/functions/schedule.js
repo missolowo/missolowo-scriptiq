@@ -398,6 +398,14 @@ exports.handler = async function(event, context) {
         })
       };
 
+      // Cast numbers, assigned in the breakdown, looked up here so the
+      // release schedule and the Day Out of Days use the same number the
+      // breakdown printed. Keyed the same way the breakdown keyed them.
+      const slateCastNo = {};
+      (breakdown.character_breakdown || []).forEach(function (c) {
+        if (c && c.character && c.cast_number) slateCastNo[normKey(c.character)] = c.cast_number;
+      });
+
       // Cast release — derived in code
       const castDays = {};
       schedule.schedule.forEach(function (d) {
@@ -425,15 +433,24 @@ exports.handler = async function(event, context) {
       schedule.cast_release_schedule = Object.keys(castDays).map(function (k) {
         const c = castDays[k];
         var dr = c.days_required.length ? c.days_required : [1];
-        return { character: slateName(c.character), days_required: dr, release_day: Math.max.apply(null, dr) };
+        return { character: slateName(c.character), cast_number: slateCastNo[k] || null,
+                 days_required: dr, release_day: Math.max.apply(null, dr) };
       }).concat(Object.keys(castUnplaced).map(function (k) {
         return {
           character: slateName(castUnplaced[k].character),
+          cast_number: slateCastNo[k] || null,
           days_required: [],
           release_day: null,
           unscheduled_only: true
         };
-      }));
+      })).sort(function (a, b) {
+        // Cast order, not discovery order — a production reads this list by
+        // number, and number 1 is the actor whose availability drives the
+        // whole schedule.
+        var an = a.cast_number || 9999, bn = b.cast_number || 9999;
+        if (an !== bn) return an - bn;
+        return String(a.character).localeCompare(String(b.character));
+      });
 
       // ── Small AI pass for production notes only — fails safe ──
       try {

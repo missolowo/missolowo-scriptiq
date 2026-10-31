@@ -2091,7 +2091,7 @@
           if (slateIsPlaceholderLocation(s.set)) s.set = '';
         });
 
-        var charMap = {}, locMap = {};
+        var charMap = {}, locMap = {}, slateCastOrder = 0;
 
         // Work the label out ONCE and carry it on the scene, so the scene
         // list, the character report, the location report and the exports
@@ -2248,7 +2248,10 @@
             if (!name) return;
             var k = slateKey(name);
             if (!k) return;
-            if (!charMap[k]) charMap[k] = { character: name, scenes: [] };
+            // This walk is already in script order, so the first time a name
+            // appears IS their first appearance. Recorded for the cast
+            // numbering below, where it settles ties.
+            if (!charMap[k]) charMap[k] = { character: name, scenes: [], first: slateCastOrder++ };
             else charMap[k].character = slateBetterLabel(charMap[k].character, name);
             if (charMap[k].scenes.indexOf(label) < 0) charMap[k].scenes.push(label);
           });
@@ -2278,10 +2281,30 @@
           }
         });
 
+        // ── Cast numbers ──
+        // Every production numbers its cast, and that number is the key the
+        // stripboard, the Day Out of Days and the call sheet all join on.
+        // We named characters and never numbered them, which is the first
+        // thing a 1st AD looks for on a breakdown.
+        //
+        // Numbered by scene count, so the actor carrying the film is number
+        // one — the order a billing list tends to follow. Ties break on who
+        // appears first and then on name, so the same script always produces
+        // the same numbers and a document regenerated tomorrow does not
+        // quietly renumber the cast.
         merged.character_breakdown = Object.keys(charMap).map(function (k) {
           var c = charMap[k];
-          return { character: slateTitleCase(c.character), scenes: c.scenes, total: c.scenes.length };
-        }).sort(function (a, b) { return b.total - a.total; });
+          return { character: slateTitleCase(c.character), scenes: c.scenes,
+                   total: c.scenes.length, slate_first: c.first };
+        }).sort(function (a, b) {
+          if (b.total !== a.total) return b.total - a.total;
+          if (a.slate_first !== b.slate_first) return a.slate_first - b.slate_first;
+          return String(a.character).localeCompare(String(b.character));
+        }).map(function (c, i) {
+          c.cast_number = i + 1;
+          delete c.slate_first;
+          return c;
+        });
 
         merged.outline_schedule = Object.keys(locMap).map(function (k) {
           var l = locMap[k];
@@ -2410,7 +2433,7 @@
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
           + chars.map(function(c) {
             return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
-              + '<span style="color:var(--paper,#F4EFE6);font-weight:600">' + c.character + '</span>'
+              + '<span style="color:var(--paper,#F4EFE6);font-weight:600"><span style="color:var(--gold,#D4A64A);font-family:var(--font-data);margin-right:10px">' + (c.cast_number || '') + '</span>' + c.character + '</span>'
               + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (c.scenes || []).join(', ') + '</span>'
               + '<span style="color:var(--gold,#D4A64A);font-family:monospace">' + (c.total || (c.scenes || []).length) + '</span></div>';
           }).join('') + '</div>';
@@ -3551,13 +3574,18 @@
           pdf.rule();
         });
 
+        // Cast number first, the way every production document carries it —
+        // it is the key the Day Out of Days and the call sheet join on, and
+        // a breakdown without it is the first thing a 1st AD notices.
         pdf.sectionHeader('Report 2 — Character Scene Breakdown');
                 pdf.table(
-          [{ label: 'Character', width: 60, bold: true },
-           { label: 'Scene Numbers', width: 95 },
+          [{ label: 'No.', width: 12, align: 'right', gold: true },
+           { label: 'Character', width: 55, bold: true },
+           { label: 'Scene Numbers', width: 88 },
            { label: 'Total', width: 25, align: 'right', gold: true }],
-          chars.map(function (c) {
-            return [c.character || '', (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
+          chars.map(function (c, i) {
+            return [c.cast_number || (i + 1), c.character || '',
+                    (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
           })
         );
 
@@ -3746,7 +3774,7 @@
             // days_required list can wrap to a second line. check(12) let a row
             // start too near the bottom and run off the page.
             pdf.check(24);
-            pdf.slugline(c.character || '', 15);
+            pdf.slugline((c.cast_number ? c.cast_number + '.  ' : '') + (c.character || ''), 15);
             // gap(9), not gap(6). slugline draws at y+4, so six units leaves
             // two between baselines and the line below printed through the
             // actor's name. Every other caller of slugline already uses 9.
@@ -3942,7 +3970,10 @@
           d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('helvetica', 'bold');
-          d.text(String(c.character || ''), 15, pdf.getY());
+          // Cast number ahead of the name, the same number the breakdown and
+          // the schedule print, so a crew reading three documents sees one
+          // identity per actor.
+          d.text((c.cast_number ? c.cast_number + '.  ' : '') + String(c.character || ''), 15, pdf.getY());
           d.setFont('courier', 'normal');
           d.setFontSize(8);
           d.setTextColor.apply(d, SLATE_MUTED);

@@ -302,15 +302,29 @@ Return ONLY valid JSON:
       }
     });
 
+    // Cast numbers come from the breakdown, so the call sheet, the schedule
+    // and the Day Out of Days all print the same number for the same actor.
+    // A call sheet that numbers its cast differently from the breakdown is
+    // worse than one that does not number them at all.
+    const slateCastNo = {};
+    (breakdown.character_breakdown || []).forEach(function (c) {
+      if (c && c.character && c.cast_number) slateCastNo[castKey(c.character)] = c.cast_number;
+    });
+
     const castCallTimes = castToday.map(function (c) {
       const t = timeByName[castKey(c.character)] || {};
       return {
         character: c.character,
+        cast_number: slateCastNo[castKey(c.character)] || null,
         call_time: t.call_time || general_call || '07:00',
         on_set: t.on_set || '08:30',
         status: t.status || '',
         scenes: c.scenes
       };
+    }).sort(function (a, b) {
+      var an = a.cast_number || 9999, bn = b.cast_number || 9999;
+      if (an !== bn) return an - bn;
+      return String(a.character).localeCompare(String(b.character));
     });
 
     // ── STEP 6: Assemble. Every fact here comes from data. ──
