@@ -13,27 +13,46 @@
 // Amounts are in KOBO: naira × 100. ₦3,000 is 300000.
 // ============================================================
 
-// ── THE PACKS ── (PM-approved, Sep 2026)
+// ── THE PACKS ── (PM-approved, Oct 2026)
+//
+// Two rules govern this table, and pricing-probe.js enforces both:
+//
+//   1. The price per credit FALLS as the pack grows. Without that, a
+//      heavier user is better off buying the small pack repeatedly, and
+//      the packs we most want sold are the ones nobody rational buys.
+//      An earlier draft had Starter at ₦600/credit against Pro at ₦850,
+//      which made two Starters ₦2,500 cheaper than one Pro for the same
+//      ten credits.
+//
+//   2. No combination of smaller packs may beat a larger one. Rule 1 is
+//      necessary but not sufficient once pack sizes stop dividing evenly,
+//      so the probe checks every combination rather than just the slope.
+//
+// The launch discount is uniform at 20%, so every pack moves by the same
+// quarter when the offer ends. An uneven discount put a 67% jump on
+// Starter against 18% on Pro — customer 100 and customer 101 paying very
+// different prices for the same thing, on a market where those two people
+// meet on set within a month.
 const PACKS = {
   starter: {
     name: 'Starter',
     credits: 5,
-    launch_amount: 300000,    // ₦3,000
-    regular_amount: 500000,   // ₦5,000
+    launch_amount: 400000,    // ₦4,000  — ₦800/credit
+    regular_amount: 500000,   // ₦5,000  — ₦1,000/credit
     label: 'Missolowo Slate — Starter · 5 Credits'
   },
   professional: {
     name: 'Professional',
     credits: 15,
-    launch_amount: 850000,    // ₦8,500
-    regular_amount: 1000000,  // ₦10,000
+    launch_amount: 1000000,   // ₦10,000 — ₦667/credit
+    regular_amount: 1250000,  // ₦12,500 — ₦833/credit
     label: 'Missolowo Slate — Professional · 15 Credits'
   },
   studio: {
     name: 'Studio',
     credits: 40,
-    launch_amount: 2000000,   // ₦20,000
-    regular_amount: 2500000,  // ₦25,000
+    launch_amount: 2500000,   // ₦25,000 — ₦625/credit
+    regular_amount: 3100000,  // ₦31,000 — ₦775/credit
     label: 'Missolowo Slate — Studio · 40 Credits'
   }
 };

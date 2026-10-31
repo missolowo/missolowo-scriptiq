@@ -76,21 +76,22 @@ exports.handler = async function(event, context) {
     }
 
     // ── STEP 3b: Core access guard ──
+    // No credit check here, deliberately. The breakdown is the paywall: one
+    // credit buys a complete job, and the schedule is part of that job.
+    //
+    // Blocking on a zero balance broke the promise from the other end. A
+    // filmmaker with one credit ran their breakdown, which spent it, and was
+    // then told "No credits remaining" when they asked for the schedule they
+    // had just paid for — the last step of the job they bought, refused.
+    //
+    // A schedule cannot be built without a breakdown to build it from, and
+    // that breakdown was already paid for, so there is nothing here to
+    // protect. The call sheet has never charged or gated for the same
+    // reason. is_disabled still applies: that is an account state, not a
+    // balance.
     if (user && !isAdminEmail) {
       if (user.is_disabled) {
         return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
-      }
-      if (user.credits_remaining <= 0) {
-        return {
-          statusCode: 402,
-          headers,
-          body: JSON.stringify({
-            error: 'No credits remaining',
-            code: 'NO_CREDITS',
-            message: 'You have used all your scheduling credits. Please purchase a top-up pack to continue.',
-            upgrade_required: true
-          })
-        };
       }
     }
 
@@ -510,23 +511,16 @@ exports.handler = async function(event, context) {
       };
     }
 
-    // ── STEP 6: Deduct credit uniformly using pre-fetched user context ──
+    // ── STEP 6: Report the balance. The schedule costs nothing. ──
+    // One credit buys a COMPLETE job — breakdown, schedule and call sheet —
+    // which is what the pricing page sells. This used to deduct a second
+    // credit, so a filmmaker who ran a breakdown and then its schedule spent
+    // two for what they had been sold as one: three free credits bought one
+    // and a half complete jobs, and a Starter pack two and a half rather
+    // than five. The call sheet never charged, so the breakdown is now the
+    // single point where a job is paid for.
     if (user) {
-      let finalRemainingCredits = user.credits_remaining;
-
-      if (!isAdminEmail) {
-        finalRemainingCredits = user.credits_remaining - 1;
-
-        await supabase
-          .from('users')
-          .update({
-            credits_remaining: finalRemainingCredits,
-            credits_used: user.credits_used + 1
-          })
-          .eq('id', user.id);
-      }
-
-      schedule.credits_remaining = finalRemainingCredits;
+      schedule.credits_remaining = user.credits_remaining;
       schedule.user_role = user.role;
     }
 
