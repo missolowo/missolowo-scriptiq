@@ -143,12 +143,30 @@ exports.handler = async function(event, context) {
         return normKey(String(v == null ? '' : v)).replace(/\s+/g, '');
       }
 
+      // ── Scenes the screenplay never placed ──
+      // These used to be grouped like everywhere else. Every one of them
+      // shares the empty location key, so they formed a single large group —
+      // and "largest groups first", which is right for real locations, then
+      // sorted that group to the FRONT. The filmmaker's day 1 call sheet was
+      // therefore the emptiest document the product could produce: on LORI
+      // NKAN MI, nine scenes with no location, no set and mostly no cast.
+      //
+      // A 1st AD does not put a scene with no location on a call sheet; they
+      // flag it and chase the writer. So these leave the day structure
+      // entirely and are reported on their own, where a producer can act on
+      // them. Nothing is dropped — slateUnplaced + the scheduled scenes
+      // always add back up to the total, and the cover prints that sum.
+      function slateIsUnplaced(s) {
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        return !loc && !String(s.set || '').trim();
+      }
+      const slateUnplaced = slimScenes.filter(slateIsUnplaced);
+      const slatePlaced = slimScenes.filter(function (s) { return !slateIsUnplaced(s); });
+
       // Group scenes by location, keeping day and night separate
       const groups = {};
-      slimScenes.forEach(function (s) {
-        // A scene with no location is not a place to travel to. Group it,
-        // but leave the location blank so it never appears on a call sheet
-        // header as somewhere the crew should go.
+      slatePlaced.forEach(function (s) {
         var loc = String(s.loc || '').trim();
         if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
         // slatePlaceKey, not normKey — see the note above. Two spellings of
@@ -165,7 +183,7 @@ exports.handler = async function(event, context) {
       // A day records EVERY location it contains, not just the first —
       // otherwise the call sheet prints one address while listing scenes
       // shot somewhere else, and crew go to the wrong place.
-      const perDay = Math.ceil(slimScenes.length / dayCount) || 1;
+      const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
       const days = [];
       let current = { scenes: [], locations: [] };
 
@@ -353,7 +371,26 @@ exports.handler = async function(event, context) {
             production_notes: ''
           };
         }),
-        cast_release_schedule: []
+        cast_release_schedule: [],
+
+        // ── Scenes that could not be scheduled ──
+        // Reported, never silently dropped. scenes_scheduled + the length of
+        // this list always equals total_scenes, and the cover prints that sum
+        // so a shorter schedule never reads as missing scenes.
+        scenes_scheduled: slatePlaced.length,
+        unscheduled_reason: slateUnplaced.length
+          ? 'The screenplay never states a location for these scenes, so they cannot be placed on a shoot day yet.'
+          : '',
+        unscheduled_scenes: slateUnplaced.map(function (s) {
+          return {
+            scene_index: s.idx,
+            scene_number: s.n,
+            int_ext: s.ie,
+            time_of_day: s.tod,
+            cast_required: s.cast || [],
+            background: s.bg || ''
+          };
+        })
       };
 
       // Cast release — derived in code
@@ -367,11 +404,31 @@ exports.handler = async function(event, context) {
           });
         });
       });
+      // An actor who appears ONLY in unplaceable scenes has no shoot day, so
+      // the loop above never sees them and they vanish from the cast release
+      // entirely — the one person a producer most needs to know about, because
+      // nobody can tell them when they are working. Carry them through with no
+      // days and a flag instead of dropping them.
+      const castUnplaced = {};
+      slateUnplaced.forEach(function (s) {
+        (s.cast || []).forEach(function (c) {
+          const k = normKey(c);
+          if (!castDays[k] && !castUnplaced[k]) castUnplaced[k] = { character: c };
+        });
+      });
+
       schedule.cast_release_schedule = Object.keys(castDays).map(function (k) {
         const c = castDays[k];
         var dr = c.days_required.length ? c.days_required : [1];
         return { character: slateName(c.character), days_required: dr, release_day: Math.max.apply(null, dr) };
-      });
+      }).concat(Object.keys(castUnplaced).map(function (k) {
+        return {
+          character: slateName(castUnplaced[k].character),
+          days_required: [],
+          release_day: null,
+          unscheduled_only: true
+        };
+      }));
 
       // ── Small AI pass for production notes only — fails safe ──
       try {

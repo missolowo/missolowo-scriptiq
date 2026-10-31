@@ -3559,9 +3559,18 @@
             .forEach(function (l) { if (l) locations[l] = true; });
         });
         var pdf = slateDoc('Shooting Schedule');
+        // Scenes the screenplay never placed are not on a shoot day, so the
+        // days hold fewer scenes than the script has. Printing the script
+        // total alone made a 31-scene schedule claim 47 and read as scenes
+        // going missing — the same contradiction the health panel had. Show
+        // the sum instead: scheduled OF total, with the remainder named in
+        // its own section below.
+        var slateUnsched = s.unscheduled_scenes || [];
+        var slateTotalScenes = (s.total_scenes || (allScenes.length + slateUnsched.length));
         pdf.cover(s.title || (slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Shoot Days', days.length],
-          ['Scenes', (s.total_scenes || allScenes.length)],
+          [slateUnsched.length ? 'Scenes Scheduled' : 'Scenes',
+           slateUnsched.length ? (allScenes.length + ' of ' + slateTotalScenes) : slateTotalScenes],
           ['Locations', Object.keys(locations).length]
         ]);
 
@@ -3615,6 +3624,31 @@
           pdf.check(12);
         });
 
+        // ── Scenes that cannot be scheduled yet ──
+        // These used to be packed onto the first shoot days, because they all
+        // share an empty location key and formed the largest group. The
+        // filmmaker's day 1 call sheet was the emptiest page the product could
+        // produce. They belong here instead: named, counted, and actionable —
+        // a list a producer can take to the writer.
+        if (slateUnsched.length) {
+          pdf.sectionHeader('Scenes Not Yet Scheduled');
+          pdf.annotation(s.unscheduled_reason
+            || 'The screenplay never states a location for these scenes, so they cannot be placed on a shoot day yet.');
+          pdf.gap(4);
+          slateUnsched.forEach(function (sc) {
+            pdf.check(20);
+            pdf.slugline((sc.scene_number == null ? '#' + sc.scene_index : String(sc.scene_number))
+              + '   ' + (sc.int_ext || '—') + ' · ' + (sc.time_of_day || '—'), 15);
+            pdf.gap(9);
+            var who = (sc.cast_required || []).join(' · ');
+            pdf.body(who ? 'Cast: ' + who : 'No cast listed for this scene.', 15, 175);
+            pdf.gap(2);
+            pdf.rule();
+          });
+          pdf.gap(4);
+          pdf.annotation('Add a location to each of these scenes and run the schedule again to place them.');
+        }
+
         if (s.cast_release_schedule && s.cast_release_schedule.length) {
           pdf.sectionHeader('Cast Release Schedule');
           s.cast_release_schedule.forEach(function(c) {
@@ -3627,7 +3661,13 @@
             // two between baselines and the line below printed through the
             // actor's name. Every other caller of slugline already uses 9.
             pdf.gap(9);
-            pdf.body('Days required: ' + (c.days_required || []).join(', ') + '   ·   Release: Day ' + (c.release_day || '—'), 15, 175);
+            // An actor who appears only in unscheduled scenes has no days at
+            // all. "Days required:   ·   Release: Day —" reads as a bug; say
+            // what is actually true, because this is the one person nobody
+            // can currently give a call time to.
+            pdf.body((c.days_required && c.days_required.length)
+              ? 'Days required: ' + c.days_required.join(', ') + '   ·   Release: Day ' + (c.release_day || '—')
+              : 'Appears only in scenes that are not yet scheduled — no call days can be set.', 15, 175);
             pdf.gap(2);
             pdf.rule();
           });
