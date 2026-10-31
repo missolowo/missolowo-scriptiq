@@ -108,6 +108,10 @@ exports.handler = async function(event, context) {
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',
         set: s.set || '',
+        // Page length, measured off the script at split time. A day's total
+        // is how a production manager judges whether the day is achievable,
+        // so it has to travel with the scene.
+        eighths: Number(s.slate_eighths) || 0,
         cast: (s.cast || []).slice(0, 8),
         // Flagged, never counted — how many is a producer decision.
         bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
@@ -363,6 +367,7 @@ exports.handler = async function(event, context) {
                 time_of_day: s.tod,
                 set: s.set || '',
                 description: '',
+                eighths: s.eighths || 0,
                 cast_required: s.cast || [],
                 background: s.bg || '',
                 props: []
