@@ -464,7 +464,7 @@
           <path d="M22 24v-6a6 6 0 0 1 12 0v6" />
         </svg>
         <div class="empty-title">Sign in to get started</div>
-        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with 3 free credits.</div>
+        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with <span class="js-free-credits">3</span> free credits.</div>
         <div class="auth-choice">
           <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
           <button class="btn-secondary" onclick="openAuthModal('login')">Sign In</button>
@@ -571,7 +571,7 @@
       </form>
       <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
         <div style="background:var(--gold-tint);border:1px solid rgba(212,166,74,0.25);border-radius:var(--r-control);padding:var(--s-3) var(--s-4);margin-bottom:var(--s-2)">
-          <div style="color:var(--gold-bright);font-weight:600;font-size:var(--t-small)">Includes 3 free credits</div>
+          <div style="color:var(--gold-bright);font-weight:600;font-size:var(--t-small)">Includes <span class="js-free-credits">3</span> free credits</div>
           <div style="color:var(--text-2);font-size:var(--t-small);margin-top:2px">One credit prepares one screenplay for production. No credit card required.</div>
         </div>
         <div class="auth-field">
@@ -5572,6 +5572,26 @@
         try { slateSignedIn = !!localStorage.getItem('scriptiq_user'); } catch (e) {}
         if (!slateSignedIn) openAuthModal(slateWantAuth === 'signup' ? 'signup' : 'login');
       }
+    })();
+
+    // The free-credit figure appears on the signed-out home view and in the
+    // signup tab, both of which a filmmaker sees long before Billing is
+    // opened — so it cannot wait for the billing fetch. Typed into the markup
+    // it drifted from SIGNUP_FREE_CREDITS the moment that constant changed,
+    // promising a number we no longer granted. One small call, and the
+    // literal in the HTML stands in if it fails.
+    (function () {
+      var spots = document.querySelectorAll('.js-free-credits');
+      if (!spots.length) return;
+      fetch('/.netlify/functions/pricing')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || typeof d.signup_free_credits !== 'number') return;
+          for (var i = 0; i < spots.length; i++) {
+            spots[i].textContent = String(d.signup_free_credits);
+          }
+        })
+        .catch(function () {});
     })();
 
     window.loadBilling = loadBilling;

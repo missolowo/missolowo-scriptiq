@@ -11,6 +11,11 @@ const fetch = (() => {
 })();
 
 const { createClient } = require('@supabase/supabase-js');
+// The free signup grant. Imported, never written here: this file creates the
+// user row, and lib/slate-pricing is what the homepage advertises through the
+// pricing endpoint. Two copies meant we could change the advertised number
+// and still hand out the old one, silently.
+const { SIGNUP_FREE_CREDITS } = require('./lib/slate-pricing');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -179,7 +184,7 @@ exports.handler = async function(event) {
       const { data } = await supabase.from('users').select('*').eq('email', user_email).single();
       if (!data) {
         const { data: newUser } = await supabase
-          .from('users').insert({ email: user_email, role: 'free', credits_remaining: 3 })
+          .from('users').insert({ email: user_email, role: 'free', credits_remaining: SIGNUP_FREE_CREDITS })
           .select().single();
         user = newUser;
       } else {
