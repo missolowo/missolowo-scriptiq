@@ -1002,7 +1002,7 @@ a { color: inherit; }
         <a class="btn btn--gold" href="/app.html?auth=signup" data-cta="hero" data-cta-action="signup"><span>Create your free account</span></a>
       </div>
 
-        <p class="hero__note">3 free breakdowns. No credit card required.</p>
+        <p class="hero__note"><span class="js-free-credits">3</span> free breakdowns. No credit card required.</p>
       </div>
     </div>
   </section>
@@ -1273,7 +1273,7 @@ a { color: inherit; }
           <li>Call Sheet</li>
         </ul>
         <p class="price__free" id="pricingFree">
-          Every new account starts with 3 free credits. No credit card required.
+          Every new account starts with <span class="js-free-credits">3</span> free credits. No credit card required.
         </p>
         <p class="price__note">
           Prices are in Nigerian naira. International debit and credit cards are
@@ -1375,7 +1375,7 @@ a { color: inherit; }
         <span>Create your free account</span>
       </a>
 
-      <p class="close__note">3 free breakdowns. No credit card required.</p>
+      <p class="close__note"><span class="js-free-credits">3</span> free breakdowns. No credit card required.</p>
 
     <p class="close__langs"><b>17</b> languages supported, with more on the way</p>
     </div>
@@ -1497,10 +1497,15 @@ document.addEventListener('click', function (e) {
       if (inc) inc.innerHTML = data.includes.map(function (i) { return '<li>' + i + '</li>'; }).join('');
     }
     if (typeof data.signup_free_credits === 'number') {
-      var free = document.getElementById('pricingFree');
-      if (free) {
-        free.textContent = 'Every new account starts with ' + data.signup_free_credits
-          + ' free credits. No credit card required.';
+      // The figure appears in the hero, the pricing block and the closing
+      // block. Each used to carry its own typed number, and only the pricing
+      // one was ever updated — so changing SIGNUP_FREE_CREDITS left two
+      // places promising a number we no longer granted. One mechanism now,
+      // and the literal inside each span is the fallback if this never runs
+      // or the endpoint is unreachable.
+      var spots = document.querySelectorAll('.js-free-credits');
+      for (var fi = 0; fi < spots.length; fi++) {
+        spots[fi].textContent = String(data.signup_free_credits);
       }
     }
   }

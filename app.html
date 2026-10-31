@@ -464,7 +464,7 @@
           <path d="M22 24v-6a6 6 0 0 1 12 0v6" />
         </svg>
         <div class="empty-title">Sign in to get started</div>
-        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with 3 free credits.</div>
+        <div class="empty-body">Create a free account to generate your first production breakdown — takes less than a minute, and comes with <span class="js-free-credits">3</span> free credits.</div>
         <div class="auth-choice">
           <button class="btn-primary" onclick="openAuthModal('signup')">Create Free Account</button>
           <button class="btn-secondary" onclick="openAuthModal('login')">Sign In</button>
@@ -571,7 +571,7 @@
       </form>
       <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
         <div style="background:var(--gold-tint);border:1px solid rgba(212,166,74,0.25);border-radius:var(--r-control);padding:var(--s-3) var(--s-4);margin-bottom:var(--s-2)">
-          <div style="color:var(--gold-bright);font-weight:600;font-size:var(--t-small)">Includes 3 free credits</div>
+          <div style="color:var(--gold-bright);font-weight:600;font-size:var(--t-small)">Includes <span class="js-free-credits">3</span> free credits</div>
           <div style="color:var(--text-2);font-size:var(--t-small);margin-top:2px">One credit prepares one screenplay for production. No credit card required.</div>
         </div>
         <div class="auth-field">
@@ -3121,6 +3121,25 @@
       // One helper, used by both the draw and the measure override, so the
       // two can never disagree about which font a string is in.
       var SLATE_WINANSI_EXTRA = /[ŒœŠšŸŽžƒˆ˜–—‘’‚“”„†‡•…‰‹›€™]/g;
+      // ── Uppercasing that does not destroy Yorùbá ──
+      // jsPDF draws a combining mark at zero advance and applies no GPOS, so
+      // the mark lands wherever the font's default anchor puts it. Above a
+      // short lowercase "ọ" that is correct and renders properly. Above a
+      // tall capital "Ọ" it lands INSIDE the letter and disappears: "Ìdí Ọ̀
+      // Gán" printed as "ÌDÍ Ọ GÁN", silently dropping a tone mark that
+      // changes the word.
+      //
+      // Uppercase is a house style; a place name spelled correctly is not.
+      // So a string carrying combining marks keeps its own case. Our own
+      // labels — "CAST", "PROPS" — have no marks and uppercase as before,
+      // which is every label in the documents except the ones that carry a
+      // filmmaker's own words.
+      var SLATE_COMBINING = /[̀-ͯ]/;
+      function slateUpperSafe(s) {
+        var t = String(s == null ? '' : s);
+        return SLATE_COMBINING.test(t.normalize ? t.normalize('NFD') : t) ? t : t.toUpperCase();
+      }
+
       function slateNeedsUnicodeFont(txt) {
         var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
         return /[^\u0000-ÿ]/.test(probe.replace(SLATE_WINANSI_EXTRA, ''));
@@ -3409,9 +3428,9 @@
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(8);
           doc.setFont(slateBodyFont, 'bold');
-          doc.text(label.toUpperCase(), 15, y + 6);
+          doc.text(slateUpperSafe(label), 15, y + 6);
           y += 18;
-        }  
+        }
 
         // Scene numeral — PM-approved hierarchy: 15pt bold gold, widened zone
         function sceneNumeral(num) {
@@ -3482,7 +3501,7 @@
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(7.5);
           doc.setFont(slateBodyFont, 'bold');
-          doc.text(label.toUpperCase() + ':', x || 34, y);
+          doc.text(slateUpperSafe(label) + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
           // Reset the size: the label above set 7.5pt, and without this the
           // VALUES inherited it — so the cast names and props, the actual
@@ -3983,7 +4002,7 @@
           d.setTextColor.apply(d, SLATE_MUTED);
           d.setFontSize(6.5);
           d.setFont('helvetica', 'bold');
-          d.text(label.toUpperCase(), x, pdf.getY());
+          d.text(slateUpperSafe(label), x, pdf.getY());
           d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('courier', 'normal');
@@ -5572,6 +5591,26 @@
         try { slateSignedIn = !!localStorage.getItem('scriptiq_user'); } catch (e) {}
         if (!slateSignedIn) openAuthModal(slateWantAuth === 'signup' ? 'signup' : 'login');
       }
+    })();
+
+    // The free-credit figure appears on the signed-out home view and in the
+    // signup tab, both of which a filmmaker sees long before Billing is
+    // opened — so it cannot wait for the billing fetch. Typed into the markup
+    // it drifted from SIGNUP_FREE_CREDITS the moment that constant changed,
+    // promising a number we no longer granted. One small call, and the
+    // literal in the HTML stands in if it fails.
+    (function () {
+      var spots = document.querySelectorAll('.js-free-credits');
+      if (!spots.length) return;
+      fetch('/.netlify/functions/pricing')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || typeof d.signup_free_credits !== 'number') return;
+          for (var i = 0; i < spots.length; i++) {
+            spots[i].textContent = String(d.signup_free_credits);
+          }
+        })
+        .catch(function () {});
     })();
 
     window.loadBilling = loadBilling;
