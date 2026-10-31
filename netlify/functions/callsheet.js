@@ -190,7 +190,16 @@ exports.handler = async function(event, context) {
         background: Array.isArray(s.background) ? s.background.join(', ') : (s.background || ''),
         background_count: s.background_count || null,
         props: s.props || [],
-        costume: s.costume || []
+        costume: s.costume || [],
+        // Departments travel onto the call sheet because they are what the
+        // day has to be prepared for. Absent on breakdowns made before these
+        // categories existed, which is why each defaults to an empty list
+        // rather than being assumed present.
+        stunts: s.stunts || [],
+        vehicles: s.vehicles || [],
+        animals: s.animals || [],
+        special_effects: s.special_effects || [],
+        makeup_hair: s.makeup_hair || []
       };
     });
     // Character identity, and the readable spelling to display. Both are
@@ -302,16 +311,73 @@ Return ONLY valid JSON:
       }
     });
 
+    // Cast numbers come from the breakdown, so the call sheet, the schedule
+    // and the Day Out of Days all print the same number for the same actor.
+    // A call sheet that numbers its cast differently from the breakdown is
+    // worse than one that does not number them at all.
+    const slateCastNo = {};
+    (breakdown.character_breakdown || []).forEach(function (c) {
+      if (c && c.character && c.cast_number) slateCastNo[castKey(c.character)] = c.cast_number;
+    });
+
     const castCallTimes = castToday.map(function (c) {
       const t = timeByName[castKey(c.character)] || {};
       return {
         character: c.character,
+        cast_number: slateCastNo[castKey(c.character)] || null,
         call_time: t.call_time || general_call || '07:00',
         on_set: t.on_set || '08:30',
         status: t.status || '',
         scenes: c.scenes
       };
+    }).sort(function (a, b) {
+      var an = a.cast_number || 9999, bn = b.cast_number || 9999;
+      if (an !== bn) return an - bn;
+      return String(a.character).localeCompare(String(b.character));
     });
+
+    // ── What shoots tomorrow ──
+    // Every real call sheet ends with the next day's work, because that is
+    // what the crew prep tonight: trucks loaded, costumes pulled, equipment
+    // ordered, actors warned. Without it a call sheet says where to be and
+    // nothing about what to get ready, which is half a call sheet.
+    const slateNextDay = (schedule.schedule || []).find(function (d) {
+      return Number(d.day) === targetDay + 1;
+    });
+    const slateAdvance = slateNextDay ? (function () {
+      const seen = {}, who = [];
+      (slateNextDay.scenes || []).forEach(function (sc) {
+        (sc.cast_required || []).forEach(function (n) {
+          const k = castKey(n);
+          if (!k || seen[k]) return;
+          seen[k] = true;
+          who.push({ character: slateName(n), cast_number: slateCastNo[k] || null });
+        });
+      });
+      who.sort(function (a, b) {
+        var an = a.cast_number || 9999, bn = b.cast_number || 9999;
+        if (an !== bn) return an - bn;
+        return String(a.character).localeCompare(String(b.character));
+      });
+      return {
+        day: Number(slateNextDay.day),
+        date: slateNextDay.date || '',
+        location: slateNextDay.location || '',
+        locations: slateNextDay.locations || [],
+        company_move: !!slateNextDay.company_move,
+        scenes: (slateNextDay.scenes || []).map(function (sc) {
+          return {
+            scene_index: sc.scene_index,
+            scene_number: sc.scene_number,
+            int_ext: sc.int_ext,
+            time_of_day: sc.time_of_day,
+            set: sc.set || '',
+            eighths: sc.eighths || 0
+          };
+        }),
+        cast: who
+      };
+    })() : null;
 
     // ── STEP 6: Assemble. Every fact here comes from data. ──
     const callsheet = {
@@ -329,6 +395,11 @@ Return ONLY valid JSON:
       company_move: !!dayData.company_move,
       scenes_today: scenesToday,
       cast_call_times: castCallTimes,
+      advance_schedule: slateAdvance,
+      // Said plainly rather than left as an absence: a crew reading a call
+      // sheet with no "tomorrow" cannot tell whether the shoot is over or
+      // the schedule simply was not filled in.
+      is_final_day: !slateNextDay,
       production_notes: aiNotes.length ? aiNotes : (dayData.production_notes ? [dayData.production_notes] : [])
     };
 

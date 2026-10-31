@@ -1196,6 +1196,41 @@
         return s || null;
       }
 
+      // ── Page eighths, measured from the page ──
+      // A scene's length is how much PAGE it occupies, and a production
+      // manager schedules by it: eighths are how you know whether a day is
+      // achievable. The old slateEighths measured the AI's one-line
+      // description, so a half-page scene and a four-page scene printed the
+      // same figure — a confident number that meant nothing.
+      //
+      // Extracted .docx text carries no page layout, so we reconstruct it.
+      // A screenplay page is about 55 rows; a paragraph longer than one row
+      // wraps onto more; and a blank line is a row too, because white space
+      // is most of what a screenplay page is made of.
+      var SLATE_ROWS_PER_PAGE = 55;
+      var SLATE_CHARS_PER_ROW = 60;
+      // Runs of blank lines collapse to one. A .docx converted from Final
+      // Draft, from Word, or typed by hand puts a different number of empty
+      // paragraphs between elements — across our five test scripts the blank
+      // share ran from 34% to 71% — so counting every one measured the
+      // writer's typing habits rather than the page. Collapsed, the five
+      // scripts land between 0.60 and 1.55 pages per scene, which is the
+      // range real screenplays occupy.
+      function slateRowsIn(lines) {
+        var rows = 0, prevBlank = false;
+        for (var i = 0; i < lines.length; i++) {
+          var t = String(lines[i] == null ? '' : lines[i]).trim();
+          if (t) { rows += Math.ceil(t.length / SLATE_CHARS_PER_ROW); prevBlank = false; }
+          else { if (!prevBlank) rows += 1; prevBlank = true; }
+        }
+        return rows;
+      }
+      // Never zero: every scene occupies at least one eighth, which is also
+      // the industry's own floor.
+      function slateEighthsFromRows(rows) {
+        return Math.max(1, Math.round((Number(rows) || 0) / SLATE_ROWS_PER_PAGE * 8));
+      }
+
       function slateSceneMarksIn(sectionText) {
         var raw = String(sectionText || '').split(/\r?\n/);
         var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
@@ -1209,15 +1244,33 @@
             var look = i + 1;
             while (look < raw.length && !raw[look].trim()) look++;
             if (look < raw.length && headStart.test(raw[look])) {
-              out.push({ number: slateCleanSceneNumber(m[1]), type: note }); i = look; continue;
+              out.push({ number: slateCleanSceneNumber(m[1]), type: note, at: i }); i = look; continue;
             }
-            out.push({ number: slateCleanSceneNumber(m[1]), type: note });
+            out.push({ number: slateCleanSceneNumber(m[1]), type: note, at: i });
             continue;
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null, type: null });
+            // An annotation can sit on the HEADING line — "8. INT. ROOM -
+            // NIGHT (BACK TO PRESENT)" — and not only on a scene-number line
+            // of its own. Only the number-line form was ever read, so a
+            // script that marks its flashbacks the common way had them
+            // noticed by the model or not at all, and a marked return was
+            // never recorded. slateSceneTypeFrom returns null for anything
+            // that is not a known marker, so "(MAIN HOUSE)" stays harmless.
+            var hp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
+            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null,
+                       type: hp ? slateSceneTypeFrom(hp[1]) : null, at: i });
           }
+        }
+        // Each scene runs from its own heading to the next one. Measured here
+        // rather than at display time because this is the only place the real
+        // script text is still in hand.
+        for (var k = 0; k < out.length; k++) {
+          var from = out[k].at;
+          var to = (k + 1 < out.length) ? out[k + 1].at : raw.length;
+          out[k].rows = slateRowsIn(raw.slice(from, to));
+          out[k].eighths = slateEighthsFromRows(out[k].rows);
         }
         return out;
       }
@@ -1300,7 +1353,14 @@
           window.slateChunkTypes = marks.map(function (list) {
             return list.map(function (m) { return m.type; });
           });
-        } catch (e) { window.slateChunkNumbers = null; window.slateChunkTypes = null; }
+          // Measured off the script at the only point it is still in hand.
+          window.slateChunkEighths = marks.map(function (list) {
+            return list.map(function (m) { return m.eighths; });
+          });
+        } catch (e) {
+          window.slateChunkNumbers = null; window.slateChunkTypes = null;
+          window.slateChunkEighths = null;
+        }
         return chunks;
       }
 
@@ -1816,7 +1876,8 @@
           outline_schedule: [],
           production_elements: {
             all_cast: [], all_props: [], all_costume: [],
-            all_equipment: [], special_requirements: []
+            all_equipment: [], all_stunts: [], all_vehicles: [], all_animals: [],
+            all_special_effects: [], all_makeup_hair: [], special_requirements: []
           }
         };
                let sceneOffset = 0;
@@ -1902,6 +1963,13 @@
               var recType = recTypes && recTypes[slateSceneInChunk];
               if (recType === 'RETURN') scene.slate_returns_to_present = true;
               else if (recType) scene.scene_type = recType;
+              // The page length we measured off the script, carried onto the
+              // scene. Gated behind slateUseRec for the same reason the number
+              // is: if we cannot tell which scene is which, a wrong length is
+              // worse than falling back to the estimate.
+              var recEighths = (window.slateChunkEighths || [])[slateChunkIdx];
+              var slateE = recEighths && recEighths[slateSceneInChunk];
+              if (slateE) scene.slate_eighths = slateE;
             }
 
             if (slateUseRec) {
@@ -1967,6 +2035,15 @@
           merged.production_elements.all_props = slateMergeElements(merged.production_elements.all_props, pe.all_props);
           merged.production_elements.all_costume = slateMergeElements(merged.production_elements.all_costume, pe.all_costume);
           merged.production_elements.all_equipment = slateMergeElements(merged.production_elements.all_equipment, pe.all_equipment);
+          // The department lists merge exactly like the others. Listed by
+          // name rather than looped so a category added to the prompt without
+          // being added here fails loudly in review instead of silently
+          // vanishing between chunks.
+          merged.production_elements.all_stunts = slateMergeElements(merged.production_elements.all_stunts, pe.all_stunts);
+          merged.production_elements.all_vehicles = slateMergeElements(merged.production_elements.all_vehicles, pe.all_vehicles);
+          merged.production_elements.all_animals = slateMergeElements(merged.production_elements.all_animals, pe.all_animals);
+          merged.production_elements.all_special_effects = slateMergeElements(merged.production_elements.all_special_effects, pe.all_special_effects);
+          merged.production_elements.all_makeup_hair = slateMergeElements(merged.production_elements.all_makeup_hair, pe.all_makeup_hair);
           merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
         } 
          // ── Rebuild the indexes from the assembled scenes ──
@@ -2033,7 +2110,7 @@
           if (slateIsPlaceholderLocation(s.set)) s.set = '';
         });
 
-        var charMap = {}, locMap = {};
+        var charMap = {}, locMap = {}, slateCastOrder = 0;
 
         // Work the label out ONCE and carry it on the scene, so the scene
         // list, the character report, the location report and the exports
@@ -2099,7 +2176,14 @@
           var spans = [];
           var open = null;
           merged.scenes.forEach(function (s, i) {
-            if (s.slate_returns_to_present) {
+            // Two ways a return can reach us: recorded off the page by the
+            // splitter, or reported by the model as a scene_type. Only the
+            // first closed a span. The second was recognised just well enough
+            // NOT to open a new span and then dropped, so a script whose
+            // return the model found — but the splitter did not — ran its
+            // flashback to the end of the film. On an 18-scene script that
+            // tagged twelve scenes as flashback, two thirds of the story.
+            if (s.slate_returns_to_present || s.scene_type === 'BACK TO PRESENT') {
               if (open) {
                 open.endsBefore = i;
                 open.returnsAt = s.scene_label;
@@ -2190,7 +2274,10 @@
             if (!name) return;
             var k = slateKey(name);
             if (!k) return;
-            if (!charMap[k]) charMap[k] = { character: name, scenes: [] };
+            // This walk is already in script order, so the first time a name
+            // appears IS their first appearance. Recorded for the cast
+            // numbering below, where it settles ties.
+            if (!charMap[k]) charMap[k] = { character: name, scenes: [], first: slateCastOrder++ };
             else charMap[k].character = slateBetterLabel(charMap[k].character, name);
             if (charMap[k].scenes.indexOf(label) < 0) charMap[k].scenes.push(label);
           });
@@ -2220,10 +2307,30 @@
           }
         });
 
+        // ── Cast numbers ──
+        // Every production numbers its cast, and that number is the key the
+        // stripboard, the Day Out of Days and the call sheet all join on.
+        // We named characters and never numbered them, which is the first
+        // thing a 1st AD looks for on a breakdown.
+        //
+        // Numbered by scene count, so the actor carrying the film is number
+        // one — the order a billing list tends to follow. Ties break on who
+        // appears first and then on name, so the same script always produces
+        // the same numbers and a document regenerated tomorrow does not
+        // quietly renumber the cast.
         merged.character_breakdown = Object.keys(charMap).map(function (k) {
           var c = charMap[k];
-          return { character: slateTitleCase(c.character), scenes: c.scenes, total: c.scenes.length };
-        }).sort(function (a, b) { return b.total - a.total; });
+          return { character: slateTitleCase(c.character), scenes: c.scenes,
+                   total: c.scenes.length, slate_first: c.first };
+        }).sort(function (a, b) {
+          if (b.total !== a.total) return b.total - a.total;
+          if (a.slate_first !== b.slate_first) return a.slate_first - b.slate_first;
+          return String(a.character).localeCompare(String(b.character));
+        }).map(function (c, i) {
+          c.cast_number = i + 1;
+          delete c.slate_first;
+          return c;
+        });
 
         merged.outline_schedule = Object.keys(locMap).map(function (k) {
           var l = locMap[k];
@@ -2352,7 +2459,7 @@
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
           + chars.map(function(c) {
             return '<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line-1,#2E323A);font-size:13px">'
-              + '<span style="color:var(--paper,#F4EFE6);font-weight:600">' + c.character + '</span>'
+              + '<span style="color:var(--paper,#F4EFE6);font-weight:600"><span style="color:var(--gold,#D4A64A);font-family:var(--font-data);margin-right:10px">' + (c.cast_number || '') + '</span>' + c.character + '</span>'
               + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (c.scenes || []).join(', ') + '</span>'
               + '<span style="color:var(--gold,#D4A64A);font-family:monospace">' + (c.total || (c.scenes || []).length) + '</span></div>';
           }).join('') + '</div>';
@@ -3489,17 +3596,31 @@
           if (bgPdf && bgPdf !== 'null') pdf.labelledList('Background', [bgPdf]);
           pdf.labelledList('Props', s.props);          pdf.labelledList('Costume', s.costume);
           pdf.labelledList('Equipment', s.equipment);
+          // The departments, on the scene where they happen — which is where
+          // a 1st AD reads them when working out what a day needs. Each is
+          // skipped when empty by labelledList, so an ordinary dialogue scene
+          // shows nothing extra.
+          pdf.labelledList('Stunts', s.stunts);
+          pdf.labelledList('Vehicles', s.vehicles);
+          pdf.labelledList('Animals', s.animals);
+          pdf.labelledList('SFX', s.special_effects);
+          pdf.labelledList('Makeup/Hair', s.makeup_hair);
           pdf.gap(3);
           pdf.rule();
         });
 
+        // Cast number first, the way every production document carries it —
+        // it is the key the Day Out of Days and the call sheet join on, and
+        // a breakdown without it is the first thing a 1st AD notices.
         pdf.sectionHeader('Report 2 — Character Scene Breakdown');
                 pdf.table(
-          [{ label: 'Character', width: 60, bold: true },
-           { label: 'Scene Numbers', width: 95 },
+          [{ label: 'No.', width: 12, align: 'right', gold: true },
+           { label: 'Character', width: 55, bold: true },
+           { label: 'Scene Numbers', width: 88 },
            { label: 'Total', width: 25, align: 'right', gold: true }],
-          chars.map(function (c) {
-            return [c.character || '', (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
+          chars.map(function (c, i) {
+            return [c.cast_number || (i + 1), c.character || '',
+                    (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
           })
         );
 
@@ -3522,17 +3643,48 @@
         pdf.gap(4);
         pdf.labelledList('All Equipment', pe.all_equipment, 15);
 
+        // ── Departments ──
+        // Printed only when the script actually called for them. Most films
+        // have no animals and no effects, and a row of empty headings would
+        // suggest we looked and found nothing rather than that there was
+        // nothing to find. A department that IS listed here books crew,
+        // hires suppliers and triggers insurance, so each one gets its own
+        // line rather than being folded into props.
+        [['Stunts', pe.all_stunts],
+         ['Vehicles', pe.all_vehicles],
+         ['Animals', pe.all_animals],
+         ['Special Effects', pe.all_special_effects],
+         ['Makeup & Hair', pe.all_makeup_hair]].forEach(function (pair) {
+          if (!pair[1] || !pair[1].length) return;
+          pdf.gap(4);
+          pdf.labelledList(pair[0], pair[1], 15);
+        });
+
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
         pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
       }
       
       // ── Page eighths — production-standard page math (V2 launch scope) ──
       function slateEighths(scene) {
-        var text = ((scene.description || '') + ' ' + (scene.production_notes || '')).trim();
-        var eighths = Math.max(1, Math.round(text.length / 160));
+        // Measured off the real script when we could match this scene to its
+        // place on the page (see slateSceneMarksIn). The fallback below is
+        // the old estimate from the AI's description, which is a poor proxy —
+        // a half-page scene and a four-page scene get the same one-line
+        // summary — so it is used only when the measurement is unavailable,
+        // and slate_eighths_estimated says so on the page.
+        var eighths = Number(scene && scene.slate_eighths) || 0;
+        if (!eighths) {
+          var text = (((scene && scene.description) || '') + ' '
+            + ((scene && scene.production_notes) || '')).trim();
+          eighths = Math.max(1, Math.round(text.length / 160));
+        }
         var pages = Math.floor(eighths / 8);
         var rem = eighths % 8;
-        return { total: eighths, label: (pages > 0 ? pages + ' ' : '') + rem + '/8' };
+        return {
+          total: eighths,
+          label: (pages > 0 ? pages + ' ' : '') + rem + '/8',
+          measured: !!(scene && scene.slate_eighths)
+        };
       }
 
       function slateTotalEighths(scenes) {
@@ -3559,14 +3711,36 @@
             .forEach(function (l) { if (l) locations[l] = true; });
         });
         var pdf = slateDoc('Shooting Schedule');
+        // Scenes the screenplay never placed are not on a shoot day, so the
+        // days hold fewer scenes than the script has. Printing the script
+        // total alone made a 31-scene schedule claim 47 and read as scenes
+        // going missing — the same contradiction the health panel had. Show
+        // the sum instead: scheduled OF total, with the remainder named in
+        // its own section below.
+        var slateUnsched = s.unscheduled_scenes || [];
+        var slateTotalScenes = (s.total_scenes || (allScenes.length + slateUnsched.length));
         pdf.cover(s.title || (slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Shoot Days', days.length],
-          ['Scenes', (s.total_scenes || allScenes.length)],
+          [slateUnsched.length ? 'Scenes Scheduled' : 'Scenes',
+           slateUnsched.length ? (allScenes.length + ' of ' + slateTotalScenes) : slateTotalScenes],
           ['Locations', Object.keys(locations).length]
         ]);
 
+        // A day's page count is how a production manager judges whether the
+        // day is achievable at all — four pages is a normal day, twelve is
+        // not. It was never printed, so the schedule showed what to shoot
+        // without showing how much of it there was.
+        function slateDayEighths(day) {
+          var t = 0;
+          (day.scenes || []).forEach(function (sc) { t += Number(sc.eighths) || 0; });
+          if (!t) return '';
+          return Math.floor(t / 8) + ' ' + (t % 8) + '/8 pages';
+        }
+
         days.forEach(function(day, di) {
-          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set'));
+          var slateDayPages = slateDayEighths(day);
+          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set')
+            + (slateDayPages ? '  ·  ' + slateDayPages : ''));
           // A day header naming real places while most of its scenes belong
           // to none of them is how a crew ends up driving somewhere for
           // nothing. Said plainly, directly under the header.
@@ -3594,7 +3768,12 @@
             // which room, not which building.
              var schSet = sc.set || sc.location || sc.set_location || '';
             if (!schSet || schSet === 'null' || schSet === 'undefined') schSet = '—';
-            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet + (sc.scene_type ? '   [' + sc.scene_type + ']' : '')); 
+            // Scene length on the row itself. A stripboard carries it, and
+            // without it a day of six scenes looks the same whether it is two
+            // pages or nine.
+            var schE = Number(sc.eighths) || 0;
+            var schLen = schE ? ('   ' + Math.floor(schE / 8) + ' ' + (schE % 8) + '/8') : '';
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet + schLen + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -3615,6 +3794,31 @@
           pdf.check(12);
         });
 
+        // ── Scenes that cannot be scheduled yet ──
+        // These used to be packed onto the first shoot days, because they all
+        // share an empty location key and formed the largest group. The
+        // filmmaker's day 1 call sheet was the emptiest page the product could
+        // produce. They belong here instead: named, counted, and actionable —
+        // a list a producer can take to the writer.
+        if (slateUnsched.length) {
+          pdf.sectionHeader('Scenes Not Yet Scheduled');
+          pdf.annotation(s.unscheduled_reason
+            || 'The screenplay never states a location for these scenes, so they cannot be placed on a shoot day yet.');
+          pdf.gap(4);
+          slateUnsched.forEach(function (sc) {
+            pdf.check(20);
+            pdf.slugline((sc.scene_number == null ? '#' + sc.scene_index : String(sc.scene_number))
+              + '   ' + (sc.int_ext || '—') + ' · ' + (sc.time_of_day || '—'), 15);
+            pdf.gap(9);
+            var who = (sc.cast_required || []).join(' · ');
+            pdf.body(who ? 'Cast: ' + who : 'No cast listed for this scene.', 15, 175);
+            pdf.gap(2);
+            pdf.rule();
+          });
+          pdf.gap(4);
+          pdf.annotation('Add a location to each of these scenes and run the schedule again to place them.');
+        }
+
         if (s.cast_release_schedule && s.cast_release_schedule.length) {
           pdf.sectionHeader('Cast Release Schedule');
           s.cast_release_schedule.forEach(function(c) {
@@ -3622,16 +3826,112 @@
             // days_required list can wrap to a second line. check(12) let a row
             // start too near the bottom and run off the page.
             pdf.check(24);
-            pdf.slugline(c.character || '', 15);
+            pdf.slugline((c.cast_number ? c.cast_number + '.  ' : '') + (c.character || ''), 15);
             // gap(9), not gap(6). slugline draws at y+4, so six units leaves
             // two between baselines and the line below printed through the
             // actor's name. Every other caller of slugline already uses 9.
             pdf.gap(9);
-            pdf.body('Days required: ' + (c.days_required || []).join(', ') + '   ·   Release: Day ' + (c.release_day || '—'), 15, 175);
+            // An actor who appears only in unscheduled scenes has no days at
+            // all. "Days required:   ·   Release: Day —" reads as a bug; say
+            // what is actually true, because this is the one person nobody
+            // can currently give a call time to.
+            pdf.body((c.days_required && c.days_required.length)
+              ? 'Days required: ' + c.days_required.join(', ') + '   ·   Release: Day ' + (c.release_day || '—')
+              : 'Appears only in scenes that are not yet scheduled — no call days can be set.', 15, 175);
             pdf.gap(2);
             pdf.rule();
           });
         }
+
+        // ── Day Out of Days ──
+        // The document a producer asks for by name, because it is what an
+        // actor's contract is negotiated against: how many days they work,
+        // how many they are held across, and which day releases them.
+        //
+        // Notation is the industry's, not ours:
+        //   S   start (first working day)    W   works
+        //   F   finish (last working day)    H   held, not working
+        //   SF  starts and finishes same day  ·  not yet started / released
+        //
+        // Single letters rather than SW/WF/SWF: a day column is about seven
+        // millimetres wide once a readable character column is paid for, and
+        // the longer codes wrapped onto two lines inside the cell.
+        //
+        // Hold days are the ones that cost money for nothing: an actor
+        // between their first and last day is on the payroll whether or not
+        // they are called, which is exactly what this grid exposes.
+        (function () {
+          var roster = (s.cast_release_schedule || []).filter(function (c) {
+            return c.days_required && c.days_required.length;
+          });
+          if (!roster.length || !days.length) return;
+
+          var totalDays = days.length;
+          // 180mm of usable width, less the label and total columns, decides
+          // how many day columns fit. A long schedule is split into blocks
+          // the way a printed Day Out of Days always has been, rather than
+          // squeezed until the cells are unreadable.
+          var LABEL_W = 47, TOTALS_W = 33, DAY_W = 10;
+          var perBlock = Math.max(1, Math.floor((180 - LABEL_W - TOTALS_W) / DAY_W));
+
+          pdf.sectionHeader('Day Out of Days');
+          pdf.annotation('S start · W work · F finish · SF start and finish same day · H held, not working.'
+            + ' Held days are paid days an actor is not called.');
+          pdf.gap(4);
+
+          for (var b = 0; b < totalDays; b += perBlock) {
+            var block = [];
+            for (var d = b + 1; d <= Math.min(b + perBlock, totalDays); d++) block.push(d);
+
+            var cols = [{ label: 'No.', width: 9, align: 'right', gold: true },
+                        { label: 'Character', width: 38, bold: true }];
+            block.forEach(function (d) { cols.push({ label: String(d), width: DAY_W, align: 'right' }); });
+            cols.push({ label: 'W', width: 11, align: 'right', gold: true });
+            cols.push({ label: 'H', width: 11, align: 'right' });
+            cols.push({ label: 'Tot', width: 11, align: 'right', gold: true });
+
+            var rows = roster.map(function (c) {
+              var dr = c.days_required.slice().sort(function (x, y) { return x - y; });
+              var start = dr[0], finish = dr[dr.length - 1];
+              var row = [c.cast_number || '', c.character || ''];
+              block.forEach(function (d) {
+                if (d < start || d > finish) { row.push('·'); return; }
+                var works = dr.indexOf(d) >= 0;
+                if (!works) { row.push('H'); return; }
+                if (d === start && d === finish) row.push('SF');
+                else if (d === start) row.push('S');
+                else if (d === finish) row.push('F');
+                else row.push('W');
+              });
+              var work = dr.length;
+              var span = finish - start + 1;
+              row.push(work, span - work, span);
+              return row;
+            });
+
+            if (totalDays > perBlock) {
+              pdf.body('Days ' + block[0] + '–' + block[block.length - 1], 15, 175);
+              pdf.gap(3);
+            }
+            pdf.table(cols, rows);
+            pdf.gap(6);
+          }
+
+          // An actor with no shoot day cannot appear in a grid of shoot days,
+          // but silently leaving them out is how somebody turns up on set
+          // having never been given a call.
+          var stranded = (s.cast_release_schedule || []).filter(function (c) {
+            return !(c.days_required && c.days_required.length);
+          });
+          if (stranded.length) {
+            pdf.annotation(stranded.map(function (c) { return c.character; }).join(', ')
+              + (stranded.length > 1 ? ' appear' : ' appears')
+              + ' only in scenes that are not yet scheduled, so '
+              + (stranded.length > 1 ? 'they have' : 'they have')
+              + ' no days here yet.');
+            pdf.gap(4);
+          }
+        })();
 
         siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
         pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
@@ -3790,6 +4090,13 @@
         }
 
         pdf.sectionHeader("Today's Scene Schedule");
+        // Said, not left blank. A call sheet with an empty scene list means
+        // something went wrong upstream, and a crew holding one needs to know
+        // that rather than wonder whether the page failed to print.
+        if (!scenes.length) {
+          pdf.annotation('No scenes are scheduled for this day. Check the shooting schedule before distributing this call sheet.');
+          pdf.gap(4);
+        }
         scenes.forEach(function(s) {
           pdf.check(20);
           pdf.sceneNumeral(s.scene_label || s.scene_number);
@@ -3802,17 +4109,36 @@
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
+          // Departments on the day they are needed. A stunt or an animal
+          // discovered on the morning is a day lost; on the call sheet the
+          // night before it is a phone call. Empty lists print nothing, so an
+          // ordinary dialogue day looks exactly as it did.
+          pdf.labelledList('Stunts', s.stunts);
+          pdf.labelledList('Vehicles', s.vehicles);
+          pdf.labelledList('Animals', s.animals);
+          pdf.labelledList('SFX', s.special_effects);
+          pdf.labelledList('Makeup/Hair', s.makeup_hair);
           pdf.gap(2);
           pdf.rule();
         });
 
         pdf.sectionHeader('Cast');
+        // A day can legitimately have no cast — establishing shots, inserts,
+        // second unit — but the page has to say so rather than show a header
+        // with nothing beneath it.
+        if (!cast.length) {
+          pdf.annotation('No cast are called for this day.');
+          pdf.gap(4);
+        }
         cast.forEach(function(c) {
           pdf.check(14);
           d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('helvetica', 'bold');
-          d.text(String(c.character || ''), 15, pdf.getY());
+          // Cast number ahead of the name, the same number the breakdown and
+          // the schedule print, so a crew reading three documents sees one
+          // identity per actor.
+          d.text((c.cast_number ? c.cast_number + '.  ' : '') + String(c.character || ''), 15, pdf.getY());
           d.setFont('courier', 'normal');
           d.setFontSize(8);
           d.setTextColor.apply(d, SLATE_MUTED);
@@ -3824,6 +4150,64 @@
           pdf.gap(11);
           pdf.rule();
         });
+
+        // ── Tomorrow ──
+        // Every real call sheet ends here, because this is what the crew act
+        // on tonight: what to load, what to pull, who to warn. A call sheet
+        // that stops at today tells people where to be and nothing about what
+        // to get ready.
+        (function () {
+          var adv = cs.advance_schedule;
+          if (!adv) {
+            if (cs.is_final_day) {
+              pdf.sectionHeader('Advance Schedule');
+              // Stated rather than left blank: a crew reading no "tomorrow"
+              // cannot tell whether the shoot is over or nobody filled it in.
+              pdf.annotation('This is the final day of the schedule. No further shoot days are planned.');
+              pdf.gap(4);
+            }
+            return;
+          }
+          pdf.sectionHeader('Tomorrow — Day ' + String(adv.day).padStart(2, '0')
+            + (adv.date ? '  ·  ' + adv.date : '')
+            + (adv.location ? '  ·  ' + adv.location : ''));
+          if (adv.company_move) {
+            pdf.annotation('Company move tomorrow — more than one location. Plan travel tonight.');
+            pdf.gap(3);
+          }
+          (adv.scenes || []).forEach(function (sc) {
+            pdf.check(14);
+            var advE = Number(sc.eighths) || 0;
+            d.setTextColor.apply(d, SLATE_INK);
+            d.setFontSize(9);
+            d.setFont('courier', 'normal');
+            d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number), 15, pdf.getY());
+            d.setFont('helvetica', 'normal');
+            d.setFontSize(8.5);
+            d.text((sc.int_ext || '—') + ' · ' + ((sc.time_of_day || '—').charAt(0))
+              + '   ' + (sc.set || '—')
+              + (advE ? '   ' + Math.floor(advE / 8) + ' ' + (advE % 8) + '/8' : ''),
+              32, pdf.getY());
+            pdf.gap(7);
+          });
+          if ((adv.cast || []).length) {
+            pdf.gap(2);
+            d.setTextColor.apply(d, SLATE_MUTED);
+            d.setFontSize(7);
+            d.setFont('helvetica', 'bold');
+            d.text('CAST REQUIRED TOMORROW', 15, pdf.getY());
+            pdf.gap(5);
+            d.setTextColor.apply(d, SLATE_INK);
+            d.setFontSize(8.5);
+            d.setFont('helvetica', 'normal');
+            var advWho = adv.cast.map(function (c) {
+              return (c.cast_number ? c.cast_number + '. ' : '') + c.character;
+            }).join('   ·   ');
+            d.text(d.splitTextToSize(advWho, 175), 15, pdf.getY());
+            pdf.gap(6 + (d.splitTextToSize(advWho, 175).length - 1) * 4);
+          }
+          pdf.gap(4);
+        })();
 
         if (pd.crew && pd.crew.length) {
           pdf.sectionHeader('Full Crew List');
@@ -3870,12 +4254,18 @@
           pdf.gap(12);
         }
 
-        pdf.sectionHeader('Standard Notes & Safety');
-        (pd.safety_notes || []).forEach(function(n) {
-          pdf.check(8);
-          pdf.body('•  ' + n, 15, 175);
-          pdf.gap(3);
-        });
+        // Guarded. An unguarded header printed "Standard Notes & Safety"
+        // over an empty page whenever the notes had been cleared — a heading
+        // promising content that is not there, which is how a document stops
+        // being trusted.
+        if (pd.safety_notes && pd.safety_notes.length) {
+          pdf.sectionHeader('Standard Notes & Safety');
+          pd.safety_notes.forEach(function(n) {
+            pdf.check(8);
+            pdf.body('•  ' + n, 15, 175);
+            pdf.gap(3);
+          });
+        }
 
         siqTrack('pdf_export', { document_type: 'callsheet', shoot_day: cs.shoot_day });
         pdf.save(((cs.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-call-sheet-day-' + (cs.shoot_day || 1) + '.pdf');
@@ -5144,6 +5534,18 @@
         // wondering where their credits went. Open the view as well.
         slateShowBilling();
         setTimeout(loadBilling, 0);
+      }
+
+      // The homepage has always linked to ?auth=signin and ?auth=signup, but
+      // nothing here ever read 'auth' — so both links landed on the same
+      // default view and a returning filmmaker who pressed "Sign in" was
+      // shown no way to sign in. Honour the parameter, and never raise the
+      // modal over somebody who is already signed in.
+      var slateWantAuth = params.get('auth');
+      if (slateWantAuth && typeof openAuthModal === 'function') {
+        var slateSignedIn = false;
+        try { slateSignedIn = !!localStorage.getItem('scriptiq_user'); } catch (e) {}
+        if (!slateSignedIn) openAuthModal(slateWantAuth === 'signup' ? 'signup' : 'login');
       }
     })();
 
