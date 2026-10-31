@@ -3791,6 +3791,96 @@
           });
         }
 
+        // ── Day Out of Days ──
+        // The document a producer asks for by name, because it is what an
+        // actor's contract is negotiated against: how many days they work,
+        // how many they are held across, and which day releases them.
+        //
+        // Notation is the industry's, not ours:
+        //   S   start (first working day)    W   works
+        //   F   finish (last working day)    H   held, not working
+        //   SF  starts and finishes same day  ·  not yet started / released
+        //
+        // Single letters rather than SW/WF/SWF: a day column is about seven
+        // millimetres wide once a readable character column is paid for, and
+        // the longer codes wrapped onto two lines inside the cell.
+        //
+        // Hold days are the ones that cost money for nothing: an actor
+        // between their first and last day is on the payroll whether or not
+        // they are called, which is exactly what this grid exposes.
+        (function () {
+          var roster = (s.cast_release_schedule || []).filter(function (c) {
+            return c.days_required && c.days_required.length;
+          });
+          if (!roster.length || !days.length) return;
+
+          var totalDays = days.length;
+          // 180mm of usable width, less the label and total columns, decides
+          // how many day columns fit. A long schedule is split into blocks
+          // the way a printed Day Out of Days always has been, rather than
+          // squeezed until the cells are unreadable.
+          var LABEL_W = 47, TOTALS_W = 33, DAY_W = 10;
+          var perBlock = Math.max(1, Math.floor((180 - LABEL_W - TOTALS_W) / DAY_W));
+
+          pdf.sectionHeader('Day Out of Days');
+          pdf.annotation('S start · W work · F finish · SF start and finish same day · H held, not working.'
+            + ' Held days are paid days an actor is not called.');
+          pdf.gap(4);
+
+          for (var b = 0; b < totalDays; b += perBlock) {
+            var block = [];
+            for (var d = b + 1; d <= Math.min(b + perBlock, totalDays); d++) block.push(d);
+
+            var cols = [{ label: 'No.', width: 9, align: 'right', gold: true },
+                        { label: 'Character', width: 38, bold: true }];
+            block.forEach(function (d) { cols.push({ label: String(d), width: DAY_W, align: 'right' }); });
+            cols.push({ label: 'W', width: 11, align: 'right', gold: true });
+            cols.push({ label: 'H', width: 11, align: 'right' });
+            cols.push({ label: 'Tot', width: 11, align: 'right', gold: true });
+
+            var rows = roster.map(function (c) {
+              var dr = c.days_required.slice().sort(function (x, y) { return x - y; });
+              var start = dr[0], finish = dr[dr.length - 1];
+              var row = [c.cast_number || '', c.character || ''];
+              block.forEach(function (d) {
+                if (d < start || d > finish) { row.push('·'); return; }
+                var works = dr.indexOf(d) >= 0;
+                if (!works) { row.push('H'); return; }
+                if (d === start && d === finish) row.push('SF');
+                else if (d === start) row.push('S');
+                else if (d === finish) row.push('F');
+                else row.push('W');
+              });
+              var work = dr.length;
+              var span = finish - start + 1;
+              row.push(work, span - work, span);
+              return row;
+            });
+
+            if (totalDays > perBlock) {
+              pdf.body('Days ' + block[0] + '–' + block[block.length - 1], 15, 175);
+              pdf.gap(3);
+            }
+            pdf.table(cols, rows);
+            pdf.gap(6);
+          }
+
+          // An actor with no shoot day cannot appear in a grid of shoot days,
+          // but silently leaving them out is how somebody turns up on set
+          // having never been given a call.
+          var stranded = (s.cast_release_schedule || []).filter(function (c) {
+            return !(c.days_required && c.days_required.length);
+          });
+          if (stranded.length) {
+            pdf.annotation(stranded.map(function (c) { return c.character; }).join(', ')
+              + (stranded.length > 1 ? ' appear' : ' appears')
+              + ' only in scenes that are not yet scheduled, so '
+              + (stranded.length > 1 ? 'they have' : 'they have')
+              + ' no days here yet.');
+            pdf.gap(4);
+          }
+        })();
+
         siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
         pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
       }
