@@ -190,7 +190,16 @@ exports.handler = async function(event, context) {
         background: Array.isArray(s.background) ? s.background.join(', ') : (s.background || ''),
         background_count: s.background_count || null,
         props: s.props || [],
-        costume: s.costume || []
+        costume: s.costume || [],
+        // Departments travel onto the call sheet because they are what the
+        // day has to be prepared for. Absent on breakdowns made before these
+        // categories existed, which is why each defaults to an empty list
+        // rather than being assumed present.
+        stunts: s.stunts || [],
+        vehicles: s.vehicles || [],
+        animals: s.animals || [],
+        special_effects: s.special_effects || [],
+        makeup_hair: s.makeup_hair || []
       };
     });
     // Character identity, and the readable spelling to display. Both are

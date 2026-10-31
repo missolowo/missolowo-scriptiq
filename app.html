@@ -1867,7 +1867,8 @@
           outline_schedule: [],
           production_elements: {
             all_cast: [], all_props: [], all_costume: [],
-            all_equipment: [], special_requirements: []
+            all_equipment: [], all_stunts: [], all_vehicles: [], all_animals: [],
+            all_special_effects: [], all_makeup_hair: [], special_requirements: []
           }
         };
                let sceneOffset = 0;
@@ -2025,6 +2026,15 @@
           merged.production_elements.all_props = slateMergeElements(merged.production_elements.all_props, pe.all_props);
           merged.production_elements.all_costume = slateMergeElements(merged.production_elements.all_costume, pe.all_costume);
           merged.production_elements.all_equipment = slateMergeElements(merged.production_elements.all_equipment, pe.all_equipment);
+          // The department lists merge exactly like the others. Listed by
+          // name rather than looped so a category added to the prompt without
+          // being added here fails loudly in review instead of silently
+          // vanishing between chunks.
+          merged.production_elements.all_stunts = slateMergeElements(merged.production_elements.all_stunts, pe.all_stunts);
+          merged.production_elements.all_vehicles = slateMergeElements(merged.production_elements.all_vehicles, pe.all_vehicles);
+          merged.production_elements.all_animals = slateMergeElements(merged.production_elements.all_animals, pe.all_animals);
+          merged.production_elements.all_special_effects = slateMergeElements(merged.production_elements.all_special_effects, pe.all_special_effects);
+          merged.production_elements.all_makeup_hair = slateMergeElements(merged.production_elements.all_makeup_hair, pe.all_makeup_hair);
           merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
         } 
          // ── Rebuild the indexes from the assembled scenes ──
@@ -3570,6 +3580,15 @@
           if (bgPdf && bgPdf !== 'null') pdf.labelledList('Background', [bgPdf]);
           pdf.labelledList('Props', s.props);          pdf.labelledList('Costume', s.costume);
           pdf.labelledList('Equipment', s.equipment);
+          // The departments, on the scene where they happen — which is where
+          // a 1st AD reads them when working out what a day needs. Each is
+          // skipped when empty by labelledList, so an ordinary dialogue scene
+          // shows nothing extra.
+          pdf.labelledList('Stunts', s.stunts);
+          pdf.labelledList('Vehicles', s.vehicles);
+          pdf.labelledList('Animals', s.animals);
+          pdf.labelledList('SFX', s.special_effects);
+          pdf.labelledList('Makeup/Hair', s.makeup_hair);
           pdf.gap(3);
           pdf.rule();
         });
@@ -3607,6 +3626,23 @@
         pdf.labelledList('All Costume', pe.all_costume, 15);
         pdf.gap(4);
         pdf.labelledList('All Equipment', pe.all_equipment, 15);
+
+        // ── Departments ──
+        // Printed only when the script actually called for them. Most films
+        // have no animals and no effects, and a row of empty headings would
+        // suggest we looked and found nothing rather than that there was
+        // nothing to find. A department that IS listed here books crew,
+        // hires suppliers and triggers insurance, so each one gets its own
+        // line rather than being folded into props.
+        [['Stunts', pe.all_stunts],
+         ['Vehicles', pe.all_vehicles],
+         ['Animals', pe.all_animals],
+         ['Special Effects', pe.all_special_effects],
+         ['Makeup & Hair', pe.all_makeup_hair]].forEach(function (pair) {
+          if (!pair[1] || !pair[1].length) return;
+          pdf.gap(4);
+          pdf.labelledList(pair[0], pair[1], 15);
+        });
 
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
         pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
@@ -4057,6 +4093,15 @@
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
+          // Departments on the day they are needed. A stunt or an animal
+          // discovered on the morning is a day lost; on the call sheet the
+          // night before it is a phone call. Empty lists print nothing, so an
+          // ordinary dialogue day looks exactly as it did.
+          pdf.labelledList('Stunts', s.stunts);
+          pdf.labelledList('Vehicles', s.vehicles);
+          pdf.labelledList('Animals', s.animals);
+          pdf.labelledList('SFX', s.special_effects);
+          pdf.labelledList('Makeup/Hair', s.makeup_hair);
           pdf.gap(2);
           pdf.rule();
         });

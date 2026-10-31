@@ -313,10 +313,17 @@ COSTUME, PROPS AND EQUIPMENT — record only what the script actually specifies:
 - Never write a placeholder. "Costume for Adewale", "Adewale's outfit" or "regular clothes" say nothing a costume department can act on, and they make a breakdown look padded.
 - If the script does not describe what a character wears, leave costume empty. An empty field is honest; a filler entry wastes a department's time.
 - Props and equipment: list every object the script mentions by name — "phone", "makeshift stall", "15,000 naira". Only avoid entries that name no object, such as "props for the scene".
+DEPARTMENT CATEGORIES — the same rule, applied harder. These five book crew, hire suppliers and trigger insurance, so a wrong entry costs real money and a missing one is found on the day:
+- stunts: a fight, a fall, a chase, a crash — anything a performer could be hurt doing. "Shina shoves Kunle against the wall" is a stunt. Two people arguing is not.
+- vehicles: a vehicle the script puts on screen — "danfo bus", "black Hilux", "okada". Not a vehicle merely mentioned in dialogue.
+- animals: an animal that appears — "goat", "two chickens". Not an animal mentioned in dialogue or in a proverb.
+- special_effects: a practical effect the script calls for — rain, smoke, fire, a gunshot, breaking glass. Not an edit or a camera move.
+- makeup_hair: special makeup or hair only — blood, a scar, bruising, ageing, a wig the script names. Everyday grooming is not a breakdown item.
+- Leave every one of these empty unless the script says so on the page. Inventing a stunt books a stunt coordinator nobody needs; missing one puts a performer at risk. An empty list is the correct answer for most scenes.
 SCREENPLAY:
 ${script.trim()}
 
-REMINDER: write every description, location, set, prop, costume and equipment value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
+REMINDER: write every description, location, set, prop, costume, equipment, stunt, vehicle, animal, effect and makeup value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
 
 Return ONLY valid JSON:
 {
@@ -339,6 +346,11 @@ Return ONLY valid JSON:
       "props": ["prop item, in English"],
       "costume": ["costume item, in English"],
       "equipment": ["equipment item, in English"],
+      "stunts": ["stunt or fight described in the script, in English"],
+      "vehicles": ["vehicle named in the script, in English"],
+      "animals": ["animal named in the script, in English"],
+      "special_effects": ["practical effect the script calls for, in English"],
+      "makeup_hair": ["special makeup or hair the script calls for, in English"],
       "production_notes": "Notes, in English"
     }
   ],
@@ -353,6 +365,11 @@ Return ONLY valid JSON:
     "all_props": ["prop item"],
     "all_costume": ["costume item"],
     "all_equipment": ["equipment item"],
+    "all_stunts": ["stunt or fight"],
+    "all_vehicles": ["vehicle"],
+    "all_animals": ["animal"],
+    "all_special_effects": ["practical effect"],
+    "all_makeup_hair": ["special makeup or hair"],
     "special_requirements": []
   }
 }
