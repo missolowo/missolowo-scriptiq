@@ -1251,7 +1251,16 @@
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null, type: null, at: i });
+            // An annotation can sit on the HEADING line — "8. INT. ROOM -
+            // NIGHT (BACK TO PRESENT)" — and not only on a scene-number line
+            // of its own. Only the number-line form was ever read, so a
+            // script that marks its flashbacks the common way had them
+            // noticed by the model or not at all, and a marked return was
+            // never recorded. slateSceneTypeFrom returns null for anything
+            // that is not a known marker, so "(MAIN HOUSE)" stays harmless.
+            var hp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
+            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null,
+                       type: hp ? slateSceneTypeFrom(hp[1]) : null, at: i });
           }
         }
         // Each scene runs from its own heading to the next one. Measured here
@@ -2167,7 +2176,14 @@
           var spans = [];
           var open = null;
           merged.scenes.forEach(function (s, i) {
-            if (s.slate_returns_to_present) {
+            // Two ways a return can reach us: recorded off the page by the
+            // splitter, or reported by the model as a scene_type. Only the
+            // first closed a span. The second was recognised just well enough
+            // NOT to open a new span and then dropped, so a script whose
+            // return the model found — but the splitter did not — ran its
+            // flashback to the end of the film. On an 18-scene script that
+            // tagged twelve scenes as flashback, two thirds of the story.
+            if (s.slate_returns_to_present || s.scene_type === 'BACK TO PRESENT') {
               if (open) {
                 open.endsBefore = i;
                 open.returnsAt = s.scene_label;
