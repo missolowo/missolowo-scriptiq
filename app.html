@@ -1357,9 +1357,22 @@
           window.slateChunkEighths = marks.map(function (list) {
             return list.map(function (m) { return m.eighths; });
           });
+          // Which script page each scene opens on. Every breakdown names it,
+          // because it is how a production manager finds the scene in the
+          // script they are holding. Accumulated across chunks: each chunk's
+          // marks measure from its own first line, so a per-chunk page number
+          // would restart at 1 partway through the film.
+          var slateRowsSoFar = 0;
+          window.slateChunkPages = marks.map(function (list) {
+            return list.map(function (m) {
+              var page = Math.floor(slateRowsSoFar / SLATE_ROWS_PER_PAGE) + 1;
+              slateRowsSoFar += (Number(m.rows) || 0);
+              return page;
+            });
+          });
         } catch (e) {
           window.slateChunkNumbers = null; window.slateChunkTypes = null;
-          window.slateChunkEighths = null;
+          window.slateChunkEighths = null; window.slateChunkPages = null;
         }
         return chunks;
       }
@@ -1970,6 +1983,9 @@
               var recEighths = (window.slateChunkEighths || [])[slateChunkIdx];
               var slateE = recEighths && recEighths[slateSceneInChunk];
               if (slateE) scene.slate_eighths = slateE;
+              var recPages = (window.slateChunkPages || [])[slateChunkIdx];
+              var slateP = recPages && recPages[slateSceneInChunk];
+              if (slateP) scene.slate_page = slateP;
             }
 
             if (slateUseRec) {
@@ -3580,7 +3596,16 @@
           pdf.sceneNumeral(s.scene_label || s.scene_number);
           // Never invent INT or DAY. A breakdown sheet that states a time of
           // day the script does not give is a lie a crew will act on.
+          // Page and length, the way a breakdown sheet carries them: where to
+          // find the scene in the script you are holding, and how much of a
+          // day it will cost. Both are measured off the script, and both are
+          // omitted rather than guessed when we could not match the scene to
+          // its place on the page.
+          var bdE = Number(s.slate_eighths) || 0;
+          var bdMeta = (s.slate_page ? '   p.' + s.slate_page : '')
+            + (bdE ? '   ' + Math.floor(bdE / 8) + ' ' + (bdE % 8) + '/8' : '');
           pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not specified in script') + ' — ' + (s.time_of_day || '—')
+            + bdMeta
             + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
           pdf.gap(9);
           // AFTER the gap, never before it. slugline() draws at y+4 and
