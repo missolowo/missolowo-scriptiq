@@ -327,6 +327,49 @@ Return ONLY valid JSON:
       return String(a.character).localeCompare(String(b.character));
     });
 
+    // ── What shoots tomorrow ──
+    // Every real call sheet ends with the next day's work, because that is
+    // what the crew prep tonight: trucks loaded, costumes pulled, equipment
+    // ordered, actors warned. Without it a call sheet says where to be and
+    // nothing about what to get ready, which is half a call sheet.
+    const slateNextDay = (schedule.schedule || []).find(function (d) {
+      return Number(d.day) === targetDay + 1;
+    });
+    const slateAdvance = slateNextDay ? (function () {
+      const seen = {}, who = [];
+      (slateNextDay.scenes || []).forEach(function (sc) {
+        (sc.cast_required || []).forEach(function (n) {
+          const k = castKey(n);
+          if (!k || seen[k]) return;
+          seen[k] = true;
+          who.push({ character: slateName(n), cast_number: slateCastNo[k] || null });
+        });
+      });
+      who.sort(function (a, b) {
+        var an = a.cast_number || 9999, bn = b.cast_number || 9999;
+        if (an !== bn) return an - bn;
+        return String(a.character).localeCompare(String(b.character));
+      });
+      return {
+        day: Number(slateNextDay.day),
+        date: slateNextDay.date || '',
+        location: slateNextDay.location || '',
+        locations: slateNextDay.locations || [],
+        company_move: !!slateNextDay.company_move,
+        scenes: (slateNextDay.scenes || []).map(function (sc) {
+          return {
+            scene_index: sc.scene_index,
+            scene_number: sc.scene_number,
+            int_ext: sc.int_ext,
+            time_of_day: sc.time_of_day,
+            set: sc.set || '',
+            eighths: sc.eighths || 0
+          };
+        }),
+        cast: who
+      };
+    })() : null;
+
     // ── STEP 6: Assemble. Every fact here comes from data. ──
     const callsheet = {
       title: breakdown.title || 'Untitled Production',
@@ -343,6 +386,11 @@ Return ONLY valid JSON:
       company_move: !!dayData.company_move,
       scenes_today: scenesToday,
       cast_call_times: castCallTimes,
+      advance_schedule: slateAdvance,
+      // Said plainly rather than left as an absence: a crew reading a call
+      // sheet with no "tomorrow" cannot tell whether the shoot is over or
+      // the schedule simply was not filled in.
+      is_final_day: !slateNextDay,
       production_notes: aiNotes.length ? aiNotes : (dayData.production_notes ? [dayData.production_notes] : [])
     };
 

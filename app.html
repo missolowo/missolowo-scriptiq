@@ -4038,6 +4038,13 @@
         }
 
         pdf.sectionHeader("Today's Scene Schedule");
+        // Said, not left blank. A call sheet with an empty scene list means
+        // something went wrong upstream, and a crew holding one needs to know
+        // that rather than wonder whether the page failed to print.
+        if (!scenes.length) {
+          pdf.annotation('No scenes are scheduled for this day. Check the shooting schedule before distributing this call sheet.');
+          pdf.gap(4);
+        }
         scenes.forEach(function(s) {
           pdf.check(20);
           pdf.sceneNumeral(s.scene_label || s.scene_number);
@@ -4055,6 +4062,13 @@
         });
 
         pdf.sectionHeader('Cast');
+        // A day can legitimately have no cast — establishing shots, inserts,
+        // second unit — but the page has to say so rather than show a header
+        // with nothing beneath it.
+        if (!cast.length) {
+          pdf.annotation('No cast are called for this day.');
+          pdf.gap(4);
+        }
         cast.forEach(function(c) {
           pdf.check(14);
           d.setTextColor.apply(d, SLATE_INK);
@@ -4075,6 +4089,64 @@
           pdf.gap(11);
           pdf.rule();
         });
+
+        // ── Tomorrow ──
+        // Every real call sheet ends here, because this is what the crew act
+        // on tonight: what to load, what to pull, who to warn. A call sheet
+        // that stops at today tells people where to be and nothing about what
+        // to get ready.
+        (function () {
+          var adv = cs.advance_schedule;
+          if (!adv) {
+            if (cs.is_final_day) {
+              pdf.sectionHeader('Advance Schedule');
+              // Stated rather than left blank: a crew reading no "tomorrow"
+              // cannot tell whether the shoot is over or nobody filled it in.
+              pdf.annotation('This is the final day of the schedule. No further shoot days are planned.');
+              pdf.gap(4);
+            }
+            return;
+          }
+          pdf.sectionHeader('Tomorrow — Day ' + String(adv.day).padStart(2, '0')
+            + (adv.date ? '  ·  ' + adv.date : '')
+            + (adv.location ? '  ·  ' + adv.location : ''));
+          if (adv.company_move) {
+            pdf.annotation('Company move tomorrow — more than one location. Plan travel tonight.');
+            pdf.gap(3);
+          }
+          (adv.scenes || []).forEach(function (sc) {
+            pdf.check(14);
+            var advE = Number(sc.eighths) || 0;
+            d.setTextColor.apply(d, SLATE_INK);
+            d.setFontSize(9);
+            d.setFont('courier', 'normal');
+            d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number), 15, pdf.getY());
+            d.setFont('helvetica', 'normal');
+            d.setFontSize(8.5);
+            d.text((sc.int_ext || '—') + ' · ' + ((sc.time_of_day || '—').charAt(0))
+              + '   ' + (sc.set || '—')
+              + (advE ? '   ' + Math.floor(advE / 8) + ' ' + (advE % 8) + '/8' : ''),
+              32, pdf.getY());
+            pdf.gap(7);
+          });
+          if ((adv.cast || []).length) {
+            pdf.gap(2);
+            d.setTextColor.apply(d, SLATE_MUTED);
+            d.setFontSize(7);
+            d.setFont('helvetica', 'bold');
+            d.text('CAST REQUIRED TOMORROW', 15, pdf.getY());
+            pdf.gap(5);
+            d.setTextColor.apply(d, SLATE_INK);
+            d.setFontSize(8.5);
+            d.setFont('helvetica', 'normal');
+            var advWho = adv.cast.map(function (c) {
+              return (c.cast_number ? c.cast_number + '. ' : '') + c.character;
+            }).join('   ·   ');
+            d.text(d.splitTextToSize(advWho, 175), 15, pdf.getY());
+            pdf.gap(6 + (d.splitTextToSize(advWho, 175).length - 1) * 4);
+          }
+          pdf.gap(4);
+        })();
 
         if (pd.crew && pd.crew.length) {
           pdf.sectionHeader('Full Crew List');
@@ -4121,12 +4193,18 @@
           pdf.gap(12);
         }
 
-        pdf.sectionHeader('Standard Notes & Safety');
-        (pd.safety_notes || []).forEach(function(n) {
-          pdf.check(8);
-          pdf.body('•  ' + n, 15, 175);
-          pdf.gap(3);
-        });
+        // Guarded. An unguarded header printed "Standard Notes & Safety"
+        // over an empty page whenever the notes had been cleared — a heading
+        // promising content that is not there, which is how a document stops
+        // being trusted.
+        if (pd.safety_notes && pd.safety_notes.length) {
+          pdf.sectionHeader('Standard Notes & Safety');
+          pd.safety_notes.forEach(function(n) {
+            pdf.check(8);
+            pdf.body('•  ' + n, 15, 175);
+            pdf.gap(3);
+          });
+        }
 
         siqTrack('pdf_export', { document_type: 'callsheet', shoot_day: cs.shoot_day });
         pdf.save(((cs.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-call-sheet-day-' + (cs.shoot_day || 1) + '.pdf');
