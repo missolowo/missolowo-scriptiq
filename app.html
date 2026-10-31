@@ -3121,6 +3121,25 @@
       // One helper, used by both the draw and the measure override, so the
       // two can never disagree about which font a string is in.
       var SLATE_WINANSI_EXTRA = /[ŒœŠšŸŽžƒˆ˜–—‘’‚“”„†‡•…‰‹›€™]/g;
+      // ── Uppercasing that does not destroy Yorùbá ──
+      // jsPDF draws a combining mark at zero advance and applies no GPOS, so
+      // the mark lands wherever the font's default anchor puts it. Above a
+      // short lowercase "ọ" that is correct and renders properly. Above a
+      // tall capital "Ọ" it lands INSIDE the letter and disappears: "Ìdí Ọ̀
+      // Gán" printed as "ÌDÍ Ọ GÁN", silently dropping a tone mark that
+      // changes the word.
+      //
+      // Uppercase is a house style; a place name spelled correctly is not.
+      // So a string carrying combining marks keeps its own case. Our own
+      // labels — "CAST", "PROPS" — have no marks and uppercase as before,
+      // which is every label in the documents except the ones that carry a
+      // filmmaker's own words.
+      var SLATE_COMBINING = /[̀-ͯ]/;
+      function slateUpperSafe(s) {
+        var t = String(s == null ? '' : s);
+        return SLATE_COMBINING.test(t.normalize ? t.normalize('NFD') : t) ? t : t.toUpperCase();
+      }
+
       function slateNeedsUnicodeFont(txt) {
         var probe = Array.isArray(txt) ? txt.join('') : String(txt == null ? '' : txt);
         return /[^\u0000-ÿ]/.test(probe.replace(SLATE_WINANSI_EXTRA, ''));
@@ -3409,9 +3428,9 @@
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(8);
           doc.setFont(slateBodyFont, 'bold');
-          doc.text(label.toUpperCase(), 15, y + 6);
+          doc.text(slateUpperSafe(label), 15, y + 6);
           y += 18;
-        }  
+        }
 
         // Scene numeral — PM-approved hierarchy: 15pt bold gold, widened zone
         function sceneNumeral(num) {
@@ -3482,7 +3501,7 @@
           doc.setTextColor.apply(doc, SLATE_MUTED);
           doc.setFontSize(7.5);
           doc.setFont(slateBodyFont, 'bold');
-          doc.text(label.toUpperCase() + ':', x || 34, y);
+          doc.text(slateUpperSafe(label) + ':', x || 34, y);
           doc.setTextColor.apply(doc, SLATE_INK);
           // Reset the size: the label above set 7.5pt, and without this the
           // VALUES inherited it — so the cast names and props, the actual
@@ -3983,7 +4002,7 @@
           d.setTextColor.apply(d, SLATE_MUTED);
           d.setFontSize(6.5);
           d.setFont('helvetica', 'bold');
-          d.text(label.toUpperCase(), x, pdf.getY());
+          d.text(slateUpperSafe(label), x, pdf.getY());
           d.setTextColor.apply(d, SLATE_INK);
           d.setFontSize(9);
           d.setFont('courier', 'normal');
