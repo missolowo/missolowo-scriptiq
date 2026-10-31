@@ -212,6 +212,10 @@ a { color: inherit; }
 }
 .nav__signin:hover { color: var(--paper); }
 
+/* The nav CTA carries two labels: the full one, and a short one for phones
+   where the long label is what crowded Sign in off the bar. */
+.nav__cta-short { display: none; }
+
 /* ---------------- Buttons ----------------
    Motion law: animate transform and opacity ONLY.
    Hover is an opacity fade on an overlay layer, not a
@@ -259,9 +263,11 @@ a { color: inherit; }
 }
 .btn--ghost:hover { border-color: var(--line-2); }
 
-@media (min-width: 768px) {
-  .btn--compact { min-height: 40px; padding-inline: var(--s-4); }
-}
+/* The nav's only compact button. This was scoped to min-width:768px, so on
+   a phone — where the row is tightest — it rendered at FULL size and pushed
+   the nav past the page gutter (36px off-screen at 320px). Unscoped now;
+   desktop is unchanged because the values are the same ones it already had. */
+.btn--compact { min-height: 40px; padding-inline: var(--s-4); }
 
 /* ---------------- Hero ---------------- */
 
@@ -919,7 +925,26 @@ a { color: inherit; }
 /* ---------------- Responsive ---------------- */
 
 @media (max-width: 767px) {
-  .nav__signin { display: none; } /* auth is inline in the Workspace */
+  /* Sign in used to be hidden here to make the row fit. That removed the
+     only route back into an account from the homepage — and most filmmakers
+     reach us on a phone, so a returning user saw nothing but "Create free
+     account" and could only make a second account. The row is shrunk to fit
+     instead: smaller brand, short CTA label, tighter gaps. The brand may
+     truncate, which guarantees the nav can never overflow the gutter again
+     at any width. */
+  .nav__inner { gap: var(--s-2); }
+  .nav__brand { font-size: var(--t-small); min-width: 0; }
+  .nav__brand > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav__actions { gap: var(--s-3); flex: none; }
+  .nav__cta-full { display: none; }
+  .nav__cta-short { display: inline; }
+}
+
+/* Below ~360px the brand word-mark, Sign in and the CTA cannot all fit, and
+   the brand is the one piece the gold mark already carries on its own. Drop
+   the words rather than the way back into an account. */
+@media (max-width: 359px) {
+  .nav__brand > span { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -946,7 +971,7 @@ a { color: inherit; }
       <!-- Auth is inline in the Production Workspace (Aug 12 pattern).
            These route to app.html and let it raise its own modal. -->
       <a class="nav__signin" href="/app.html?auth=signin" data-cta="nav" data-cta-action="signin">Sign in</a>
-      <a class="btn btn--gold btn--compact" href="/app.html?auth=signup" data-cta="nav" data-cta-action="signup"><span>Create free account</span></a>
+      <a class="btn btn--gold btn--compact" href="/app.html?auth=signup" data-cta="nav" data-cta-action="signup"><span class="nav__cta-full">Create free account</span><span class="nav__cta-short">Start free</span></a>
     </nav>
   </div>
 </header>
