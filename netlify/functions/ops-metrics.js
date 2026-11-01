@@ -17,22 +17,15 @@
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
 
-const { ADMIN_EMAILS } = require('./lib/slate-core');
+const { internalUserIds } = require('./lib/slate-core');
+const { countPayingCustomers } = require('./lib/slate-pricing');
 
 const SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
-// ── Whose activity is OURS, not a customer's ──
-// Three weeks of engine work ran the same fixture scripts over and over, so
-// the raw counts read as demand when they are really our own debugging.
-// Admin accounts are therefore counted separately, and the headline numbers
-// mean customers.
-//
-// An account is ours if its role is admin, or its address is on this list.
-// Add an address here to exclude it — no other change needed.
-const INTERNAL_EMAILS = ADMIN_EMAILS.concat([
-  // Accounts used for building and testing. Gmail treats a +suffix as the
-  // same inbox, so these are all the same two people.
-]);
+// Which accounts are ours is defined once, in lib/slate-core.js. This file
+// used to decide for itself, and so did the launch counter — with the
+// result that this endpoint reported the paying-customer figure correctly
+// while the code that actually sets the price counted differently.
 
 // Every table is counted the same way, so adding one is a line here.
 const TABLES = [
@@ -134,22 +127,9 @@ exports.handler = async function (event) {
     // Find our own accounts once, then exclude their rows everywhere.
     // If this lookup fails we report internal_ids as null and leave the
     // counts unfiltered rather than silently reporting the wrong thing.
-    let internalIds = [];
-    let internalKnown = false;
-    try {
-      const { data, error } = await supabase.from('users').select('id, email, role');
-      if (!error && data) {
-        internalKnown = true;
-        internalIds = data.filter(function (u) {
-          if (u.role === 'admin') return true;
-          const e = String(u.email || '').toLowerCase();
-          if (INTERNAL_EMAILS.indexOf(e) !== -1) return true;
-          // someone+test@gmail.com is the same person as someone@gmail.com
-          const base = e.replace(/\+[^@]*(?=@)/, '');
-          return INTERNAL_EMAILS.indexOf(base) !== -1;
-        }).map(function (u) { return u.id; });
-      }
-    } catch (e) { internalKnown = false; }
+    const found = await internalUserIds(supabase);
+    const internalKnown = found !== null;
+    const internalIds = found || [];
 
     const windows = { today: since(0), week: since(7), month: since(30) };
     const out = { generated_at: new Date().toISOString(), windows: Object.keys(windows).concat('all_time') };
@@ -231,20 +211,23 @@ exports.handler = async function (event) {
 
     // The launch offer runs on distinct paying customers, so the automation
     // can see how close we are without reading anyone's payment record.
+    //
+    // Taken from the pricing library, not counted again here. This file used
+    // to count it itself, with a comment saying our test purchases must not
+    // use up the hundred — and they did, because the pricing library was the
+    // one deciding and it had no such rule. Reporting the right number next
+    // to code charging on the wrong one is worse than a plain mistake: it
+    // reads as proof the rule is kept.
+    out.paying_customers = await countPayingCustomers(supabase);
     try {
       const { data } = await supabase.from('payments').select('user_id').eq('status', 'success');
-      const seen = {}, seenInternal = {};
+      const seenInternal = {};
       (data || []).forEach(function (r) {
-        if (!r.user_id) return;
-        if (internalIds.indexOf(r.user_id) !== -1) seenInternal[r.user_id] = true;
-        else seen[r.user_id] = true;
+        if (r.user_id && internalIds.indexOf(r.user_id) !== -1) seenInternal[r.user_id] = true;
       });
-      // This is the figure the launch offer runs on, so it must count
-      // customers only — our own test purchases must not use up the 100.
-      out.paying_customers = Object.keys(seen).length;
       internal.paying_customers = Object.keys(seenInternal).length;
     } catch (e) {
-      out.paying_customers = null;
+      internal.paying_customers = null;
     }
 
     // Worth an alert on the automation side: money taken, credits not added.

@@ -65,4 +65,48 @@ function isAdmin(email) {
   return !!email && ADMIN_EMAILS.indexOf(email) !== -1;
 }
 
-module.exports = { ADMIN_EMAILS, isAdmin, slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField };
+// ── WHOSE ACTIVITY IS OURS, NOT A CUSTOMER'S ──
+// Server-side only — it reads the database, so there is nothing to mirror
+// in app.html.
+//
+// Weeks of engine work ran the same fixture scripts over and over, and our
+// own test purchases go through the live payment flow because that is the
+// only way to know the live payment flow works. Neither is demand. Any
+// figure that means "customers" has to exclude these accounts, and until
+// now each place that cared decided for itself what "ours" meant.
+//
+// An account is ours if its role is admin, or its address is listed here.
+// Adding an address here is the whole change — no other file.
+const INTERNAL_EMAILS = ADMIN_EMAILS.concat([
+  // Accounts used for building and testing. Gmail treats a +suffix as the
+  // same inbox, so a +test address is matched against its base below.
+]);
+
+// The user ids behind those addresses.
+//
+// Returns null when the list cannot be read — which is NOT the same as
+// "nobody is internal", and callers must not treat it as an empty array.
+// The distinction is the whole point: an empty array means we looked and
+// found none; null means we do not know, and a caller that silently
+// excludes nobody is reporting our own testing as customer demand.
+async function internalUserIds(supabase) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from('users').select('id, email, role');
+    if (error || !data) return null;
+    return data.filter(function (u) {
+      if (u.role === 'admin') return true;
+      const e = String(u.email || '').toLowerCase();
+      if (INTERNAL_EMAILS.indexOf(e) !== -1) return true;
+      // someone+test@gmail.com is the same person as someone@gmail.com
+      return INTERNAL_EMAILS.indexOf(e.replace(/\+[^@]*(?=@)/, '')) !== -1;
+    }).map(function (u) { return u.id; });
+  } catch (e) {
+    return null;
+  }
+}
+
+module.exports = {
+  ADMIN_EMAILS, INTERNAL_EMAILS, isAdmin, internalUserIds,
+  slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField
+};

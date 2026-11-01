@@ -501,6 +501,7 @@
             <button class="lang-chip" data-lang="ja">🇯🇵 日本語</button>
             <button class="lang-chip" data-lang="ko">🇰🇷 한국어</button>
             <button class="lang-chip" data-lang="ru">🇷🇺 Русский</button>
+            <button class="lang-chip" data-lang="tr">🇹🇷 Türkçe</button>
           </div>
           <div class="dropzone" id="dropzone">
             <svg class="dropzone-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1267,7 +1268,18 @@
       // same definitions. Adding a language is one edit here.
       // SLATE_HEAD — the INT/EXT word in each supported language.
       // SLATE_NUM  — the SCENE/SC word, for scripts that number their scenes.
-      var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ';
+      // İÇ and DIŞ are Turkish for interior and exterior. IÇ is included
+      // because "iç" uppercased outside a Turkish locale gives IÇ with a
+      // dotless I — JavaScript's toUpperCase does exactly that — and a
+      // script written on a non-Turkish machine will carry that form.
+      //
+      // Case-insensitive matching does NOT bridge these: /İÇ/i does not
+      // match "iç", and /DIŞ/i matches neither "dış" nor "Dış", because
+      // Turkish dotted and dotless i are separate letters that Unicode
+      // simple folding does not relate. Sluglines are uppercase by
+      // convention in every script we have tested, so the uppercase forms
+      // are what matter; the alternatives are listed rather than assumed.
+      var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ|İÇ|IÇ|DIŞ';
       var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
       // A scene-number line standing on its own: "SCENE 5", "Scene 12.",
       // and — the shape that broke this — "Scene 36 (FLASHBACK)".
@@ -1313,7 +1325,7 @@
 
       // A heading is either an INT/EXT word, or a SCENE word followed by a number.
       var slateHeadingSrc =
-        '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-z])'
+        '(?:(?:[0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?[.)]?[ \\t]*)?(?:' + SLATE_HEAD + ')(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])'
         + '|(?:' + SLATE_NUM + ')[ \\t]*[0-9])';
 
       // ── DERIVE, DON'T ASK: remember the scene numbers we hand to the model ──
@@ -4681,7 +4693,19 @@
         // then hold several headings plus paragraphs of action.
         // ИНТ and НАТ are the Russian equivalents of INT and EXT, ПАВ is
         // a studio stage. The negative lookahead stops ИНТЕРВЬЮ matching.
-        var headingRe = /(?:^|\s)(?:(?:SCENE|SC|СЦЕНА)[ \t]*)?([0-9]+(?:[.\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \t]*(INT\.?\/?EXT\.?|I\.?\/?E\.?|INT|EXT|INTERIOR|EXTERIOR|ИНТ\.?|НАТ\.?|ПАВ\.?)(?![А-Яа-яA-Za-z])[.\s\/]*/gi;
+        // Built from SLATE_NUM and SLATE_HEAD, not copied from them. This
+        // used to be a second hardcoded list of INT/EXT words, so the
+        // health check and the splitter could disagree about what a scene
+        // heading is — and they did: adding Turkish İÇ and DIŞ to
+        // SLATE_HEAD made the splitter read all seven scenes of a Turkish
+        // script while this told the filmmaker "No scene headings found".
+        // The worst shape of wrong: the product works and the panel says
+        // it cannot read your screenplay.
+        var headingRe = new RegExp(
+          '(?:^|\\s)(?:(?:' + SLATE_NUM + ')[ \\t]*)?'
+          + '([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \\t]*'
+          + '(' + SLATE_HEAD + ')'
+          + '(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s\\/]*', 'gi');
         var scenes = [];
         var format = 'standard';
  
