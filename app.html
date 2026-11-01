@@ -108,67 +108,90 @@
   .btn-primary:hover { background: var(--gold-bright); }
   .btn-primary:active { background: var(--gold-deep); }
   .btn-primary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+  /* ── Phone shell: a drawer, not a rail ─────────────────────────────
+     The sidebar used to turn into a horizontal scrolling row. At 360px it
+     was 2,723px wide, so only "Home" was on screen: Billing sat at
+     x=2,127 and Send Feedback at x=2,230. Nobody scrolls two thousand
+     pixels sideways, so on a phone — most of this market — a filmmaker
+     could not buy credits, report a problem or sign out.
+
+     Hiding things made it narrower but no better; the answer is the same
+     vertical list a laptop shows, kept off-canvas until asked for. Every
+     item is then one tap away and nothing has to be dropped, so the
+     roadmap entries come back too. */
+  .m-topbar, .m-scrim { display: none; }
+
   @media (max-width: 768px) {
     body { flex-direction: column; }
+
+    .m-topbar {
+      display: flex; align-items: center; gap: var(--s-3);
+      position: sticky; top: 0; z-index: 40;
+      padding: var(--s-2) var(--s-3);
+      background: var(--ink-1); border-bottom: 1px solid var(--line-1);
+    }
+    .m-menu {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; flex: none;
+      background: none; border: 1px solid var(--line-1);
+      border-radius: var(--r-control); color: var(--paper); cursor: pointer;
+    }
+    .m-menu svg { width: 20px; height: 20px; }
+    .m-menu:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+    .m-brand {
+      font-family: var(--font-display); font-weight: 600;
+      font-size: var(--t-body); color: var(--paper);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* The credit count never hides behind a menu: it is the number a
+       filmmaker checks most, and the one that decides whether they can
+       start another script. */
+    .m-credits {
+      margin-left: auto; flex: none; white-space: nowrap;
+      font-family: var(--font-data); font-size: 0.6875rem;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2);
+    }
+    .m-credits b { color: var(--gold); font-size: var(--t-small); margin-right: 4px; }
+    .m-credits.is-empty b { color: var(--error, #D96A57); }
+
+    .m-scrim {
+      display: block; position: fixed; inset: 0; z-index: 45;
+      background: rgba(0,0,0,0.55);
+    }
+    .m-scrim[hidden] { display: none; }
+
+    /* Off-canvas. transform, not left, so it animates on the compositor
+       and a mid-range Android does not judder. */
     .sidebar {
-      width: 100%; min-width: 0; flex-direction: row; align-items: center;
-      overflow-x: auto; padding: var(--s-3); min-height: auto;
-      gap: var(--s-2); -webkit-overflow-scrolling: touch;
+      position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+      width: 84%; max-width: 300px; min-width: 0;
+      flex-direction: column; align-items: stretch;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: var(--s-4) var(--s-3);
+      border-right: 1px solid var(--line-1);
+      transform: translateX(-102%);
+      transition: transform var(--fast, 180ms) var(--ease, ease);
     }
+    .sidebar.is-open { transform: translateX(0); }
+    @media (prefers-reduced-motion: reduce) {
+      .sidebar { transition: none; }
+    }
+
+    /* Everything a laptop shows, shown. Nothing is dropped now there is
+       room for it — including the roadmap entries, which were hidden when
+       this was a rail. */
     .sidebar-logo { display: none; }
-    .nav-section-label { display: none; }
-    .nav-item { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; }
-    .nav-item.active { border-left: none; border-bottom: 2px solid var(--gold); }
-    /* The footer holds Billing, Send Feedback, Settings, Help and Log Out.
-       Hiding it on mobile meant a filmmaker on a phone — which is most of
-       them — could not buy credits, report a problem, or sign out. It now
-       joins the same scrolling row as everything else. */
+    .nav-section-label { display: block; }
+    .nav-item { white-space: normal; }
+    .nav-item.soon { display: flex; }
+    .nav-item.is-pinned-on-phone { display: flex; }
     .sidebar-footer {
-      display: flex; align-items: center; gap: var(--s-2);
-      margin: 0 0 0 var(--s-2); padding: 0 0 0 var(--s-3);
-      border-top: none; border-left: 1px solid var(--line-1);
+      display: block; margin-top: auto;
+      padding-top: var(--s-3); border-top: 1px solid var(--line-1);
     }
-    .sidebar-footer .nav-item { padding: var(--s-3) var(--s-3) !important; }
+    .account-strip { padding: 0 0 var(--s-3); margin: 0; }
+    .account-quick { display: none; }
 
-    /* ── A: features that do not exist yet do not take up a phone's nav ──
-       The rail is 2,723px wide inside a 360px window, so everything past
-       "Home" has to be scrolled to. Budgeting, Crew Management, Crew
-       Network and Script Generator took roughly 900px of that — nine
-       hundred pixels of things a filmmaker cannot click, sitting between
-       them and Billing. They are still on the roadmap page, which is where
-       planned work belongs. */
-    .nav-item.soon { display: none; }
-
-    /* Billing and Send Feedback are pinned beside the credit count on a
-       phone, so the copies in the scrolling footer are the same action
-       offered twice — and the second one is 1,100px along a rail. Hidden
-       here only; desktop has no pinned strip and keeps both in the footer
-       where they have always been. */
-    .nav-item.is-pinned-on-phone { display: none; }
-    /* Credits stay in view rather than scrolling away with the rest. */
-    .account-strip {
-      padding: 0 var(--s-3) 0 var(--s-2); margin: 0;
-      display: flex; align-items: center; gap: var(--s-2);
-      flex-shrink: 0; position: sticky; left: 0;
-      background: var(--ink-1); z-index: 2;
-    }
-    .account-name { display: none; }
-    .account-credits { margin-top: 0; }
-    .account-topup { margin-top: 0; white-space: nowrap; }
-
-    /* ── C: the two things a filmmaker needs are pinned, not scrolled to ──
-       Billing sat 2,127px along the rail and Send Feedback 2,230px, in a
-       window 360px wide. Nobody scrolls that far, so on a phone there was
-       effectively no way to buy credits before running out, and no way to
-       report that anything was wrong.
-       The credits strip is already sticky, and credits are exactly where
-       someone looks when they want more of them, so the two live here. The
-       full list stays in the rail for anyone who scrolls. */
-    /* Two class names, deliberately. The base `.account-quick {display:none}`
-       is declared further down the stylesheet, so at equal specificity it
-       would win over a rule here whatever the media query says — source
-       order decides ties. Scoping to the strip outranks it. */
-    .account-strip .account-quick { display: flex; }
     .main { padding: var(--s-6) var(--s-4); }
     /* Two routes in, equally visible. A returning tester should not have to
        find "Sign in" in a line of small text under a large button. */
@@ -351,7 +374,24 @@
 </head>
 <body>
 
-  <nav class="sidebar">
+  <!-- Phones only. The sidebar used to become a horizontal rail 2,723px
+       wide in a 360px window, so only "Home" was reachable without
+       scrolling sideways. It is a drawer now: the same vertical list a
+       laptop shows, slid off-canvas until asked for. The bar keeps the
+       credit count in view, because that is the number a filmmaker checks
+       most and it should not need a menu. -->
+  <div class="m-topbar">
+    <button class="m-menu" id="mMenu" aria-label="Open menu" aria-expanded="false" aria-controls="slateSidebar">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M3 6h14M3 10h14M3 14h14"/>
+      </svg>
+    </button>
+    <span class="m-brand">Missolowo Slate</span>
+    <span class="m-credits" id="mCredits"></span>
+  </div>
+  <div class="m-scrim" id="mScrim" hidden></div>
+
+  <nav class="sidebar" id="slateSidebar">
     <div class="sidebar-logo">
       <img src="slate-mark-gold.svg" alt="Missolowo Slate">
     </div>
@@ -723,7 +763,7 @@
       function renderAccount() {
         var raw = localStorage.getItem('scriptiq_user');
         if (!raw) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>'
+          (window.slateSetPhoneCredits && window.slateSetPhoneCredits(null), strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>')
             // Feedback stays reachable when signed out, on phones. Somebody
             // who cannot sign in is exactly the person who needs to tell us,
             // and the sidebar footer that normally carries it is 1,266px
@@ -759,10 +799,11 @@
             + '</div>';
           // Engine Check is a diagnostics panel, not a feature. Testers do
           // not need it and it would only clutter their workspace.
+          if (window.slateSetPhoneCredits) window.slateSetPhoneCredits(credits, low);
           var engineNav = document.getElementById('navEngineCheck');
           if (engineNav) engineNav.style.display = isAdmin ? 'flex' : 'none';
         } catch (e) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>'
+          (window.slateSetPhoneCredits && window.slateSetPhoneCredits(null), strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>')
             // Feedback stays reachable when signed out, on phones. Somebody
             // who cannot sign in is exactly the person who needs to tell us,
             // and the sidebar footer that normally carries it is 1,266px
@@ -776,6 +817,66 @@
       // payment changes the balance, or a filmmaker who has just paid keeps
       // looking at their old credit count.
       window.renderAccount = renderAccount;
+
+      // ── The phone drawer ──
+      // Desktop never calls any of this: the CSS leaves the sidebar in
+      // place above 768px and the button is display:none, so a click
+      // cannot reach it.
+      (function () {
+        var btn = document.getElementById('mMenu');
+        var scrim = document.getElementById('mScrim');
+        var panel = document.getElementById('slateSidebar');
+        if (!btn || !scrim || !panel) return;
+
+        function setOpen(open) {
+          panel.classList.toggle('is-open', open);
+          scrim.hidden = !open;
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+          // Stop the page behind scrolling under the drawer, which on iOS
+          // otherwise moves while a finger is on the panel.
+          document.body.style.overflow = open ? 'hidden' : '';
+          if (open) {
+            var first = panel.querySelector('.nav-item');
+            if (first && first.focus) first.focus();
+          }
+        }
+
+        btn.addEventListener('click', function () {
+          setOpen(!panel.classList.contains('is-open'));
+        });
+        scrim.addEventListener('click', function () { setOpen(false); });
+
+        // Choosing something is the end of using the menu. Without this the
+        // drawer stays over the thing the filmmaker just asked to see.
+        panel.addEventListener('click', function (e) {
+          if (e.target.closest && e.target.closest('.nav-item')) setOpen(false);
+        });
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && panel.classList.contains('is-open')) {
+            setOpen(false);
+            btn.focus();
+          }
+        });
+
+        // Rotating to landscape can cross the breakpoint with the drawer
+        // open, which would leave the scrim over a desktop layout.
+        window.addEventListener('resize', function () {
+          if (window.innerWidth > 768 && panel.classList.contains('is-open')) setOpen(false);
+        });
+      })();
+
+      // The credit count lives in the phone bar as well as the drawer, so
+      // it is readable without opening anything. Fed from the same render
+      // so the two can never disagree.
+      window.slateSetPhoneCredits = function (credits, low) {
+        var el = document.getElementById('mCredits');
+        if (!el) return;
+        if (credits === null || credits === undefined) { el.textContent = ''; return; }
+        el.className = 'm-credits' + (low ? ' is-empty' : '');
+        el.innerHTML = '<b>' + credits + '</b>credits';
+      };
 
       renderAccount();
       gateHomeView();
