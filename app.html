@@ -129,6 +129,15 @@
       border-top: none; border-left: 1px solid var(--line-1);
     }
     .sidebar-footer .nav-item { padding: var(--s-3) var(--s-3) !important; }
+
+    /* ── A: features that do not exist yet do not take up a phone's nav ──
+       The rail is 2,723px wide inside a 360px window, so everything past
+       "Home" has to be scrolled to. Budgeting, Crew Management, Crew
+       Network and Script Generator took roughly 900px of that — nine
+       hundred pixels of things a filmmaker cannot click, sitting between
+       them and Billing. They are still on the roadmap page, which is where
+       planned work belongs. */
+    .nav-item.soon { display: none; }
     /* Credits stay in view rather than scrolling away with the rest. */
     .account-strip {
       padding: 0 var(--s-3) 0 var(--s-2); margin: 0;
@@ -139,6 +148,20 @@
     .account-name { display: none; }
     .account-credits { margin-top: 0; }
     .account-topup { margin-top: 0; white-space: nowrap; }
+
+    /* ── C: the two things a filmmaker needs are pinned, not scrolled to ──
+       Billing sat 2,127px along the rail and Send Feedback 2,230px, in a
+       window 360px wide. Nobody scrolls that far, so on a phone there was
+       effectively no way to buy credits before running out, and no way to
+       report that anything was wrong.
+       The credits strip is already sticky, and credits are exactly where
+       someone looks when they want more of them, so the two live here. The
+       full list stays in the rail for anyone who scrolls. */
+    /* Two class names, deliberately. The base `.account-quick {display:none}`
+       is declared further down the stylesheet, so at equal specificity it
+       would win over a rule here whatever the media query says — source
+       order decides ties. Scoping to the strip outranks it. */
+    .account-strip .account-quick { display: flex; }
     .main { padding: var(--s-6) var(--s-4); }
     /* Two routes in, equally visible. A returning tester should not have to
        find "Sign in" in a line of small text under a large button. */
@@ -212,6 +235,22 @@
   }
   .prod-open:hover { background: var(--gold-bright); }
   .prod-note { color: var(--text-2); font-size: var(--t-small); }
+
+  /* Pinned Billing and Feedback beside the credit count. Hidden by default
+     and shown only on phones — on desktop the sidebar footer already
+     carries both, and a second copy would be clutter. Declared here rather
+     than inside the media query so the base state is display:none and the
+     query turns it on, not the other way round. */
+  .account-quick { display: none; align-items: center; gap: var(--s-2); }
+  .account-quick a {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 30px; padding: 0 var(--s-3);
+    border: 1px solid var(--line-1); border-radius: var(--r-control);
+    color: var(--text-2); font-size: 0.6875rem; font-weight: 600;
+    text-decoration: none; white-space: nowrap;
+  }
+  .account-quick a.is-gold { border-color: var(--gold); color: var(--gold); }
+
  /* ── Feedback ── */
   .fb-overlay {
     display: none; position: fixed; inset: 0;
@@ -677,7 +716,12 @@
       function renderAccount() {
         var raw = localStorage.getItem('scriptiq_user');
         if (!raw) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>'
+            // Feedback stays reachable when signed out, on phones. Somebody
+            // who cannot sign in is exactly the person who needs to tell us,
+            // and the sidebar footer that normally carries it is 1,266px
+            // along a rail they would have to scroll.
+            + '<div class="account-quick"><a href="#" onclick="slateOpenFeedback(); return false;">Feedback</a></div>';
           return;
         }
         try {
@@ -692,13 +736,31 @@
               + '<b>' + credits + '</b><span>credits</span></div>'
             // When the balance is gone, the way forward belongs right here,
             // not on a page they have to go looking for.
-            + (low ? '<a class="account-topup" href="#billing">Add more credits</a>' : '');
+            + (low ? '<a class="account-topup" href="#billing">Add more credits</a>' : '')
+            // Phones only, via CSS. Billing is the revenue path and it sat
+            // 2,127px along a rail nobody scrolls; Send Feedback is how we
+            // hear that anything is broken. "Add more credits" already
+            // appears above when the balance is low, so Billing is dropped
+            // from here in that case rather than shown twice.
+            + '<div class="account-quick">'
+              // "Top up", not "Credits": the count sitting immediately to
+              // its left already says "9 credits", and two things labelled
+              // credits next to each other read as a repeat rather than as
+              // a count and an action.
+              + (low ? '' : '<a href="#billing" class="is-gold">Top up</a>')
+              + '<a href="#" onclick="slateOpenFeedback(); return false;">Feedback</a>'
+            + '</div>';
           // Engine Check is a diagnostics panel, not a feature. Testers do
           // not need it and it would only clutter their workspace.
           var engineNav = document.getElementById('navEngineCheck');
           if (engineNav) engineNav.style.display = isAdmin ? 'flex' : 'none';
         } catch (e) {
-          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>';
+          strip.innerHTML = '<div class="account-signin">Not signed in — <a href="#" onclick="openAuthModal(\'login\'); return false;">Sign In</a></div>'
+            // Feedback stays reachable when signed out, on phones. Somebody
+            // who cannot sign in is exactly the person who needs to tell us,
+            // and the sidebar footer that normally carries it is 1,266px
+            // along a rail they would have to scroll.
+            + '<div class="account-quick"><a href="#" onclick="slateOpenFeedback(); return false;">Feedback</a></div>';
         }
       }
 
