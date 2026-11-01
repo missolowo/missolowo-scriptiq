@@ -138,6 +138,13 @@
        them and Billing. They are still on the roadmap page, which is where
        planned work belongs. */
     .nav-item.soon { display: none; }
+
+    /* Billing and Send Feedback are pinned beside the credit count on a
+       phone, so the copies in the scrolling footer are the same action
+       offered twice — and the second one is 1,100px along a rail. Hidden
+       here only; desktop has no pinned strip and keeps both in the footer
+       where they have always been. */
+    .nav-item.is-pinned-on-phone { display: none; }
     /* Credits stay in view rather than scrolling away with the rest. */
     .account-strip {
       padding: 0 var(--s-3) 0 var(--s-2); margin: 0;
@@ -397,11 +404,11 @@
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M3 17V4l4 2 4-2 4 2 2-1v11l-2 1-4-2-4 2-4-2Z" stroke-linejoin="round"/></svg> 
       Roadmap
       </a>
-          <a class="nav-item" style="padding-left:0" href="#billing">
+          <a class="nav-item is-pinned-on-phone" style="padding-left:0" href="#billing">
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><rect x="2" y="5" width="16" height="11" rx="1.5"/><path d="M2 9h16" /></svg>
         Billing
       </a>
-      <a class="nav-item" style="padding-left:0;cursor:pointer" onclick="slateOpenFeedback(); return false;">
+      <a class="nav-item is-pinned-on-phone" style="padding-left:0;cursor:pointer" onclick="slateOpenFeedback(); return false;">
         <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8l-4 3V5a1 1 0 0 1 1-1Z" stroke-linejoin="round"/></svg>
         Send Feedback
       </a>
