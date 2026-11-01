@@ -12,6 +12,7 @@
 //
 // Amounts are in KOBO: naira × 100. ₦3,000 is 300000.
 // ============================================================
+const { internalUserIds } = require('./slate-core');
 
 // ── THE PACKS ── (PM-approved, Oct 2026)
 //
@@ -74,20 +75,44 @@ const CURRENCY = 'NGN';
 
 const SIGNUP_FREE_CREDITS = 3;
 
-// ── How many distinct people have paid? ──
+// ── How many distinct CUSTOMERS have paid? ──
 // Distinct user_id in payments where the payment succeeded. A customer
 // who buys twice is one customer, which is what the page promises.
-// If the count cannot be read, we fall back to LAUNCH pricing: charging
-// someone less than expected is recoverable, charging them more is not.
+//
+// Our own accounts are excluded, and that is not bookkeeping tidiness.
+// Testing the live payment flow means paying real money through it —
+// there is no other way to know it works. Counted, each of those tests
+// would eat one of the hundred launch slots, so the launch offer would
+// close early and a real customer would be charged the regular price
+// after being promised the launch one. The exclusion is in this function
+// rather than at the call sites because this is the figure the offer
+// runs on; a caller that forgot would be wrong silently.
+//
+// If the count cannot be read at all, we return null and the caller falls
+// back to LAUNCH pricing: charging someone less than expected is
+// recoverable, charging them more is not.
+//
+// If the PAYMENTS read works but the internal list does not, we return the
+// unfiltered count rather than null. The error is then bounded by the
+// number of our own accounts — two — whereas null would put every pack
+// back on launch pricing for the duration of the fault, at any customer
+// number. A small known error beats a 20% discount on everything.
 async function countPayingCustomers(supabase) {
+  if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('payments')
       .select('user_id')
       .eq('status', 'success');
     if (error || !data) return null;
+    // null means "could not tell", not "none" — see internalUserIds.
+    const internal = await internalUserIds(supabase);
+    const ours = {};
+    (internal || []).forEach(function (id) { ours[id] = true; });
     const seen = {};
-    data.forEach(function (row) { if (row.user_id) seen[row.user_id] = true; });
+    data.forEach(function (row) {
+      if (row.user_id && !ours[row.user_id]) seen[row.user_id] = true;
+    });
     return Object.keys(seen).length;
   } catch (e) {
     return null;
@@ -95,10 +120,15 @@ async function countPayingCustomers(supabase) {
 }
 
 // Which price applies right now, for one pack.
-async function priceFor(packKey, supabase) {
+//
+// `counted` lets a caller that already has the number pass it in. Without
+// it, rendering the pricing page ran this count once per pack — three
+// identical pairs of queries for one page, on the one page that must not
+// be slow.
+async function priceFor(packKey, supabase, counted) {
   const pack = PACKS[packKey];
   if (!pack) return null;
-  const paying = await countPayingCustomers(supabase);
+  const paying = (counted === undefined) ? await countPayingCustomers(supabase) : counted;
   // null means we could not count — use the launch price, see above.
   const onLaunch = (paying === null) || (paying < LAUNCH_CUSTOMER_LIMIT);
   return {
@@ -116,10 +146,16 @@ async function priceFor(packKey, supabase) {
 }
 
 // Every pack at today's prices — what the pricing page renders.
+// Counted once, for all packs: the launch offer is one global switch, so
+// every pack must be told the same number. Counting per pack also meant
+// three round-trips where one does, and left open the absurd case of a
+// payment landing mid-render and two packs on screen disagreeing about
+// whether the offer was still running.
 async function allPrices(supabase) {
   const keys = Object.keys(PACKS);
+  const counted = await countPayingCustomers(supabase);
   const out = [];
-  for (let i = 0; i < keys.length; i++) out.push(await priceFor(keys[i], supabase));
+  for (let i = 0; i < keys.length; i++) out.push(await priceFor(keys[i], supabase, counted));
   return out;
 }
 
