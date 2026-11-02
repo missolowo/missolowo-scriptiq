@@ -5911,9 +5911,16 @@
         }
         var note = document.getElementById('fbContextNote');
         if (note) {
+          // Two clauses, and the second one is the point. The first is a
+          // promise we keep: we never attach the screenplay. The second is a
+          // request, which was missing — nothing asked the filmmaker not to
+          // paste pages in herself. If she did, that text would be written
+          // to the feedback table, outside everything the "Your script"
+          // section on the homepage promises about how her script is held.
+          var kept = 'We never send your script — and please don’t paste pages of it here either.';
           note.textContent = bits.length
-            ? 'We will also send: ' + bits.join(', ') + ', and your browser version. Never your script.'
-            : 'We will also send your browser version. Never your script.';
+            ? 'We will also send: ' + bits.join(', ') + ', and your browser version. ' + kept
+            : 'We will also send your browser version. ' + kept;
         }
         o.classList.add('open');
         var t = document.getElementById('fbText');
