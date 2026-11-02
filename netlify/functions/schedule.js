@@ -5,6 +5,7 @@
 // Columns: Day | Date | Location | Scene No | Cast Required | INT/EXT | Props
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
+const { slateAuthenticate } = require('./lib/slate-core');
 const fetch = (() => {
   try { return require('node-fetch'); }
   catch(e) { return global.fetch; }
@@ -47,32 +48,32 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const { breakdown, start_date, shoot_days, user_email, user_id } = JSON.parse(event.body);
+    const { breakdown, start_date, shoot_days } = JSON.parse(event.body);
 
     if (!breakdown) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
-    }
-
-    const isAdminEmail = isAdmin(user_email);
-
-    // ── STEP 1: Rate limit — user_id passed to fix the film-set shared-IP issue ──
-    if (!isAdminEmail) {
-      const clientIP = getClientIP(event);
-      const rateLimit = await checkRateLimit(clientIP, 'schedule', 5, SUPABASE_SECRET, user_id || null);
-      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'schedule');
     }
 
     // ── STEP 2: Initialize Supabase ──
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
     // ── STEP 3: Single-pass user verification ──
-    let user = null;
-    if (user_id || user_email) {
-      const query = user_id
-        ? supabase.from('users').select('*').eq('id', user_id).single()
-        : supabase.from('users').select('*').eq('email', user_email).single();
-      const { data } = await query;
-      user = data;
+    // Verified, not claimed. user_email and user_id used to come straight
+    // from the request body, so a caller named themselves — including
+    // naming themselves an admin, which skips the rate limit.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
+    }
+    const user = auth.user;
+    const isAdminEmail = isAdmin(auth.email);
+
+    // Rate limit AFTER authenticating: it keys on the account and exempts
+    // admins, and both of those were previously decided by the caller.
+    if (!isAdminEmail) {
+      const clientIP = getClientIP(event);
+      const rateLimit = await checkRateLimit(clientIP, 'schedule', 5, SUPABASE_SECRET, auth.authId || null);
+      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'schedule');
     }
 
     // ── STEP 3b: Core access guard ──

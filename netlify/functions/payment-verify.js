@@ -19,6 +19,7 @@ const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limit
 const { createClient }          = require('@supabase/supabase-js');
 
 const { PACKS, amountIsValidFor } = require('./lib/slate-pricing');
+const { slateAddCredits } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
@@ -105,7 +106,10 @@ exports.handler = async function(event) {
   };
 
   try {
-    const { reference, user_id } = JSON.parse(event.body);
+    // user_id is read ONLY as a rate-limit key. It is not identity: whose
+    // payment this is comes from Paystack's metadata further down. Do not
+    // reach for this field for anything else.
+    const { reference, user_id: rateLimitKeyOnly } = JSON.parse(event.body);
 
     if (!reference) {
       return {
@@ -117,7 +121,7 @@ exports.handler = async function(event) {
 
     // ── Rate limit — 10 verifications per IP per hour ──
     const clientIP = getClientIP(event);
-    const rateLimit = await checkRateLimit(clientIP, 'payment-verify', 10, process.env.SUPABASE_SECRET_KEY, user_id || null);
+    const rateLimit = await checkRateLimit(clientIP, 'payment-verify', 10, process.env.SUPABASE_SECRET_KEY, rateLimitKeyOnly || null);
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'payment-verify');
 
     const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
@@ -142,14 +146,18 @@ exports.handler = async function(event) {
     // ══════════════════════════════════════════════
     const existing = await slateRetry(function () {
       return supabase.from('payments')
-        .select('id, status, credits_added')
+        .select('id, status, credits_added, user_id')
         .eq('reference', reference)
         .single();
     });
     const existingPayment = existing && existing.data;
 
     if (existingPayment && existingPayment.status === 'success') {
-      const already = await slateReadBalance(supabase, user_id);
+      // The balance of the account THIS PAYMENT belongs to, read off our own
+      // row. It used to read the balance of whatever user_id the caller sent,
+      // so anyone with a processed reference could ask after a stranger's
+      // credit balance.
+      const already = await slateReadBalance(supabase, existingPayment.user_id);
       return {
         statusCode: 200,
         headers,
@@ -242,7 +250,7 @@ exports.handler = async function(event) {
       // identify the account we skip the audit row rather than risk a
       // not-null violation — the refusal below still stands either way.
       const testMeta = txn.metadata || {};
-      const testUid  = user_id || testMeta.user_id || null;
+      const testUid  = testMeta.user_id || null;
 
       if (testUid) {
         await supabase.from('payments').insert({
@@ -276,7 +284,17 @@ exports.handler = async function(event) {
     // ══════════════════════════════════════════════
     const meta = txn.metadata || {};
     const packKey = meta.pack || meta.plan;
-    const uid = user_id || meta.user_id;
+    // WHOSE payment this is comes from Paystack's metadata, which WE wrote
+    // server-side at initiation and Paystack has held ever since. It used to
+    // read `user_id || meta.user_id`, so a user_id in the request body won
+    // over Paystack's own record. References are guessable in shape, so
+    // someone who learned one could have had another filmmaker's credits
+    // land on their account — and the real payer would then be told the
+    // payment was "already processed" and receive nothing.
+    //
+    // The body is no longer consulted for identity. Reconciliation relies on
+    // this too: it forwards a bare reference and the account is found here.
+    const uid = meta.user_id;
 
     if (!uid) {
       return {
@@ -438,18 +456,14 @@ exports.handler = async function(event) {
       };
     }
 
-    const newCreditsRemaining = (currentUser.credits_remaining || 0) + creditsToAdd;
-
-    const creditWrite = await slateRetry(function () {
-      return supabase.from('users')
-        .update({
-          role:              'paid',
-          credits_remaining: newCreditsRemaining,
-          updated_at:        new Date().toISOString()
-        })
-        .eq('id', uid);
-    });
-    const updateError = creditWrite && creditWrite.error;
+    // Adding to the balance has the same hazard as spending from it: read,
+    // add, write back an absolute number, and whatever else changed in
+    // between is discarded. A breakdown finishing at the wrong moment used
+    // to overwrite a purchase made while it ran — see slateAdjustCredits.
+    // This writes only if the balance is still what it just read.
+    const grant = await slateAddCredits(supabase, uid, creditsToAdd, { role: 'paid' });
+    const newCreditsRemaining = grant.balance;
+    const updateError = grant.ok ? null : { message: grant.reason };
 
     if (updateError) {
       // Left at credit_failed on purpose: the customer, or we, can call this

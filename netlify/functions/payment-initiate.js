@@ -17,6 +17,7 @@ const fetch = (() => {
 const { createClient } = require('@supabase/supabase-js');
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
 const { priceFor, PACKS } = require('./lib/slate-pricing');
+const { slateAuthenticate } = require('./lib/slate-core');
 
 const SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
@@ -47,24 +48,16 @@ exports.handler = async function(event) {
   try {
     // "pack" is the new name; "plan" still accepted so an older page
     // does not break mid-deploy.
+    // Only the PACK comes from the browser. email and user_id used to as
+    // well, and they end up in Paystack's metadata, which payment-verify now
+    // treats as the authority on whose payment this is. If the caller could
+    // set them, that authority would be worth nothing.
     const body = JSON.parse(event.body);
-    const email = body.email;
     const pack = body.pack || body.plan;
-    const user_id = body.user_id;
 
-    // ── Validate inputs ──
-    if (!email || !pack || !user_id) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'email, pack and user_id are required' })
-      };
+    if (!pack) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'pack is required' }) };
     }
-
-    // ── Rate limit — 10 payment initiations per IP per hour ──
-    const clientIP = getClientIP(event);
-    const rateLimit = await checkRateLimit(clientIP, 'payment-initiate', 10, process.env.SUPABASE_SECRET_KEY, user_id || null);
-    if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'payment-initiate');
 
     if (!PACKS[pack]) {
       return {
@@ -79,6 +72,25 @@ exports.handler = async function(event) {
       return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error' }) };
     }
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
+
+    // ── Who is paying ── verified, not claimed.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
+    }
+    const user_id = auth.authId;
+    const email = auth.email;
+    if (!email) {
+      return { statusCode: 400, headers,
+        body: JSON.stringify({ error: 'Your account has no email address on file. Please contact support.' }) };
+    }
+
+    // ── Rate limit — 10 payment initiations per account per hour ──
+    // After authenticating, not before: the key is the account, and until
+    // the token is verified we do not know which account that is.
+    const clientIP = getClientIP(event);
+    const rateLimit = await checkRateLimit(clientIP, 'payment-initiate', 10, process.env.SUPABASE_SECRET_KEY, user_id);
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'payment-initiate');
 
     // The server decides the price. Launch or regular, counted here.
     const selectedPack = await priceFor(pack, supabase);

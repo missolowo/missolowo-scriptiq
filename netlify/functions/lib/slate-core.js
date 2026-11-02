@@ -106,7 +106,179 @@ async function internalUserIds(supabase) {
   }
 }
 
+// ── WHO IS CALLING ──
+// Server-side only.
+//
+// Before this, every function took the caller's identity from the REQUEST
+// BODY. load.js read user_email out of the posted JSON, looked that person
+// up, and returned their work. Nothing checked that the caller was them.
+//
+// So anyone who knew a filmmaker's email address could POST to a public
+// endpoint and read her production list, and then the full breakdown of any
+// production in it: characters, locations, every scene, the schedule and
+// every call sheet. That is the shape of an unreleased film, and the
+// homepage promises it is "readable only by your account - not by other
+// filmmakers". Credits can be refunded; a leaked screenplay cannot be
+// un-leaked.
+//
+// The queries were never the problem. Every read in load.js correctly
+// carries .eq('user_id', user.id) and the file says so. They were scoped to
+// whoever the caller CLAIMED to be. The authorisation was right and the
+// authentication did not exist.
+//
+// Now: the browser sends the Supabase access token it already gets at
+// sign-in, and the user id comes from VERIFYING that token with Supabase -
+// never from the body. A caller can no longer name themselves.
+//
+// Returns { ok, user, status, error }. `user` is OUR users row, not the
+// auth record, because every caller needs credits_remaining and
+// is_disabled. On failure, `status` is the code to return: 401 to sign in
+// again, 403 for a disabled account.
+async function slateAuthenticate(event, supabase) {
+  const raw = (event && event.headers
+    && (event.headers.authorization || event.headers.Authorization)) || '';
+  const token = /^Bearer\s+(.+)$/i.test(raw) ? raw.replace(/^Bearer\s+/i, '').trim() : '';
+
+  if (!token) {
+    return { ok: false, status: 401, error: 'Please sign in again.' };
+  }
+
+  // Supabase validates the signature and the expiry. We do not parse the
+  // token ourselves: reading the claims out of an unverified JWT is how
+  // this class of bug gets reintroduced by someone trying to save a call.
+  let authUser = null;
+  try {
+    const res = await supabase.auth.getUser(token);
+    authUser = res && res.data && res.data.user;
+    if (!authUser || (res && res.error)) {
+      return { ok: false, status: 401, error: 'Your session has expired. Please sign in again.' };
+    }
+  } catch (e) {
+    return { ok: false, status: 401, error: 'Could not verify your session. Please sign in again.' };
+  }
+
+  // The profile row, found by the id the TOKEN carries.
+  let row = null;
+  try {
+    const res = await supabase.from('users')
+      .select('id, email, role, credits_remaining, credits_used, is_disabled')
+      .eq('id', authUser.id)
+      .single();
+    row = res && res.data;
+  } catch (e) {
+    row = null;
+  }
+
+  if (!row) {
+    // Authenticated with Supabase but no profile row. A signup that half
+    // completed. The caller is genuinely who they say, so the functions
+    // that create a profile may proceed on the verified identity alone.
+    return { ok: true, user: null, authId: authUser.id, email: authUser.email };
+  }
+  if (row.is_disabled) {
+    return { ok: false, status: 403, error: 'Account disabled. Contact support.' };
+  }
+
+  return { ok: true, user: row, authId: authUser.id, email: row.email || authUser.email };
+}
+
+// ── CHANGING A CREDIT BALANCE ──
+// Server-side only. Every change to credits_remaining goes through here.
+//
+// It used to be done by reading the balance into JavaScript, doing the sum
+// and writing an absolute number back. breakdown.js read the user at the
+// START of the request and wrote `that value - 1` at the END, with the AI
+// run in between — minutes — and never re-read. So it was not a decrement,
+// it was an overwrite with a stale figure, and whichever write landed last
+// silently discarded the other.
+//
+// What that did to a filmmaker: she has 1 credit, starts a breakdown, buys
+// a 5-credit pack while she waits. The payment lands correctly, 1 + 5 = 6.
+// The breakdown finishes and writes max(0, 1 - 1) = 0. She paid ₦4,000 and
+// watched her balance go to zero. Topping up while you wait is the most
+// natural thing in the world, and the product invites it — the billing
+// panel is right there and the wait is long.
+//
+// Now: read the balance, then make the write CONDITIONAL on it still being
+// what we read. If anything changed in between the filter matches no rows,
+// nothing is written, and we read again and retry. The race window goes
+// from minutes to the gap between two adjacent queries.
+//
+// What this is NOT: a true atomic operation. It compares the value, not a
+// version, so a balance that left and returned to the same number between
+// our read and our write would slip through. That needs two opposing
+// changes of exactly matching size landing inside a microsecond window. The
+// complete fix is `credits_remaining = credits_remaining - 1` in Postgres,
+// which needs a database function; this ships without one, under a launch
+// freeze, and is revertible by a single deploy.
+//
+// Returns { ok, balance, reason }. Callers must check ok — a failure here
+// must never be mistaken for a charge.
+async function slateAdjustCredits(supabase, userId, delta, extra) {
+  if (!supabase || !userId || !delta) return { ok: false, reason: 'bad_request' };
+
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    var read;
+    try {
+      read = await supabase.from('users')
+        .select('credits_remaining, credits_used')
+        .eq('id', userId)
+        .single();
+    } catch (e) {
+      return { ok: false, reason: 'unreadable' };
+    }
+    if (!read || read.error || !read.data) return { ok: false, reason: 'unreadable' };
+
+    var have = read.data.credits_remaining || 0;
+
+    // Spending what is not there. The guard and the charge are ONE
+    // operation now — they used to be two separate reads, so two tabs
+    // could both pass the check and both be served on one credit.
+    if (delta < 0 && have < -delta) {
+      return { ok: false, reason: 'insufficient', balance: have };
+    }
+
+    var patch = { credits_remaining: have + delta, updated_at: new Date().toISOString() };
+    if (delta < 0) patch.credits_used = (read.data.credits_used || 0) + 1;
+    if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) patch[k] = extra[k];
+
+    var write;
+    try {
+      write = await supabase.from('users')
+        .update(patch)
+        .eq('id', userId)
+        .eq('credits_remaining', have)   // ← the whole point: only if unchanged
+        .select('credits_remaining');
+    } catch (e) {
+      return { ok: false, reason: 'write_failed' };
+    }
+    if (!write || write.error) return { ok: false, reason: 'write_failed' };
+
+    // Rows came back: ours was the write that landed.
+    if (write.data && write.data.length) {
+      return { ok: true, balance: have + delta };
+    }
+    // No rows: somebody changed the balance between our read and our write.
+    // Read it again and work from what is true now.
+  }
+
+  // Three rounds of losing the race. Vanishingly unlikely, and the caller
+  // decides what to do about it — for a charge, the documents are already
+  // generated, so refusing them would be the worse outcome.
+  return { ok: false, reason: 'contended' };
+}
+
+function slateChargeCredit(supabase, userId) {
+  return slateAdjustCredits(supabase, userId, -1);
+}
+
+function slateAddCredits(supabase, userId, howMany, extra) {
+  return slateAdjustCredits(supabase, userId, Math.abs(howMany || 0), extra);
+}
+
 module.exports = {
   ADMIN_EMAILS, INTERNAL_EMAILS, isAdmin, internalUserIds,
+  slateAuthenticate,
+  slateAdjustCredits, slateChargeCredit, slateAddCredits,
   slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField
 };

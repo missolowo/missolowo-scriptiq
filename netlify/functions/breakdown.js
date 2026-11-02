@@ -20,7 +20,11 @@ const { SIGNUP_FREE_CREDITS } = require('./lib/slate-pricing');
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
-const ADMIN_EMAILS    = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+// ADMIN_EMAILS was a fifth hardcoded copy of the admin list, sitting right
+// here, while lib/slate-core.js exists BECAUSE that list had been written
+// out four times — its header says so. An admin list that drifts charges
+// someone who should not be charged, or spares someone who should.
+const { ADMIN_EMAILS, slateChargeCredit, slateAuthenticate } = require('./lib/slate-core');
 
 // ── Inline rate limiter ──
 async function checkRateLimit(supabase, ip, functionName, maxRequests, userId = null) {
@@ -128,8 +132,15 @@ exports.handler = async function(event) {
   let errUserId = null;
 
   try {
+    // user_email and user_id are deliberately NOT read. They named who was
+    // asking, and a caller does not get to answer that — see
+    // slateAuthenticate. This mattered twice here: once for whose credits
+    // were spent, and once for isAdmin, which was taken from a body field
+    // while the admin addresses sit in a PUBLIC repository. Anyone who read
+    // it could pass an admin address and take unlimited breakdowns, free,
+    // at our API cost, skipping both the charge and the balance guard.
     const {
-      script, language, user_email, user_id,
+      script, language,
       chunk_index, total_chunks, production_id, retry_english
     } = JSON.parse(event.body);
     errProductionId = production_id || null;
@@ -138,13 +149,27 @@ exports.handler = async function(event) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No script provided' }) };
     }
 
-    const isAdmin       = ADMIN_EMAILS.includes(user_email);
     const totalChunks   = total_chunks || 1;
     const chunkIndex    = chunk_index || 0;
     const isFirstChunk  = chunkIndex === 0;
     const isLastChunk   = chunkIndex === (totalChunks - 1);
     const supabase      = createClient(SUPABASE_URL, SUPABASE_SECRET);
     errSupabase = supabase;
+
+    // ── Who is calling ── verified before anything is spent or generated.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
+    }
+    // Named so nobody mistakes these for the body fields they replaced.
+    // The old names were user_id and user_email, read straight from the
+    // request; keeping those names here would invite exactly the bug this
+    // change removes.
+    const verifiedUserId = auth.authId;
+    const verifiedEmail = auth.email;
+    // Admin follows from the VERIFIED address, so claiming it does nothing.
+    const isAdmin = ADMIN_EMAILS.includes(verifiedEmail);
+    errUserId = verifiedUserId;
 
     // ── Rate limit — only on first chunk so multi-chunk jobs aren't self-blocked ──
     if (!isAdmin && isFirstChunk) {
@@ -166,7 +191,7 @@ exports.handler = async function(event) {
       // us AI calls and charge nothing.
       //
       // Twenty is invisible to a filmmaker and immediate to a script.
-      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 20, user_id || null);
+      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 20, verifiedUserId || null);
       if (!rateLimit.allowed) {
         return {
           statusCode: 429, headers,
@@ -176,20 +201,17 @@ exports.handler = async function(event) {
     }
 
     // ── Get user ──
-    let user = null;
-    if (user_id) {
-      const { data } = await supabase.from('users').select('*').eq('id', user_id).single();
-      user = data;
-    } else if (user_email) {
-      const { data } = await supabase.from('users').select('*').eq('email', user_email).single();
-      if (!data) {
-        const { data: newUser } = await supabase
-          .from('users').insert({ email: user_email, role: 'free', credits_remaining: SIGNUP_FREE_CREDITS })
-          .select().single();
-        user = newUser;
-      } else {
-        user = data;
-      }
+    // slateAuthenticate already read the profile row. It comes back null
+    // only when the token is genuine but no profile exists — a signup that
+    // half completed — so the row is created against the VERIFIED id and
+    // address, never against a pair supplied by the caller.
+    let user = auth.user;
+    if (!user) {
+      const { data: newUser } = await supabase
+        .from('users')
+        .insert({ id: verifiedUserId, email: verifiedEmail, role: 'free', credits_remaining: SIGNUP_FREE_CREDITS })
+        .select().single();
+      user = newUser;
     }
 
     // ── Access guard — only on first chunk (fail fast before any AI cost) ──
@@ -443,19 +465,36 @@ RULES:
       }
 
       if (!alreadyCharged) {
-        const finalCredits = Math.max(0, user.credits_remaining - 1);
-        await supabase.from('users').update({
-          credits_remaining: finalCredits,
-          credits_used: (user.credits_used || 0) + 1
-        }).eq('id', user.id);
+        // The balance read at the top of this request is minutes old by now
+        // and must not be written back — see slateAdjustCredits. This reads
+        // it again and only writes if nothing changed in between, so a
+        // filmmaker who bought credits while this ran keeps them.
+        const charge = await slateChargeCredit(supabase, user.id);
 
-        // charged_at is the idempotency record — it is what stops a retry
-        // charging a second credit, so it is written only on a real charge.
-        await slateMarkProduction(supabase, production_id, user.id, {
-          charged_at: new Date().toISOString()
-        });
-
-        breakdown.credits_remaining = finalCredits;
+        if (charge.ok) {
+          // charged_at is the idempotency record — it is what stops a retry
+          // charging a second credit, so it is written ONLY on a real
+          // charge. A failed charge deliberately leaves it unset.
+          await slateMarkProduction(supabase, production_id, user.id, {
+            charged_at: new Date().toISOString()
+          });
+          breakdown.credits_remaining = charge.balance;
+        } else {
+          // The documents are already generated and about to be returned.
+          // Refusing them now, after the wait and the API spend, would be
+          // the worse outcome by far — so the job is delivered and the
+          // charge is simply not recorded.
+          //
+          // "insufficient" is the real case: two tabs, one credit. Both
+          // passed the fast guard before the AI ran, the first charge took
+          // the balance to zero, and this one found nothing left. The old
+          // code floored silently at zero and served both the same way;
+          // the difference is that this is now visible in the logs.
+          console.error('[Slate] Credit not charged (' + charge.reason
+            + ') for production ' + production_id + ' — documents delivered anyway');
+          breakdown.credits_remaining = (typeof charge.balance === 'number')
+            ? charge.balance : user.credits_remaining;
+        }
       } else {
         // Already charged on a previous attempt — do NOT charge again
         breakdown.credits_remaining = user.credits_remaining;
