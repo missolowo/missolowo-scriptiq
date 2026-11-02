@@ -925,7 +925,78 @@
       var SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
       var SUPABASE_KEY = 'sb_publishable_gHRl7TnHyYYR4OnSubjXBA_n8pshdwH';
 
-      function fetchProfileAndFinish(accessToken, userId, email) {
+      // ── THE SESSION ──
+      // Sign-in already handed us an access token; it was used once to read
+      // the profile and then thrown away. Nothing was ever sent to our own
+      // functions to prove who was calling, and they in turn believed the
+      // email address in the request body. So anyone who knew a filmmaker's
+      // address could ask /load for her production list and then the full
+      // breakdown of any production in it.
+      //
+      // The token is kept now and sent with every call. The server derives
+      // the account from it — see slateAuthenticate — and no longer reads an
+      // identity from the body at all.
+      window.slateSession = (function () {
+        var TOKEN = 'scriptiq_token', REFRESH = 'scriptiq_refresh';
+        function get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+        function set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} }
+
+        function save(accessToken, refreshToken) {
+          set(TOKEN, accessToken || '');
+          if (refreshToken) set(REFRESH, refreshToken);
+        }
+        function clear() {
+          set(TOKEN, ''); set(REFRESH, '');
+          try { localStorage.removeItem('scriptiq_user'); } catch (e) {}
+        }
+        function token() { return get(TOKEN); }
+
+        // Supabase access tokens last about an hour. Rather than sign a
+        // filmmaker out mid-production, trade the refresh token for a new
+        // one. Only if that fails do we ask them to sign in again.
+        function refresh() {
+          var r = get(REFRESH);
+          if (!r) return Promise.resolve(false);
+          return fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+            body: JSON.stringify({ refresh_token: r })
+          }).then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (d) {
+              if (!d || !d.access_token) return false;
+              save(d.access_token, d.refresh_token);
+              return true;
+            }).catch(function () { return false; });
+        }
+
+        return { save: save, clear: clear, token: token, refresh: refresh };
+      })();
+
+      // Every call to our own functions goes through here. On a 401 it tries
+      // once to refresh and replays the request; if that fails the session is
+      // cleared and the sign-in panel opens, because the alternative is a
+      // filmmaker staring at an error with no idea what to do.
+      window.slateFetch = function (url, opts) {
+        opts = opts || {};
+        function send() {
+          var headers = Object.assign({}, opts.headers || {});
+          var t = window.slateSession.token();
+          if (t) headers['Authorization'] = 'Bearer ' + t;
+          return fetch(url, Object.assign({}, opts, { headers: headers }));
+        }
+        return send().then(function (res) {
+          if (res.status !== 401) return res;
+          return window.slateSession.refresh().then(function (ok) {
+            if (ok) return send();
+            window.slateSession.clear();
+            if (typeof renderAccount === 'function') renderAccount();
+            if (typeof openAuthModal === 'function') openAuthModal('login');
+            return res;
+          });
+        });
+      };
+
+      function fetchProfileAndFinish(accessToken, userId, email, refreshToken) {
         return fetch(SUPABASE_URL + '/rest/v1/users?id=eq.' + userId + '&select=*', {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + accessToken }
         })
@@ -939,6 +1010,7 @@
             credits_remaining: row ? row.credits_remaining : 3,
             id: userId
           };
+          window.slateSession.save(accessToken, refreshToken);
           localStorage.setItem('scriptiq_user', JSON.stringify(user));
           closeAuthModal();
           renderAccount();
@@ -988,7 +1060,8 @@
             switchAuthTab('login');
             return;
           }
-          fetchProfileAndFinish(token, userId, email);
+          fetchProfileAndFinish(token, userId, email, data.refresh_token
+            || (data.session && data.session.refresh_token));
         })
         .catch(function() {
           errEl.textContent = 'Signup failed. Please try again.';
@@ -1028,7 +1101,8 @@
             btn.disabled = false;
             return;
           }
-          fetchProfileAndFinish(token, userId, email);
+          fetchProfileAndFinish(token, userId, email, data.refresh_token
+            || (data.session && data.session.refresh_token));
         })
         .catch(function() {
           errEl.textContent = 'Sign in failed. Please try again.';
@@ -1709,7 +1783,7 @@
 
       async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId, retryEnglish) {
         try {
-          const response = await fetch('/.netlify/functions/breakdown', {
+          const response = await slateFetch('/.netlify/functions/breakdown', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2713,7 +2787,7 @@
         var lastError = null;
         for (var attempt = 1; attempt <= 3; attempt++) {
           try {
-            var res = await fetch('/.netlify/functions/save', {
+            var res = await slateFetch('/.netlify/functions/save', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(body)
@@ -3094,7 +3168,7 @@
         btn.disabled = true; btn.textContent = 'Building schedule...';
         out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Grouping scenes by location and time of day...</div>';
         try {
-          var res = await fetch('/.netlify/functions/schedule', {
+          var res = await slateFetch('/.netlify/functions/schedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3183,7 +3257,7 @@
         btn.disabled = true; btn.textContent = 'Building call sheet...';
         out.innerHTML = '<div style="color:var(--text-2,#B5AFA3);font-size:13px">Preparing call times for day ' + day + '...</div>';
         try {
-          var res = await fetch('/.netlify/functions/callsheet', {
+          var res = await slateFetch('/.netlify/functions/callsheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5365,7 +5439,7 @@
  
  
         try {
-          var res = await fetch('/.netlify/functions/load', {
+          var res = await slateFetch('/.netlify/functions/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mode: 'list', user_id: user.id, user_email: user.email })
@@ -5409,7 +5483,7 @@
         if (out) out.innerHTML = '<div class="prod-note">Opening production…</div>';
  
         try {
-          var res = await fetch('/.netlify/functions/load', {
+          var res = await slateFetch('/.netlify/functions/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5606,10 +5680,13 @@
       if (typeof siqTrack === 'function') siqTrack('buy_clicked', { pack: packKey });
 
       try {
-        var res = await fetch('/.netlify/functions/payment-initiate', {
+        // Only the pack. The account comes from the token now — it ends up
+        // in Paystack's metadata, which is what payment-verify trusts to
+        // decide whose credits these are.
+        var res = await slateFetch('/.netlify/functions/payment-initiate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: user.email, pack: packKey, user_id: user.id })
+          body: JSON.stringify({ pack: packKey })
         });
         var data = await res.json();
         if (!res.ok || !data.authorization_url) {
@@ -5886,7 +5963,7 @@
         if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
  
         try {
-          var res = await fetch('/.netlify/functions/feedback', {
+          var res = await slateFetch('/.netlify/functions/feedback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

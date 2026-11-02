@@ -14,6 +14,7 @@
 // the production must exist and belong to the caller.
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
+const { slateAuthenticate } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -45,7 +46,10 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { kind, production_id, user_email, user_id, payload, day_number } = JSON.parse(event.body || '{}');
+    // user_email and user_id are deliberately NOT read from the body any
+    // more. They named who was asking, and a caller does not get to answer
+    // that — see slateAuthenticate.
+    const { kind, production_id, payload, day_number } = JSON.parse(event.body || '{}');
 
     if (!production_id) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No production_id provided' }) };
@@ -59,20 +63,16 @@ exports.handler = async function (event) {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── Identify the caller ──
-    let user = null;
-    if (user_id || user_email) {
-      const query = user_id
-        ? supabase.from('users').select('id, is_disabled').eq('id', user_id).single()
-        : supabase.from('users').select('id, is_disabled').eq('email', user_email).single();
-      const { data } = await query;
-      user = data;
+    // ── Who is calling ── verified, not claimed.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
     }
+    const user = auth.user;
     if (!user) {
-      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Not signed in' }) };
-    }
-    if (user.is_disabled) {
-      return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
+      // Verified, but no profile row — so they own no production, and the
+      // ownership check below would refuse anyway. Say so plainly.
+      return { statusCode: 404, headers, body: JSON.stringify({ error: 'Production not found' }) };
     }
 
     // ── Ownership check: the production must exist and be theirs ──

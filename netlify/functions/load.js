@@ -13,8 +13,20 @@
 // bypasses row level security, so ownership is enforced here
 // in the query itself — never trust a production_id from the
 // browser without checking who it belongs to.
+//
+// WHO the calling user is comes from a VERIFIED access token, never
+// from the request body. It used to come from the body: this function
+// read user_email out of the posted JSON and returned that person's
+// work, without ever checking the caller was them. Anyone who knew a
+// filmmaker's email could read her production list and then the full
+// breakdown of any production in it — characters, locations, every
+// scene, the schedule, every call sheet.
+//
+// The queries below were never the problem and are unchanged. They were
+// scoped to whoever the caller claimed to be.
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
+const { slateAuthenticate } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -46,7 +58,10 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { mode, production_id, user_email, user_id } = JSON.parse(event.body || '{}');
+    // production_id is still taken from the body — it names WHAT is being
+    // asked for. user_email and user_id are deliberately NOT read: they
+    // named WHO was asking, and a caller does not get to answer that.
+    const { mode, production_id } = JSON.parse(event.body || '{}');
 
     if (['list', 'open'].indexOf(mode) < 0) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown load mode: ' + mode }) };
@@ -54,20 +69,18 @@ exports.handler = async function (event) {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
 
-    // ── Identify the caller ──
-    let user = null;
-    if (user_id || user_email) {
-      const query = user_id
-        ? supabase.from('users').select('id, is_disabled').eq('id', user_id).single()
-        : supabase.from('users').select('id, is_disabled').eq('email', user_email).single();
-      const { data } = await query;
-      user = data;
+    // ── Who is calling ── verified, not claimed.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
     }
+    const user = auth.user;
     if (!user) {
-      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Not signed in' }) };
-    }
-    if (user.is_disabled) {
-      return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
+      // Verified with Supabase but no profile row yet. There is nothing
+      // saved to load, which is not an error worth alarming anyone about.
+      return mode === 'list'
+        ? { statusCode: 200, headers, body: JSON.stringify({ productions: [] }) }
+        : { statusCode: 404, headers, body: JSON.stringify({ error: 'Production not found' }) };
     }
 
     // ── LIST — the sidebar's Productions view ──

@@ -106,6 +106,82 @@ async function internalUserIds(supabase) {
   }
 }
 
+// ── WHO IS CALLING ──
+// Server-side only.
+//
+// Before this, every function took the caller's identity from the REQUEST
+// BODY. load.js read user_email out of the posted JSON, looked that person
+// up, and returned their work. Nothing checked that the caller was them.
+//
+// So anyone who knew a filmmaker's email address could POST to a public
+// endpoint and read her production list, and then the full breakdown of any
+// production in it: characters, locations, every scene, the schedule and
+// every call sheet. That is the shape of an unreleased film, and the
+// homepage promises it is "readable only by your account - not by other
+// filmmakers". Credits can be refunded; a leaked screenplay cannot be
+// un-leaked.
+//
+// The queries were never the problem. Every read in load.js correctly
+// carries .eq('user_id', user.id) and the file says so. They were scoped to
+// whoever the caller CLAIMED to be. The authorisation was right and the
+// authentication did not exist.
+//
+// Now: the browser sends the Supabase access token it already gets at
+// sign-in, and the user id comes from VERIFYING that token with Supabase -
+// never from the body. A caller can no longer name themselves.
+//
+// Returns { ok, user, status, error }. `user` is OUR users row, not the
+// auth record, because every caller needs credits_remaining and
+// is_disabled. On failure, `status` is the code to return: 401 to sign in
+// again, 403 for a disabled account.
+async function slateAuthenticate(event, supabase) {
+  const raw = (event && event.headers
+    && (event.headers.authorization || event.headers.Authorization)) || '';
+  const token = /^Bearer\s+(.+)$/i.test(raw) ? raw.replace(/^Bearer\s+/i, '').trim() : '';
+
+  if (!token) {
+    return { ok: false, status: 401, error: 'Please sign in again.' };
+  }
+
+  // Supabase validates the signature and the expiry. We do not parse the
+  // token ourselves: reading the claims out of an unverified JWT is how
+  // this class of bug gets reintroduced by someone trying to save a call.
+  let authUser = null;
+  try {
+    const res = await supabase.auth.getUser(token);
+    authUser = res && res.data && res.data.user;
+    if (!authUser || (res && res.error)) {
+      return { ok: false, status: 401, error: 'Your session has expired. Please sign in again.' };
+    }
+  } catch (e) {
+    return { ok: false, status: 401, error: 'Could not verify your session. Please sign in again.' };
+  }
+
+  // The profile row, found by the id the TOKEN carries.
+  let row = null;
+  try {
+    const res = await supabase.from('users')
+      .select('id, email, role, credits_remaining, credits_used, is_disabled')
+      .eq('id', authUser.id)
+      .single();
+    row = res && res.data;
+  } catch (e) {
+    row = null;
+  }
+
+  if (!row) {
+    // Authenticated with Supabase but no profile row. A signup that half
+    // completed. The caller is genuinely who they say, so the functions
+    // that create a profile may proceed on the verified identity alone.
+    return { ok: true, user: null, authId: authUser.id, email: authUser.email };
+  }
+  if (row.is_disabled) {
+    return { ok: false, status: 403, error: 'Account disabled. Contact support.' };
+  }
+
+  return { ok: true, user: row, authId: authUser.id, email: row.email || authUser.email };
+}
+
 // ── CHANGING A CREDIT BALANCE ──
 // Server-side only. Every change to credits_remaining goes through here.
 //
@@ -202,6 +278,7 @@ function slateAddCredits(supabase, userId, howMany, extra) {
 
 module.exports = {
   ADMIN_EMAILS, INTERNAL_EMAILS, isAdmin, internalUserIds,
+  slateAuthenticate,
   slateAdjustCredits, slateChargeCredit, slateAddCredits,
   slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField
 };
