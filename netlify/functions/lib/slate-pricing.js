@@ -97,12 +97,43 @@ const SIGNUP_FREE_CREDITS = 3;
 // number of our own accounts — two — whereas null would put every pack
 // back on launch pricing for the duration of the fault, at any customer
 // number. A small known error beats a 20% discount on everything.
+//
+// TEST-MODE PAYMENTS ARE NOT CUSTOMERS. A status of 'success' alone was
+// never enough: Paystack's key is environment-scoped, but both environments
+// write to this one database, so a test purchase on a preview build lands
+// here looking exactly like a sale. payment-verify refuses to credit those
+// now — but it was written AFTER two such rows already existed, and they
+// stay for good.
+//
+// One of them belongs to an account that is not ours, so the internal-email
+// exclusion above does not catch it. Counted, it spends one of the hundred
+// launch slots on a card that was never charged, and the hundredth real
+// filmmaker pays the regular price after being promised the launch one.
+//
+// A MISSING domain counts as live. The field was not always captured, so
+// treating absence as test would quietly discount everything for the sake
+// of old rows.
+// Did money actually move? Read off the stored Paystack response.
+// Absence is treated as live on purpose — the field was not always
+// captured, and an old row without it is a real sale, not a test.
+// Supabase may hand the column back as an object or as a JSON string
+// depending on the column type, so both are handled rather than assumed.
+function slatePaymentWasReal(response) {
+  if (!response) return true;
+  var r = response;
+  if (typeof r === 'string') {
+    try { r = JSON.parse(r); } catch (e) { return true; }
+  }
+  if (!r || typeof r !== 'object' || !r.domain) return true;
+  return r.domain === 'live';
+}
+
 async function countPayingCustomers(supabase) {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('payments')
-      .select('user_id')
+      .select('user_id, paystack_response')
       .eq('status', 'success');
     if (error || !data) return null;
     // null means "could not tell", not "none" — see internalUserIds.
@@ -111,7 +142,9 @@ async function countPayingCustomers(supabase) {
     (internal || []).forEach(function (id) { ours[id] = true; });
     const seen = {};
     data.forEach(function (row) {
-      if (row.user_id && !ours[row.user_id]) seen[row.user_id] = true;
+      if (!row.user_id || ours[row.user_id]) return;
+      if (!slatePaymentWasReal(row.paystack_response)) return;
+      seen[row.user_id] = true;
     });
     return Object.keys(seen).length;
   } catch (e) {
@@ -171,5 +204,6 @@ function amountIsValidFor(packKey, amount) {
 
 module.exports = {
   PACKS, LAUNCH_CUSTOMER_LIMIT, CURRENCY, SIGNUP_FREE_CREDITS,
-  countPayingCustomers, priceFor, allPrices, amountIsValidFor
+  countPayingCustomers, priceFor, allPrices, amountIsValidFor,
+  slatePaymentWasReal
 };
