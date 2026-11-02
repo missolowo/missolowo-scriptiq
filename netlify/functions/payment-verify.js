@@ -19,6 +19,7 @@ const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limit
 const { createClient }          = require('@supabase/supabase-js');
 
 const { PACKS, amountIsValidFor } = require('./lib/slate-pricing');
+const { slateAddCredits } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 
@@ -438,18 +439,14 @@ exports.handler = async function(event) {
       };
     }
 
-    const newCreditsRemaining = (currentUser.credits_remaining || 0) + creditsToAdd;
-
-    const creditWrite = await slateRetry(function () {
-      return supabase.from('users')
-        .update({
-          role:              'paid',
-          credits_remaining: newCreditsRemaining,
-          updated_at:        new Date().toISOString()
-        })
-        .eq('id', uid);
-    });
-    const updateError = creditWrite && creditWrite.error;
+    // Adding to the balance has the same hazard as spending from it: read,
+    // add, write back an absolute number, and whatever else changed in
+    // between is discarded. A breakdown finishing at the wrong moment used
+    // to overwrite a purchase made while it ran — see slateAdjustCredits.
+    // This writes only if the balance is still what it just read.
+    const grant = await slateAddCredits(supabase, uid, creditsToAdd, { role: 'paid' });
+    const newCreditsRemaining = grant.balance;
+    const updateError = grant.ok ? null : { message: grant.reason };
 
     if (updateError) {
       // Left at credit_failed on purpose: the customer, or we, can call this

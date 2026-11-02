@@ -20,7 +20,11 @@ const { SIGNUP_FREE_CREDITS } = require('./lib/slate-pricing');
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
-const ADMIN_EMAILS    = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
+// ADMIN_EMAILS was a fifth hardcoded copy of the admin list, sitting right
+// here, while lib/slate-core.js exists BECAUSE that list had been written
+// out four times — its header says so. An admin list that drifts charges
+// someone who should not be charged, or spares someone who should.
+const { ADMIN_EMAILS, slateChargeCredit } = require('./lib/slate-core');
 
 // ── Inline rate limiter ──
 async function checkRateLimit(supabase, ip, functionName, maxRequests, userId = null) {
@@ -443,19 +447,36 @@ RULES:
       }
 
       if (!alreadyCharged) {
-        const finalCredits = Math.max(0, user.credits_remaining - 1);
-        await supabase.from('users').update({
-          credits_remaining: finalCredits,
-          credits_used: (user.credits_used || 0) + 1
-        }).eq('id', user.id);
+        // The balance read at the top of this request is minutes old by now
+        // and must not be written back — see slateAdjustCredits. This reads
+        // it again and only writes if nothing changed in between, so a
+        // filmmaker who bought credits while this ran keeps them.
+        const charge = await slateChargeCredit(supabase, user.id);
 
-        // charged_at is the idempotency record — it is what stops a retry
-        // charging a second credit, so it is written only on a real charge.
-        await slateMarkProduction(supabase, production_id, user.id, {
-          charged_at: new Date().toISOString()
-        });
-
-        breakdown.credits_remaining = finalCredits;
+        if (charge.ok) {
+          // charged_at is the idempotency record — it is what stops a retry
+          // charging a second credit, so it is written ONLY on a real
+          // charge. A failed charge deliberately leaves it unset.
+          await slateMarkProduction(supabase, production_id, user.id, {
+            charged_at: new Date().toISOString()
+          });
+          breakdown.credits_remaining = charge.balance;
+        } else {
+          // The documents are already generated and about to be returned.
+          // Refusing them now, after the wait and the API spend, would be
+          // the worse outcome by far — so the job is delivered and the
+          // charge is simply not recorded.
+          //
+          // "insufficient" is the real case: two tabs, one credit. Both
+          // passed the fast guard before the AI ran, the first charge took
+          // the balance to zero, and this one found nothing left. The old
+          // code floored silently at zero and served both the same way;
+          // the difference is that this is now visible in the logs.
+          console.error('[Slate] Credit not charged (' + charge.reason
+            + ') for production ' + production_id + ' — documents delivered anyway');
+          breakdown.credits_remaining = (typeof charge.balance === 'number')
+            ? charge.balance : user.credits_remaining;
+        }
       } else {
         // Already charged on a previous attempt — do NOT charge again
         breakdown.credits_remaining = user.credits_remaining;
