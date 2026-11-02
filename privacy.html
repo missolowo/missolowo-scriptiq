@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Missolowo Slate</title>
+<meta name="description" content="What Missolowo Slate does with your information, and what it does not. We do not retain uploaded screenplays.">
+<link rel="canonical" href="https://missolowo.com/privacy.html">
+<link rel="icon" type="image/svg+xml" href="/slate-mark-gold.svg">
+<link rel="apple-touch-icon" href="/slate-mark-gold-512.png">
+
+<link rel="stylesheet" href="/tokens.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Inter:wght@400;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<!-- Google Analytics 4 — the SAME property as index.html and app.html.
+     A policy page that disclosed analytics while silently running none
+     would be its own small inaccuracy, and the preview guard mirrors the
+     other two pages exactly. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G1F83JSDLX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  var siqIsPreview = /deploy-preview|--/.test(location.hostname) || location.hostname === 'localhost';
+  if (!siqIsPreview) {
+    gtag('js', new Date());
+    gtag('config', 'G-G1F83JSDLX');
+  }
+</script>
+
+<style>
+  /* All values from tokens.css. Nothing hardcoded. */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ink-0);
+    color: var(--paper);
+    font-family: var(--font-text);
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { width: min(720px, 100% - 32px); margin-inline: auto; }
+
+  /* ── Masthead ── */
+  .top { border-bottom: 1px solid var(--line-1); padding: 20px 0; }
+  .top__inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .top__brand {
+    font-family: var(--font-display);
+    font-size: 18px; font-weight: 600;
+    color: var(--paper); text-decoration: none;
+  }
+  .top__back {
+    font-family: var(--font-data);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--gold); text-decoration: none;
+  }
+  .top__back:hover { color: var(--gold-bright); }
+
+  /* ── Document ── */
+  main { padding: 56px 0 72px; }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 6vw, 44px);
+    font-weight: 600; line-height: 1.15;
+    margin: 0 0 12px;
+  }
+
+  .stamp {
+    font-family: var(--font-data);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--gold-deep);
+    margin: 0 0 40px;
+  }
+
+  .lede { font-size: 17px; color: var(--text-2); margin: 0 0 20px; }
+  .lede strong { color: var(--paper); font-weight: 600; }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: 22px; font-weight: 600;
+    margin: 48px 0 14px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line-1);
+  }
+
+  p { margin: 0 0 16px; color: var(--text-2); }
+  p strong, li strong { color: var(--paper); font-weight: 600; }
+
+  ul { margin: 0 0 16px; padding-left: 20px; color: var(--text-2); }
+  li { margin-bottom: 8px; }
+
+  a { color: var(--gold); }
+  a:hover { color: var(--gold-bright); }
+
+  /* ── The two sentences that matter most ── */
+  .keystone {
+    background: var(--gold-tint);
+    border-left: 2px solid var(--gold);
+    padding: 20px 22px;
+    margin: 0 0 20px;
+  }
+  .keystone p:last-child { margin-bottom: 0; }
+
+  /* ── Tables ── */
+  .wrap { overflow-x: auto; margin: 0 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    font-family: var(--font-data);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-3);
+    text-align: left; padding: 0 14px 10px 0;
+    border-bottom: 1px solid var(--line-1);
+    white-space: nowrap;
+  }
+  td {
+    padding: 12px 14px 12px 0;
+    border-bottom: 1px solid var(--line-1);
+    color: var(--text-2); vertical-align: top;
+  }
+  td:first-child { color: var(--paper); }
+
+  .foot {
+    border-top: 1px solid var(--line-1);
+    padding: 28px 0 48px;
+    font-size: 14px; color: var(--text-3);
+  }
+  .foot p { color: var(--text-3); margin: 0 0 6px; }
+
+  @media (max-width: 600px) {
+    main { padding: 36px 0 48px; }
+    h2 { font-size: 19px; margin-top: 36px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="shell top__inner">
+    <a class="top__brand" href="/">Missolowo Slate</a>
+    <a class="top__back" href="/">← Back</a>
+  </div>
+</header>
+
+<main class="shell">
+
+  <h1>Privacy Policy</h1>
+  <p class="stamp">Last updated 2 November 2026</p>
+
+  <p class="lede">Missolowo Slate turns a screenplay into the documents a production actually runs on: scene breakdowns, shooting schedules and call sheets.</p>
+
+  <p class="lede">An unreleased screenplay is not something you hand over lightly. This policy says what happens to yours, and to everything else we hold about you. <strong>Every statement in it describes what the software does today</strong>, not what we intend it to do.</p>
+
+  <h2>1. What we collect</h2>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>What</th><th>When</th><th>Where it comes from</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Email address</td><td>Signup and sign-in</td><td>You</td></tr>
+        <tr><td>Password</td><td>Signup and sign-in</td><td>You — held by Supabase, never by us (section 8)</td></tr>
+        <tr><td>Your name</td><td>Signup</td><td>You</td></tr>
+        <tr><td>Your role on a production</td><td>Signup</td><td>You</td></tr>
+        <tr><td>Screenplay text</td><td>When you upload one</td><td>You — processed, not retained (section 2)</td></tr>
+        <tr><td>Title, detected language, scene count</td><td>While processing</td><td>The software</td></tr>
+        <tr><td>Characters, locations, scenes, schedules, call sheets</td><td>While processing</td><td>The software, using OpenAI</td></tr>
+        <tr><td>Payment amount, currency, reference and status</td><td>When you buy credits</td><td>Paystack</td></tr>
+        <tr><td>Your credit balance and credits used</td><td>Throughout</td><td>The software</td></tr>
+        <tr><td>Feedback you send us, with any rating</td><td>When you use the feedback form</td><td>You</td></tr>
+        <tr><td>Your browser version</td><td>Sent with feedback</td><td>Your browser</td></tr>
+        <tr><td>Your IP address</td><td>On requests we rate-limit</td><td>Your connection</td></tr>
+        <tr><td>Pages visited and actions taken</td><td>Throughout</td><td>Google Analytics (section 9)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>We do not ask for your date of birth, home address, phone number or any identity document, and we do not collect them.</p>
+
+  <h2>2. What we do not keep</h2>
+
+  <p>Two things matter more than anything else in this policy, so they come before the rest.</p>
+
+  <div class="keystone">
+    <p><strong>We do not store your screenplay.</strong> When you upload one it is sent for processing and the documents are built from it. The screenplay itself is not saved to our database. What we keep afterwards is the material the documents are made of — the title, the scene list, the characters, the locations, the schedule — not the script.</p>
+    <p><strong>We never receive your card details.</strong> When you buy credits you enter your card on Paystack's own payment page, not ours. No part of our software reads, receives or stores a card number, expiry date or security code.</p>
+  </div>
+
+  <p>The generated material still describes your film in detail, and you should treat it as such. But the screenplay does not sit on our servers waiting to be found.</p>
+
+  <p>What comes back to us from a payment is confirmation of the amount, a reference, and whether it succeeded.</p>
+
+  <h2>3. What we use it for</h2>
+
+  <ul>
+    <li>Creating and running your account</li>
+    <li>Turning your screenplay into a breakdown, a schedule and call sheets</li>
+    <li>Letting you reopen the documents you have generated</li>
+    <li>Taking payment for credits and keeping your balance correct</li>
+    <li>Answering you when you contact us</li>
+    <li>Understanding which parts of the product are used, so we can fix what is not working</li>
+  </ul>
+
+  <p>We do not sell your information to anyone, and we do not use it to advertise to you.</p>
+
+  <h2>4. Your screenplay</h2>
+
+  <p>Your screenplay is used for one thing: producing the documents you asked for. It is not read by other filmmakers, and it is not read by us for any other purpose.</p>
+
+  <p><strong>It is never used to train an AI model</strong>, by us or by anyone else.</p>
+
+  <p><strong>Processing uses OpenAI.</strong> Your screenplay is sent to OpenAI's API, which generates the breakdown. Under OpenAI's API terms, content sent this way is excluded from training their models and is held for up to 30 days for abuse monitoring before deletion. That retention is OpenAI's, not ours, and is governed by their terms rather than this policy.</p>
+
+  <p>We name them because you are entitled to know who sees your work, and because "AI processing services" tells you nothing useful about an unreleased film.</p>
+
+  <p><strong>Documents you generate are private to your account.</strong> Only your signed-in account can retrieve them. Requests to our systems must carry a verified session, and the account is taken from that session rather than from anything the request claims about itself.</p>
+
+  <h2>5. Who else receives your information</h2>
+
+  <p>Five services. Each is named, because a list of categories tells you nothing.</p>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>Service</th><th>What it receives</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>OpenAI</td><td>Your screenplay text</td><td>Generates the breakdown</td></tr>
+        <tr><td>Paystack</td><td>Your email address, the amount, a reference — and your card details, entered directly on their page</td><td>Takes the payment</td></tr>
+        <tr><td>Supabase</td><td>Your account, your generated documents, your payment records</td><td>Stores the data and handles sign-in</td></tr>
+        <tr><td>Netlify</td><td>All traffic to the site</td><td>Hosts the site and runs the processing</td></tr>
+        <tr><td>Google Analytics</td><td>Pages you visit and actions you take</td><td>Tells us what is being used</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>We do not sell your information to any of them, or to anyone else.</p>
+
+  <h2>6. Where your information is processed</h2>
+
+  <p>We are based in Lagos, Nigeria. Your information is not all processed here.</p>
+
+  <p>The code that reads your screenplay and builds your documents runs on servers in the <strong>United States</strong>. OpenAI processes your screenplay in the <strong>United States</strong>. Google Analytics and our hosting both operate internationally. Paystack, which handles payments, is Nigerian.</p>
+
+  <p>So a screenplay uploaded in Lagos travels to the United States to be processed, and the documents come back. By using Missolowo Slate you are asking us to do that on your behalf.</p>
+
+  <h2>7. How long we keep things</h2>
+
+  <p>Honestly: <strong>nothing is deleted automatically.</strong></p>
+
+  <p>There is no expiry date on your account, your generated documents or your payment records. They stay until you ask us to remove them, or until we introduce a retention period — at which point this section will change and the date at the top will change with it.</p>
+
+  <p>Your screenplay is the exception, and only because it was never stored (section 2).</p>
+
+  <p>If that is not what you want, section 10 says how to ask us to delete things.</p>
+
+  <h2>8. Security</h2>
+
+  <p>Here is what is actually in place:</p>
+
+  <ul>
+    <li>All traffic is encrypted in transit (HTTPS).</li>
+    <li><strong>Your password never reaches our database.</strong> Sign-in is handled by Supabase Auth, which stores credentials. Our own records have no password field.</li>
+    <li><strong>Your card never reaches us at all.</strong> It is entered on Paystack's page.</li>
+    <li>Every request to our systems must carry a verified session, and the account is taken from that session rather than from anything the request says about itself.</li>
+    <li>Prices are decided by our servers and checked again when a payment is confirmed, so a tampered request cannot change what is charged.</li>
+    <li>Our keys are held as server configuration, never in our source code, which is public.</li>
+    <li>We limit how often one account can make expensive requests.</li>
+  </ul>
+
+  <p>What we do not yet have: two-factor authentication, logging of administrative access, or encryption of individual fields beyond what our database provides at rest. We would rather tell you that than imply otherwise.</p>
+
+  <p>No online service can promise absolute security. Please use a password you do not use anywhere else.</p>
+
+  <h2>9. Cookies and analytics</h2>
+
+  <p>We use <strong>Google Analytics</strong> on our website and in the application, to see which parts of the product are used and where people get stuck. Google sets cookies in your browser to do this. We set none of our own.</p>
+
+  <p>Analytics is switched off on our test builds, so only real use is counted.</p>
+
+  <p>You can block these cookies in your browser settings, or with any blocker, and Missolowo Slate will work exactly as it does now.</p>
+
+  <p>Separately, the application stores your current work in your own browser — your account details, the breakdown and schedule you are working on, and production details you have typed. That stays on your device, is not sent anywhere, and is cleared when you sign out or clear your browser data.</p>
+
+  <h2>10. Your rights</h2>
+
+  <p>You can ask us to:</p>
+
+  <ul>
+    <li><strong>Tell you what we hold about you</strong></li>
+    <li><strong>Correct anything that is wrong</strong></li>
+    <li><strong>Delete your account and everything connected to it</strong></li>
+  </ul>
+
+  <p>Email <a href="mailto:hello@missolowo.com">hello@missolowo.com</a> and we will do it by hand. There is no button for this in the product yet; when there is, this section will say so.</p>
+
+  <p>Deletion means deletion — your account, your generated documents and your production records. We will keep the record of any payment you made, because we have to be able to account for money that changed hands.</p>
+
+  <h2>11. Age</h2>
+
+  <p>Missolowo Slate is built for people working in film production and is not intended for children. We do not knowingly collect information from anyone under 18. If you believe a child has created an account, email us and we will remove it.</p>
+
+  <h2>12. Changes, and how to reach us</h2>
+
+  <p>This policy describes the product as it is today. When the product changes, this changes with it, and the date at the top moves. We will not quietly broaden what we do with your information and leave the wording as it was.</p>
+
+  <p><strong>Missolowo Slate</strong><br>Lagos, Nigeria<br><a href="mailto:hello@missolowo.com">hello@missolowo.com</a></p>
+
+</main>
+
+<footer class="foot">
+  <div class="shell">
+    <p>Missolowo Slate</p>
+    <p>© 2026 · Built by a filmmaker. Built for filmmakers.</p>
+  </div>
+</footer>
+
+</body>
+</html>
