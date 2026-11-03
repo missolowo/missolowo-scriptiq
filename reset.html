@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set a new password — Missolowo Slate</title>
+<!-- A password reset link IS a sign-in. Keep it out of search engines and
+     out of any referrer we send to a third party. -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/svg+xml" href="/slate-mark-gold.svg">
+
+<link rel="stylesheet" href="/tokens.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Inter:wght@400;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<!-- NO ANALYTICS ON THIS PAGE, DELIBERATELY.
+     The recovery token arrives in the URL fragment. Analytics scripts read
+     and transmit page URLs, and a third party should never be handed
+     something that signs a filmmaker in. The other three pages carry GA;
+     this one does not, and that is not an oversight. -->
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--ink-0); color: var(--paper);
+    font-family: var(--font-text); font-size: 16px; line-height: 1.6;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: min(420px, 100%);
+    background: var(--ink-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-card, 12px);
+    padding: 32px;
+  }
+  .brand {
+    font-family: var(--font-data);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold-deep); margin-bottom: 20px;
+  }
+  h1 { font-family: var(--font-display); font-size: 26px; font-weight: 600; margin: 0 0 8px; }
+  .sub { color: var(--text-2); font-size: 14px; margin: 0 0 24px; }
+  label {
+    display: block;
+    font-family: var(--font-data);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-2); margin-bottom: 8px;
+  }
+  input {
+    width: 100%; height: 44px;
+    background: var(--ink-0); color: var(--paper);
+    border: 1px solid var(--line-1); border-radius: var(--r-control, 8px);
+    padding: 0 12px; font-family: inherit; font-size: 15px;
+    margin-bottom: 16px;
+  }
+  input:focus { outline: none; border-color: var(--gold); }
+  button {
+    width: 100%; height: 44px;
+    background: var(--gold); color: var(--ink-0);
+    border: none; border-radius: var(--r-control, 8px);
+    font-family: inherit; font-weight: 600; font-size: 15px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--gold-bright); }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { font-size: 14px; margin-bottom: 16px; min-height: 0; }
+  .msg.bad { color: var(--error); }
+  .msg.good { color: var(--ok); }
+  .hint { color: var(--text-3); font-size: 13px; margin-top: 16px; }
+  .hint a { color: var(--gold); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">Missolowo Slate</div>
+
+  <div id="formWrap">
+    <h1>Set a new password</h1>
+    <p class="sub">Choose something you don't use anywhere else.</p>
+
+    <form id="resetForm" autocomplete="off">
+      <label for="pw1">New password</label>
+      <input type="password" id="pw1" autocomplete="new-password" placeholder="At least 8 characters">
+
+      <label for="pw2">Type it again</label>
+      <input type="password" id="pw2" autocomplete="new-password" placeholder="••••••••">
+
+      <div class="msg bad" id="err"></div>
+      <button type="submit" id="go">Save my new password</button>
+    </form>
+  </div>
+
+  <div id="doneWrap" class="hidden">
+    <h1>That's done</h1>
+    <p class="sub" id="doneMsg">Your password is changed. You can sign in with it now.</p>
+    <button type="button" onclick="location.href='/app.html?auth=signin'">Go to sign in</button>
+  </div>
+
+  <div id="badWrap" class="hidden">
+    <h1>This link has expired</h1>
+    <p class="sub" id="badMsg">
+      Password links are short-lived on purpose, and each one can only be used
+      once. Ask for a fresh one and it will work.
+    </p>
+    <button type="button" onclick="location.href='/app.html?auth=signin'">Back to sign in</button>
+  </div>
+
+  <p class="hint">
+    Didn't ask for this? Nothing has changed on your account — you can ignore
+    the email. If it keeps happening, tell us:
+    <a href="mailto:hello@missolowo.com">hello@missolowo.com</a>
+  </p>
+</div>
+
+<script>
+  var SUPABASE_URL = 'https://ilkwsanblbsabtgipbom.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_gHRl7TnHyYYR4OnSubjXBA_n8pshdwH';
+
+  // ── The token ──
+  // Supabase puts it in the URL FRAGMENT, not the query string — which is
+  // why it never reaches a server, ours or anyone's. We read it, then strip
+  // it from the address bar immediately, so it is not left sitting in
+  // browser history or shoulder-read off the screen. The token stays in a
+  // variable and goes nowhere else: not to localStorage, not to analytics,
+  // not into any link on this page.
+  var recoveryToken = null;
+  (function () {
+    var hash = (location.hash || '').replace(/^#/, '');
+    var params = new URLSearchParams(hash);
+    var type = params.get('type');
+    var token = params.get('access_token');
+    var errorCode = params.get('error_code') || params.get('error');
+
+    if (token && (type === 'recovery' || !type)) {
+      recoveryToken = token;
+      // Replace rather than push, so Back does not return to a URL that
+      // still carries a working sign-in.
+      history.replaceState(null, '', location.pathname);
+    } else {
+      show('badWrap');
+      if (errorCode) {
+        document.getElementById('badMsg').textContent =
+          'This link is no longer valid. Password links are short-lived on '
+          + 'purpose, and each one can only be used once. Ask for a fresh one '
+          + 'and it will work.';
+      }
+    }
+  })();
+
+  function show(which) {
+    ['formWrap', 'doneWrap', 'badWrap'].forEach(function (id) {
+      document.getElementById(id).classList.toggle('hidden', id !== which);
+    });
+  }
+
+  document.getElementById('resetForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var a = document.getElementById('pw1').value;
+    var b = document.getElementById('pw2').value;
+    var err = document.getElementById('err');
+    var btn = document.getElementById('go');
+    err.textContent = '';
+
+    if (a.length < 8) { err.textContent = 'Please use at least 8 characters.'; return; }
+    if (a !== b) { err.textContent = 'Those two do not match.'; return; }
+    if (!recoveryToken) { show('badWrap'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    fetch(SUPABASE_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + recoveryToken
+      },
+      body: JSON.stringify({ password: a })
+    })
+    .then(function (res) { return res.json().then(function (d) { return { res: res, d: d }; }); })
+    .then(function (r) {
+      if (!r.res.ok) {
+        // Supabase's own message is the useful one here — it is what says
+        // "password too short" or "this link has already been used".
+        var m = (r.d && (r.d.msg || r.d.message || r.d.error_description)) || '';
+        if (/expired|invalid|already/i.test(m) || r.res.status === 401) { show('badWrap'); return; }
+        err.textContent = m || 'Could not save that password. Please try again.';
+        btn.disabled = false;
+        btn.textContent = 'Save my new password';
+        return;
+      }
+      // Done. The token is deliberately dropped rather than kept as a
+      // session: she signs in with the new password, which also proves to
+      // her that it worked.
+      recoveryToken = null;
+      show('doneWrap');
+    })
+    .catch(function () {
+      err.textContent = 'Could not reach us just now. Please try again in a moment.';
+      btn.disabled = false;
+      btn.textContent = 'Save my new password';
+    });
+  });
+</script>
+
+</body>
+</html>
