@@ -1312,10 +1312,21 @@ a { color: inherit; }
         held for up to 30 days for abuse monitoring before deletion.
       </p>
 
+      <!-- This paragraph used to say "We store your script so you can reopen
+           a production days later without uploading it again." That was not
+           true and never had been. Nothing in the codebase ever wrote the
+           script_text column, and the database agreed: 258 productions, 0
+           with a stored script. Reopening restores the generated documents,
+           which is a real feature, but never the screenplay.
+           The correction says less and promises less, and is the stronger
+           line for a producer deciding whether to upload an unproduced
+           feature. -->
       <p class="section__note">
-        We store your script so you can reopen a production days later
-        without uploading it again. You can ask us to delete it at any
-        time and we will —
+        We don't keep your screenplay. It is processed, the documents are
+        built from it, and the script itself is never saved to our servers.
+        What we do store is the breakdown, schedule and call sheets you
+        generate, so you can reopen a production days later. You can ask us
+        to delete those at any time and we will —
         <a href="mailto:hello@missolowo.com" style="color:var(--gold)">hello@missolowo.com</a>
       </p>
     </div>
