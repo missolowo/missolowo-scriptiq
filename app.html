@@ -345,6 +345,8 @@
   .auth-submit { height: var(--btn-h); background: var(--gold); color: var(--ink-0); font-weight: 600; font-size: var(--t-small); border: none; border-radius: var(--r-control); cursor: pointer; margin-top: var(--s-2); }
   .auth-submit:hover { background: var(--gold-bright); }
   .auth-note { color: var(--text-3); font-size: var(--t-small); margin-top: var(--s-4); text-align: center; }
+  .auth-forgot { background: none; border: none; color: var(--text-3); font-family: inherit; font-size: var(--t-small); text-decoration: underline; cursor: pointer; margin-top: var(--s-3); padding: var(--s-2); }
+  .auth-forgot:hover { color: var(--gold); }
   .auth-error { color: var(--error); font-size: var(--t-small); min-height: 0; }
   .upload-panel { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-8); max-width: 640px; margin: var(--s-8) auto 0; }
   .lang-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); margin-bottom: var(--s-3); }
@@ -655,6 +657,29 @@
         </div>
         <div class="auth-error" id="loginError2"></div>
         <button type="submit" class="auth-submit" id="loginSubmitBtn">Sign In</button>
+        <!-- Until now a filmmaker who forgot her password was locked out for
+             good: out of her account, her credits and every document she had
+             generated. The only way back was emailing us. -->
+        <button type="button" class="auth-forgot" id="forgotLink"
+                onclick="showForgotForm(); return false;">Forgot your password?</button>
+      </form>
+
+      <!-- ── Asking for a reset link ── -->
+      <form class="auth-form" id="formForgot" onsubmit="handleForgotInline(); return false;">
+        <div style="color:var(--text-2);font-size:var(--t-small);margin-bottom:var(--s-2)">
+          Tell us the address you signed up with and we will send you a link to
+          set a new password.
+        </div>
+        <div class="auth-field">
+          <label for="forgotEmail">Email</label>
+          <input type="email" id="forgotEmail" placeholder="you@email.com">
+        </div>
+        <div class="auth-error" id="forgotError"></div>
+        <div class="auth-note" id="forgotNote"></div>
+        <button type="submit" class="auth-submit" id="forgotSubmitBtn">Send the link</button>
+        <button type="button" class="auth-forgot" onclick="switchAuthTab('login'); return false;">
+          Back to sign in
+        </button>
       </form>
       <form class="auth-form" id="formSignup" onsubmit="handleSignupInline(); return false;">
         <div style="background:var(--gold-tint);border:1px solid rgba(212,166,74,0.25);border-radius:var(--r-control);padding:var(--s-3) var(--s-4);margin-bottom:var(--s-2)">
@@ -908,6 +933,67 @@
         document.getElementById('tabSignup').classList.toggle('active', !isLogin);
         document.getElementById('formLogin').classList.toggle('active', isLogin);
         document.getElementById('formSignup').classList.toggle('active', !isLogin);
+        // The reset form is a third state the two tabs do not know about, so
+        // it is closed whenever either tab is chosen.
+        var forgot = document.getElementById('formForgot');
+        if (forgot) forgot.classList.remove('active');
+      };
+
+      window.showForgotForm = function () {
+        document.getElementById('formLogin').classList.remove('active');
+        document.getElementById('formSignup').classList.remove('active');
+        document.getElementById('tabLogin').classList.remove('active');
+        document.getElementById('tabSignup').classList.remove('active');
+        document.getElementById('formForgot').classList.add('active');
+        var err = document.getElementById('forgotError');
+        var note = document.getElementById('forgotNote');
+        if (err) err.textContent = '';
+        if (note) note.textContent = '';
+        // Carry over whatever she already typed, rather than making her type
+        // it again at the moment she is already frustrated.
+        var typed = (document.getElementById('loginEmail2') || {}).value || '';
+        var field = document.getElementById('forgotEmail');
+        if (field) { field.value = typed; field.focus(); }
+      };
+
+      window.handleForgotInline = function () {
+        var email = (document.getElementById('forgotEmail').value || '').trim();
+        var errEl = document.getElementById('forgotError');
+        var noteEl = document.getElementById('forgotNote');
+        var btn = document.getElementById('forgotSubmitBtn');
+        errEl.textContent = '';
+        noteEl.textContent = '';
+        if (!email) { errEl.textContent = 'Please enter your email address.'; return; }
+
+        btn.textContent = 'Sending…';
+        btn.disabled = true;
+
+        fetch(SUPABASE_URL + '/auth/v1/recover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({
+            email: email,
+            // Where the link in the email lands. Must also be listed under
+            // Authentication → URL Configuration → Redirect URLs, or Supabase
+            // silently sends people to the site root instead.
+            gotrue_meta_security: {},
+            redirect_to: location.origin + '/reset.html'
+          })
+        })
+        .then(function () {
+          // ALWAYS the same answer, whether or not that address has an
+          // account. Saying "no account found" turns this box into a way of
+          // asking us which filmmakers are customers, one address at a time.
+          noteEl.textContent = 'If that address has an account, a link is on its way. '
+            + 'It can take a minute, and it may land in spam.';
+          btn.textContent = 'Send the link';
+          btn.disabled = false;
+        })
+        .catch(function () {
+          errEl.textContent = 'Could not send the link just now. Please try again in a moment.';
+          btn.textContent = 'Send the link';
+          btn.disabled = false;
+        });
       };
 
       var logoutLink = document.querySelector('a[href="#logout"]');
