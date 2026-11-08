@@ -1886,23 +1886,44 @@
               retry_english: !!retryEnglish
             })
           });
+          // ── retryable ──
+          // Whether a second attempt could plausibly succeed. Set here
+          // because this is the only place that knows WHY the section
+          // failed; the caller must not have to guess from a string.
+          //
+          // The distinction costs the filmmaker real money if we get it
+          // wrong: the rate limiter counts every ATTEMPT against them, so
+          // retrying something that will refuse again twice burns their
+          // hourly allowance while delivering nothing.
           if (response.status === 402) {
             var cw = document.getElementById('creditWarning');
             if (cw) cw.classList.add('active');
-            return { error: true, message: 'No credits remaining' };
+            // No credits is a decision, not a glitch. It will say the
+            // same thing in two seconds.
+            return { error: true, retryable: false, message: 'No credits remaining' };
           }
           const rawText = await response.text();
           if (rawText.trim().startsWith('<')) {
-            return { error: true, message: 'This section took too long. Please try a shorter script section.' };
+            // An HTML body where our JSON should be is a gateway page —
+            // which is what a Netlify function timeout looks like from
+            // the browser. The function was killed mid-flight, so none of
+            // our own error handling ran. Worth another attempt.
+            return { error: true, retryable: true, message: 'This section took too long. Please try a shorter script section.' };
           }
           if (!response.ok) {
             let errMsg = 'Processing error';
             try { errMsg = JSON.parse(rawText).error || errMsg; } catch (e) {}
-            return { error: true, message: errMsg };
+            // 5xx is ours and may be transient. 4xx is a decision the
+            // server has already made — signed out, disabled, rate
+            // limited — and repeating the request repeats the answer.
+            return { error: true, retryable: response.status >= 500, message: errMsg };
           }
           return JSON.parse(rawText);
         } catch (err) {
-          return { error: true, message: err.message };
+          // fetch() rejects when the connection drops. This is the case
+          // that cost three filmmakers their first breakdown on launch
+          // day, and the one this flag exists for.
+          return { error: true, retryable: true, message: err.message };
         }
       }
 
@@ -3051,6 +3072,39 @@
             wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
             const sectionLang = (typeof selectedLang !== 'undefined' ? selectedLang : 'English');
             let result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
+
+            // ── Section retry, for a connection that comes and goes ──
+            // 77% of launch-day users were on a phone, most of them in
+            // Nigeria. Variable mobile data is this product's normal
+            // operating condition, not an edge case — and until now a
+            // single bad few seconds in one section threw away the whole
+            // breakdown and sent the filmmaker back to the start.
+            //
+            // On launch day three filmmakers lost their FIRST EVER
+            // breakdown this way. One of them tried three times before
+            // giving up. None was charged, which is the only reason this
+            // was a disappointment and not a refund.
+            //
+            // Only transient failures are retried — see `retryable` in
+            // sendChunkToBackend. Two extra attempts, 2s then 4s, because
+            // a mobile drop is usually seconds long. A doomed section
+            // therefore costs six seconds before it reports failure,
+            // which is a fair price for the ones it saves.
+            for (var attempt = 1; attempt <= 2 && result.error && result.retryable; attempt++) {
+              siqTrack('section_retry', {
+                section_number: i + 1, attempt: attempt,
+                failure_reason: result.message, production_id: productionId
+              });
+              // Say what is happening. Six silent seconds reads as a
+              // freeze, and a filmmaker who thinks it has hung reloads
+              // the page — which is exactly how we lose the run anyway.
+              wsProgress(10 + (i / totalChunks) * 75,
+                totalChunks > 1
+                  ? ('Connection dropped on section ' + (i + 1) + ' — trying again…')
+                  : 'Connection dropped — trying again…');
+              await new Promise(function (r) { setTimeout(r, attempt * 2000); });
+              result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
+            }
 
             // One retry, and only when the section plainly came back in the
             // source language. The credit is charged on the last section and
