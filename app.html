@@ -1867,6 +1867,38 @@
         return final;
       }
 
+      // ── Wait for the connection, rather than guessing at delays ──
+      // Blind backoff was the first attempt at this and it was too small:
+      // two tries, six seconds, which covers a flicker and nothing else.
+      // A filmmaker in a lift, a tunnel, or walking to a window is gone
+      // for longer than that, and a fixed delay either gives up too early
+      // or stalls someone whose connection is genuinely dead.
+      //
+      // The browser already knows. navigator.onLine is unreliable when it
+      // says TRUE — a phone on wifi with no uplink still reports online —
+      // but it is trustworthy when it says FALSE. So it is only ever used
+      // here to answer "is it worth waiting", never "is it safe to send".
+      //
+      // Resolves the moment the connection returns, or when maxMs runs
+      // out. Returns how long it actually waited, so the caller can keep
+      // a budget across several retries instead of waiting afresh each
+      // time and stacking up minutes.
+      function slateWaitForOnline(maxMs) {
+        return new Promise(function (resolve) {
+          if (typeof navigator === 'undefined' || navigator.onLine !== false) { resolve(0); return; }
+          var start = Date.now(), settled = false, timer = null;
+          function finish() {
+            if (settled) return;
+            settled = true;
+            try { window.removeEventListener('online', finish); } catch (e) {}
+            if (timer) clearTimeout(timer);
+            resolve(Date.now() - start);
+          }
+          timer = setTimeout(finish, maxMs);
+          try { window.addEventListener('online', finish); } catch (e) { finish(); }
+        });
+      }
+
       async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId, retryEnglish) {
         try {
           const response = await slateFetch('/.netlify/functions/breakdown', {
@@ -3090,18 +3122,39 @@
             // a mobile drop is usually seconds long. A doomed section
             // therefore costs six seconds before it reports failure,
             // which is a fair price for the ones it saves.
+            // Thirty seconds of waiting, for the whole section rather
+            // than for each attempt. A per-attempt budget stacks up: two
+            // retries would mean a filmmaker whose connection is properly
+            // gone waits a minute staring at a progress bar. The Founder
+            // chose thirty; it covers a tunnel or a walk to better signal
+            // and stops well short of feeling frozen.
+            var offlineBudget = 30000;
             for (var attempt = 1; attempt <= 2 && result.error && result.retryable; attempt++) {
               siqTrack('section_retry', {
                 section_number: i + 1, attempt: attempt,
                 failure_reason: result.message, production_id: productionId
               });
-              // Say what is happening. Six silent seconds reads as a
-              // freeze, and a filmmaker who thinks it has hung reloads
-              // the page — which is exactly how we lose the run anyway.
+              // If the connection is actually down, waiting for it to
+              // return beats firing another doomed request two seconds
+              // later. This is what the first version got wrong: on a
+              // phone, airplane mode rejects instantly, so both retries
+              // burned inside six seconds while the filmmaker was still
+              // offline, and the whole breakdown was lost.
+              if (offlineBudget > 0 && typeof navigator !== 'undefined' && navigator.onLine === false) {
+                wsProgress(10 + (i / totalChunks) * 75,
+                  'Waiting for your connection to come back…');
+                offlineBudget -= await slateWaitForOnline(offlineBudget);
+              }
+              // Say what is happening. Silence reads as a freeze, and a
+              // filmmaker who thinks it has hung reloads the page — which
+              // is exactly how we lose the run anyway.
               wsProgress(10 + (i / totalChunks) * 75,
                 totalChunks > 1
                   ? ('Connection dropped on section ' + (i + 1) + ' — trying again…')
                   : 'Connection dropped — trying again…');
+              // A short pause even after the connection returns: coming
+              // back online and being able to reach a server are not the
+              // same instant.
               await new Promise(function (r) { setTimeout(r, attempt * 2000); });
               result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
             }
