@@ -1867,6 +1867,38 @@
         return final;
       }
 
+      // ── Wait for the connection, rather than guessing at delays ──
+      // Blind backoff was the first attempt at this and it was too small:
+      // two tries, six seconds, which covers a flicker and nothing else.
+      // A filmmaker in a lift, a tunnel, or walking to a window is gone
+      // for longer than that, and a fixed delay either gives up too early
+      // or stalls someone whose connection is genuinely dead.
+      //
+      // The browser already knows. navigator.onLine is unreliable when it
+      // says TRUE — a phone on wifi with no uplink still reports online —
+      // but it is trustworthy when it says FALSE. So it is only ever used
+      // here to answer "is it worth waiting", never "is it safe to send".
+      //
+      // Resolves the moment the connection returns, or when maxMs runs
+      // out. Returns how long it actually waited, so the caller can keep
+      // a budget across several retries instead of waiting afresh each
+      // time and stacking up minutes.
+      function slateWaitForOnline(maxMs) {
+        return new Promise(function (resolve) {
+          if (typeof navigator === 'undefined' || navigator.onLine !== false) { resolve(0); return; }
+          var start = Date.now(), settled = false, timer = null;
+          function finish() {
+            if (settled) return;
+            settled = true;
+            try { window.removeEventListener('online', finish); } catch (e) {}
+            if (timer) clearTimeout(timer);
+            resolve(Date.now() - start);
+          }
+          timer = setTimeout(finish, maxMs);
+          try { window.addEventListener('online', finish); } catch (e) { finish(); }
+        });
+      }
+
       async function sendChunkToBackend(user, chunkText, language, chunkIndex, totalChunks, productionId, retryEnglish) {
         try {
           const response = await slateFetch('/.netlify/functions/breakdown', {
@@ -1886,23 +1918,44 @@
               retry_english: !!retryEnglish
             })
           });
+          // ── retryable ──
+          // Whether a second attempt could plausibly succeed. Set here
+          // because this is the only place that knows WHY the section
+          // failed; the caller must not have to guess from a string.
+          //
+          // The distinction costs the filmmaker real money if we get it
+          // wrong: the rate limiter counts every ATTEMPT against them, so
+          // retrying something that will refuse again twice burns their
+          // hourly allowance while delivering nothing.
           if (response.status === 402) {
             var cw = document.getElementById('creditWarning');
             if (cw) cw.classList.add('active');
-            return { error: true, message: 'No credits remaining' };
+            // No credits is a decision, not a glitch. It will say the
+            // same thing in two seconds.
+            return { error: true, retryable: false, message: 'No credits remaining' };
           }
           const rawText = await response.text();
           if (rawText.trim().startsWith('<')) {
-            return { error: true, message: 'This section took too long. Please try a shorter script section.' };
+            // An HTML body where our JSON should be is a gateway page —
+            // which is what a Netlify function timeout looks like from
+            // the browser. The function was killed mid-flight, so none of
+            // our own error handling ran. Worth another attempt.
+            return { error: true, retryable: true, message: 'This section took too long. Please try a shorter script section.' };
           }
           if (!response.ok) {
             let errMsg = 'Processing error';
             try { errMsg = JSON.parse(rawText).error || errMsg; } catch (e) {}
-            return { error: true, message: errMsg };
+            // 5xx is ours and may be transient. 4xx is a decision the
+            // server has already made — signed out, disabled, rate
+            // limited — and repeating the request repeats the answer.
+            return { error: true, retryable: response.status >= 500, message: errMsg };
           }
           return JSON.parse(rawText);
         } catch (err) {
-          return { error: true, message: err.message };
+          // fetch() rejects when the connection drops. This is the case
+          // that cost three filmmakers their first breakdown on launch
+          // day, and the one this flag exists for.
+          return { error: true, retryable: true, message: err.message };
         }
       }
 
@@ -3052,6 +3105,60 @@
             const sectionLang = (typeof selectedLang !== 'undefined' ? selectedLang : 'English');
             let result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
 
+            // ── Section retry, for a connection that comes and goes ──
+            // 77% of launch-day users were on a phone, most of them in
+            // Nigeria. Variable mobile data is this product's normal
+            // operating condition, not an edge case — and until now a
+            // single bad few seconds in one section threw away the whole
+            // breakdown and sent the filmmaker back to the start.
+            //
+            // On launch day three filmmakers lost their FIRST EVER
+            // breakdown this way. One of them tried three times before
+            // giving up. None was charged, which is the only reason this
+            // was a disappointment and not a refund.
+            //
+            // Only transient failures are retried — see `retryable` in
+            // sendChunkToBackend. Two extra attempts, 2s then 4s, because
+            // a mobile drop is usually seconds long. A doomed section
+            // therefore costs six seconds before it reports failure,
+            // which is a fair price for the ones it saves.
+            // Thirty seconds of waiting, for the whole section rather
+            // than for each attempt. A per-attempt budget stacks up: two
+            // retries would mean a filmmaker whose connection is properly
+            // gone waits a minute staring at a progress bar. The Founder
+            // chose thirty; it covers a tunnel or a walk to better signal
+            // and stops well short of feeling frozen.
+            var offlineBudget = 30000;
+            for (var attempt = 1; attempt <= 2 && result.error && result.retryable; attempt++) {
+              siqTrack('section_retry', {
+                section_number: i + 1, attempt: attempt,
+                failure_reason: result.message, production_id: productionId
+              });
+              // If the connection is actually down, waiting for it to
+              // return beats firing another doomed request two seconds
+              // later. This is what the first version got wrong: on a
+              // phone, airplane mode rejects instantly, so both retries
+              // burned inside six seconds while the filmmaker was still
+              // offline, and the whole breakdown was lost.
+              if (offlineBudget > 0 && typeof navigator !== 'undefined' && navigator.onLine === false) {
+                wsProgress(10 + (i / totalChunks) * 75,
+                  'Waiting for your connection to come back…');
+                offlineBudget -= await slateWaitForOnline(offlineBudget);
+              }
+              // Say what is happening. Silence reads as a freeze, and a
+              // filmmaker who thinks it has hung reloads the page — which
+              // is exactly how we lose the run anyway.
+              wsProgress(10 + (i / totalChunks) * 75,
+                totalChunks > 1
+                  ? ('Connection dropped on section ' + (i + 1) + ' — trying again…')
+                  : 'Connection dropped — trying again…');
+              // A short pause even after the connection returns: coming
+              // back online and being able to reach a server are not the
+              // same instant.
+              await new Promise(function (r) { setTimeout(r, attempt * 2000); });
+              result = await sendChunkToBackend(user, chunks[i], sectionLang, i, totalChunks, productionId);
+            }
+
             // One retry, and only when the section plainly came back in the
             // source language. The credit is charged on the last section and
             // guarded by charged_at, so a retry never charges twice — but it
@@ -3199,6 +3306,16 @@
         window.slateProductionId = null;
         window.slateScriptTitle = null;
 
+        // A new film starts with a clean sheet. Crew, hotels, base camp
+        // and emergency contacts belong to the production they were
+        // entered for — carrying them forward would be right only for
+        // back-to-back shoots with the same unit, and wrong the rest of
+        // the time. Wrong here means a crew driving to last film's
+        // hospital.
+        if (typeof window.slateLoadProductionDetails === 'function') {
+          window.slateLoadProductionDetails();
+        }
+
         try {
           localStorage.removeItem('slate_breakdown');
           localStorage.removeItem('slate_schedule');
@@ -3224,7 +3341,26 @@
 
         window.scrollTo(0, 0);
       };
-      var slateProductionDetails = {
+      // ── Production Details belong to ONE production ──
+      // This used to be a single localStorage key shared by every film a
+      // filmmaker ever made. openProduction swaps the breakdown and the
+      // schedule but had nothing to swap here, so opening last month's
+      // film and printing a call sheet handed the crew the PREVIOUS
+      // production's hotels, base camp and emergency contacts — on a
+      // safety document, under our branding, that a crew acts on.
+      //
+      // Keyed per production now. Nothing carries across: a different
+      // film has a different crew, which is why no attempt is made to be
+      // clever about inheriting. The standard safety notes are the only
+      // thing that defaults in, because those genuinely are universal.
+      function slateDetailsKey() {
+        return 'slate_production_details:' + (window.slateProductionId || 'unsaved');
+      }
+      // A factory, not a shared literal — a new production needs its own
+      // copy, and handing out references to one object is how the arrays
+      // below would end up shared between films.
+      function slateDefaultProductionDetails() {
+        return {
         // Operational data the AI cannot know — user-editable (PM Option A).
         // V3 Production Profile will bind to this same object.
         locations: [], weather_high: '', weather_low: '', precipitation: '',
@@ -3241,7 +3377,9 @@
           'Meal break no later than 6 hours from general crew call, per standard practice.',
           'All crew to sign in with the 2nd AD on arrival.'
         ]
-      };
+        };
+      }
+      var slateProductionDetails = slateDefaultProductionDetails();
 
       async function runWorkspaceSchedule() {
         var user = getCurrentUser();
@@ -4661,14 +4799,28 @@
       // Saves to slateProductionDetails (read by the Call Sheet export) and
       // persists locally. V3's Production Profile binds to this same object.
       function loadProductionDetails() {
+        // Reset to defaults BEFORE loading. Overlaying one production's
+        // record onto another's leftovers is the whole bug: a field the
+        // new production never filled in would quietly keep the old
+        // value, and a half-inherited call sheet is worse than an empty
+        // one because it looks complete.
+        var fresh = slateDefaultProductionDetails();
+        Object.keys(slateProductionDetails).forEach(function (k) {
+          delete slateProductionDetails[k];
+        });
+        Object.keys(fresh).forEach(function (k) { slateProductionDetails[k] = fresh[k]; });
         try {
-          var saved = localStorage.getItem('slate_production_details');
+          var saved = localStorage.getItem(slateDetailsKey());
           if (saved) {
             var p = JSON.parse(saved);
             Object.keys(p).forEach(function(k) { slateProductionDetails[k] = p[k]; });
           }
         } catch (e) {}
       }
+      // Called by openProduction once the production it is opening is the
+      // current one, so the call sheet cannot read the last film's
+      // contacts in the window before the panel renders.
+      window.slateLoadProductionDetails = loadProductionDetails;
 
       function saveProductionDetails() {
         var g = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -4704,7 +4856,7 @@
         });
         var notes = g('pdSafety');
         if (notes) pd.safety_notes = notes.split('\n').filter(Boolean);
-        try { localStorage.setItem('slate_production_details', JSON.stringify(pd)); } catch (e) {}
+        try { localStorage.setItem(slateDetailsKey(), JSON.stringify(pd)); } catch (e) {}
         var status = document.getElementById('pdSaveStatus');
         if (status) {
           status.textContent = 'Saved — these details will appear on your call sheet.';
@@ -5590,6 +5742,14 @@
           // anything generated from here saves back to it rather than
           // starting a new production.
           window.slateProductionId = data.production.production_id;
+
+          // Swap the operational details to this production's own, now
+          // that it is the current one. Without this the breakdown and
+          // schedule switch while the crew, hotels and emergency
+          // contacts stay behind from whatever was open before.
+          if (typeof window.slateLoadProductionDetails === 'function') {
+            window.slateLoadProductionDetails();
+          }
 
           // Hand the restored data to the workspace scope, which owns
           // these variables. Assigning them from here would create new
