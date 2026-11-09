@@ -292,6 +292,160 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       return schedule;
 }
 
+// ── Deciding an assignment: which scenes go on which day ──
+// The default way. Group by location so a place is visited once, split
+// each group evenly rather than filling days to the brim, and hold back
+// what will not fit instead of dumping it all on the last day.
+//
+// This is ONE way to produce an assignment. slateDaysFromAssignment is
+// another, for when a production manager knows something the screenplay
+// does not — that an actor is only free on Thursday. Both hand the same
+// shape to slateDeriveSchedule, which is what stops a hand-moved scene
+// and a generated one being described by different rules.
+function slateAssignDays(slatePlaced, dayCount) {
+      const normKey = slateKey;
+      // Group scenes by location, keeping day and night separate
+      const groups = {};
+      slatePlaced.forEach(function (s) {
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        // slatePlaceKey, not normKey — see the note above. Two spellings of
+        // one location must not become two groups, or they become two trips.
+        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
+        groups[key].scenes.push(s);
+      });
+      // Largest groups first so big locations aren't split across days
+      const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
+        .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
+
+      // Distribute into shoot days.
+      // A day records EVERY location it contains, not just the first —
+      // otherwise the call sheet prints one address while listing scenes
+      // shot somewhere else, and crew go to the wrong place.
+      const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
+      const days = [];
+      let current = { scenes: [], locations: [] };
+
+      function closeDay() {
+        if (current.scenes.length) days.push(current);
+        current = { scenes: [], locations: [] };
+      }
+
+    
+      // Split each location into evenly-sized pieces first. A location with
+      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
+      // three-scene day still costs a full crew, so an even spread is both
+      // cheaper and more realistic to shoot.
+      var pieces = [];
+      ordered.forEach(function (g) {
+        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
+        var size = Math.ceil(g.scenes.length / needed);
+        for (var i = 0; i < g.scenes.length; i += size) {
+          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
+        }
+      });
+
+       // Pack pieces into days, so small locations share rather than each
+      // taking a day to itself.
+      var overflow = [];
+      pieces.forEach(function (p) {
+        // Once every day is spoken for, hold the rest back rather than
+        // dumping them all into the final day — twenty scenes across
+        // seventeen locations is not a day anyone can shoot.
+        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
+          overflow.push(p);
+          return;
+        }
+        if (current.scenes.length &&
+            current.scenes.length + p.scenes.length > perDay &&
+            days.length < dayCount - 1) {
+          closeDay();
+        }
+        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
+        p.scenes.forEach(function (s) { current.scenes.push(s); });
+      });
+      closeDay();
+
+      // Place whatever is left. Prefer a day already going to that location —
+      // returning to a place you have wrapped means travelling back, which is
+      // the cost the whole grouping exists to avoid. Only when no such day
+      // exists does it go to the emptiest one.
+      overflow.forEach(function (p) {
+        if (!days.length) {
+        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
+          return;
+        }
+        var sameLocation = days.filter(function (d) {
+          return d.locations.indexOf(p.location) >= 0;
+        });
+        var pool = sameLocation.length ? sameLocation : days;
+        var target = pool.reduce(function (a, b) {
+          return a.scenes.length <= b.scenes.length ? a : b;
+        });
+      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
+        p.scenes.forEach(function (s) { target.scenes.push(s); });
+      });
+
+      return days;
+}
+
+// ── Taking an assignment from the filmmaker ──
+// A map of scene index to day number, sent by the workspace when someone
+// moves a scene to another day.
+//
+// Validated rather than trusted, and refused rather than repaired. A
+// schedule quietly missing a scene is worse than an error message: the
+// filmmaker has no reason to go looking, and the scene surfaces on the
+// morning nobody planned to shoot it. So every placeable scene must
+// appear exactly once, and anything else is a 400 that says what is
+// wrong.
+function slateDaysFromAssignment(slatePlaced, assignment) {
+  if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) {
+    return { error: 'Expected a day assignment: scene index to day number.' };
+  }
+  var want = {}, maxDay = 0;
+  var keys = Object.keys(assignment);
+  if (!keys.length) {
+    return { error: 'The day assignment is empty.' };
+  }
+  for (var k = 0; k < keys.length; k++) {
+    var day = assignment[keys[k]];
+    if (typeof day !== 'number' || !isFinite(day) || day < 1 || day !== Math.floor(day)) {
+      return { error: 'Scene ' + keys[k] + ' was given day "' + day + '", which is not a shoot day.' };
+    }
+    want[String(keys[k])] = day;
+    if (day > maxDay) maxDay = day;
+  }
+
+  // Every placeable scene, exactly once. One missing loses it from the
+  // schedule entirely; one we do not recognise means the workspace and
+  // the breakdown disagree about what this production contains, and
+  // choosing which of them is right is not ours to do.
+  var missing = [];
+  slatePlaced.forEach(function (s) {
+    if (want[String(s.idx)] === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
+  });
+  if (missing.length) {
+    return { error: 'These scenes were left out of the assignment: ' + missing.join(', ') + '.' };
+  }
+  var known = {};
+  slatePlaced.forEach(function (s) { known[String(s.idx)] = true; });
+  var unknown = keys.filter(function (key) { return !known[key]; });
+  if (unknown.length) {
+    return { error: 'The assignment refers to scenes this breakdown does not have: ' + unknown.join(', ') + '.' };
+  }
+
+  // Empty days are kept rather than squeezed out. Dropping one renumbers
+  // every day after it and silently moves their dates, which is a
+  // surprising thing to do to someone who emptied a day meaning to refill
+  // it.
+  var days = [];
+  for (var d = 0; d < maxDay; d++) days.push({ scenes: [], locations: [] });
+  slatePlaced.forEach(function (s) { days[want[String(s.idx)] - 1].scenes.push(s); });
+  return { days: days };
+}
+
 exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -315,7 +469,7 @@ exports.handler = async function(event, context) {
   };
 
   try {
-    const { breakdown, start_date, shoot_days } = JSON.parse(event.body);
+    const { breakdown, start_date, shoot_days, day_assignment } = JSON.parse(event.body);
 
     if (!breakdown) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
@@ -422,88 +576,20 @@ exports.handler = async function(event, context) {
       const slateUnplaced = slimScenes.filter(slateIsUnplaced);
       const slatePlaced = slimScenes.filter(function (s) { return !slateIsUnplaced(s); });
 
-      // Group scenes by location, keeping day and night separate
-      const groups = {};
-      slatePlaced.forEach(function (s) {
-        var loc = String(s.loc || '').trim();
-        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
-        // slatePlaceKey, not normKey — see the note above. Two spellings of
-        // one location must not become two groups, or they become two trips.
-        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
-        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
-        groups[key].scenes.push(s);
-      });
-      // Largest groups first so big locations aren't split across days
-      const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
-        .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
-
-      // Distribute into shoot days.
-      // A day records EVERY location it contains, not just the first —
-      // otherwise the call sheet prints one address while listing scenes
-      // shot somewhere else, and crew go to the wrong place.
-      const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
-      const days = [];
-      let current = { scenes: [], locations: [] };
-
-      function closeDay() {
-        if (current.scenes.length) days.push(current);
-        current = { scenes: [], locations: [] };
+      // One assignment, two ways to arrive at one. A filmmaker who has
+      // moved a scene sends theirs; everyone else gets the packer's. Both
+      // go through the same derivation below, which is the whole point.
+      var days;
+      if (day_assignment) {
+        var built = slateDaysFromAssignment(slatePlaced, day_assignment);
+        if (built.error) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: built.error }) };
+        }
+        days = built.days;
+      } else {
+        days = slateAssignDays(slatePlaced, dayCount);
       }
 
-    
-      // Split each location into evenly-sized pieces first. A location with
-      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
-      // three-scene day still costs a full crew, so an even spread is both
-      // cheaper and more realistic to shoot.
-      var pieces = [];
-      ordered.forEach(function (g) {
-        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
-        var size = Math.ceil(g.scenes.length / needed);
-        for (var i = 0; i < g.scenes.length; i += size) {
-          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
-        }
-      });
-
-       // Pack pieces into days, so small locations share rather than each
-      // taking a day to itself.
-      var overflow = [];
-      pieces.forEach(function (p) {
-        // Once every day is spoken for, hold the rest back rather than
-        // dumping them all into the final day — twenty scenes across
-        // seventeen locations is not a day anyone can shoot.
-        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
-          overflow.push(p);
-          return;
-        }
-        if (current.scenes.length &&
-            current.scenes.length + p.scenes.length > perDay &&
-            days.length < dayCount - 1) {
-          closeDay();
-        }
-        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
-        p.scenes.forEach(function (s) { current.scenes.push(s); });
-      });
-      closeDay();
-
-      // Place whatever is left. Prefer a day already going to that location —
-      // returning to a place you have wrapped means travelling back, which is
-      // the cost the whole grouping exists to avoid. Only when no such day
-      // exists does it go to the emptiest one.
-      overflow.forEach(function (p) {
-        if (!days.length) {
-        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
-          return;
-        }
-        var sameLocation = days.filter(function (d) {
-          return d.locations.indexOf(p.location) >= 0;
-        });
-        var pool = sameLocation.length ? sameLocation : days;
-        var target = pool.reduce(function (a, b) {
-          return a.scenes.length <= b.scenes.length ? a : b;
-        });
-      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
-        p.scenes.forEach(function (s) { target.scenes.push(s); });
-      });
       // Everything from here follows from the day assignment above, and is
       // derived in one place so that a hand-moved scene and a generated one
       // can never be computed by different rules.
@@ -602,3 +688,6 @@ exports.handler = async function(event, context) {
 
 // Exported so the derivation can be tested directly, without a request.
 module.exports.slateDeriveSchedule = slateDeriveSchedule;
+
+module.exports.slateAssignDays = slateAssignDays;
+module.exports.slateDaysFromAssignment = slateDaysFromAssignment;
