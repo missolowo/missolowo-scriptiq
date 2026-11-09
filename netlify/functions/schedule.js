@@ -233,9 +233,15 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
               return {
                 scene_index: s.idx,
                 scene_number: s.n,
-                int_ext: s.ie,         
+                int_ext: s.ie,
                 time_of_day: s.tod,
                 set: s.set || '',
+                // The place, as distinct from the set — a bedroom and a
+                // courtyard are two sets at one location. The workspace
+                // needs it per scene to offer "move the rest of this
+                // location too", which it cannot get from the day header
+                // once a day holds more than one place.
+                location: s.loc || '',
                 description: '',
                 eighths: s.eighths || 0,
                 cast_required: s.cast || [],

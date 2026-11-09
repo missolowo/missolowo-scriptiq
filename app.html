@@ -3466,7 +3466,12 @@
         return ids(day.scenes) !== ids(slateCallsheet.scenes_today);
       }
 
-      async function slateMoveScene(sceneIndex, toDay) {
+      // Takes a list, not one scene. The reason a production manager moves
+      // anything is usually an actor, and an actor is in several scenes —
+      // so moving them one at a time is exactly the tedium this is meant
+      // to remove. What travels is still his choice; only the tapping is
+      // automated.
+      async function slateMoveScenes(sceneIndexes, toDay) {
         var user = getCurrentUser();
         if (!user || !slateSchedule || !slateBreakdown) return;
         var days = slateSchedule.schedule || [];
@@ -3475,8 +3480,11 @@
         days.forEach(function (d) {
           (d.scenes || []).forEach(function (s) { assignment[s.scene_index] = d.day; });
         });
-        if (assignment[sceneIndex] === toDay) return;
-        assignment[sceneIndex] = toDay;
+        var moving = [].concat(sceneIndexes).filter(function (i) {
+          return assignment[i] !== undefined && assignment[i] !== toDay;
+        });
+        if (!moving.length) return;
+        moving.forEach(function (i) { assignment[i] = toDay; });
 
         // Which days come back with exactly the scenes they had? Those keep
         // their production notes. The rest lose them, because a note written
@@ -3526,7 +3534,8 @@
           // moving scenes usually moves several, and rebuilding after each
           // one is wasteful and jumpy.
           siqTrack('scene_moved', {
-            to_day: toDay, total_days: (next.schedule || []).length,
+            to_day: toDay, scenes_moved: moving.length,
+            total_days: (next.schedule || []).length,
             production_id: window.slateProductionId || null
           });
           renderWorkspaceSchedule(slateSchedule);
@@ -3655,28 +3664,107 @@
             closeRows();
             var row = out.querySelector('.ws-move-row[data-for="' + from + '"]');
             if (!row) return;
-            // A day that does not exist yet is offered too. A production
-            // manager who needs the lead's scenes on their own day should
-            // not have to regenerate the whole schedule to get one.
+
+            // ── What should travel with it? ──
+            // Asked before the day, because it changes what the day buttons
+            // do. The production manager asked for this: an actor's
+            // availability is the usual reason to move anything, and an
+            // actor is in several scenes. Tapping them one by one is the
+            // work we are supposed to be removing.
+            //
+            // Offered rather than assumed. Taking five scenes along because
+            // we guessed he meant to is the same mistake as reordering his
+            // day for him.
+            var all = [];
+            days.forEach(function (dd) { (dd.scenes || []).forEach(function (s) { all.push(s); }); });
+            var me = all.filter(function (s) { return s.scene_index === idx; })[0] || {};
+            var placeKey = function (v) {
+              return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            };
+            var groups = [{ label: 'Just this scene', ids: [idx] }];
+
+            var mine = placeKey(me.location);
+            if (mine) {
+              var sameplace = all.filter(function (s) {
+                return s.scene_index !== idx && placeKey(s.location) === mine;
+              });
+              if (sameplace.length) {
+                groups.push({
+                  label: '+ ' + sameplace.length + ' more at ' + me.location,
+                  ids: [idx].concat(sameplace.map(function (s) { return s.scene_index; }))
+                });
+              }
+            }
+
+            // Two characters at most. Every principal in the scene would
+            // be a wall of buttons on a phone, and the ones worth offering
+            // are the ones that actually save taps.
+            (me.cast_required || []).map(function (ch) {
+              var withThem = all.filter(function (s) {
+                return s.scene_index !== idx && (s.cast_required || []).some(function (c) {
+                  return placeKey(c) === placeKey(ch);
+                });
+              });
+              return { ch: ch, n: withThem.length, ids: [idx].concat(withThem.map(function (s) { return s.scene_index; })) };
+            }).filter(function (g) { return g.n > 0; })
+              .sort(function (a, b) { return b.n - a.n; })
+              .slice(0, 2)
+              .forEach(function (g) {
+                groups.push({ label: '+ ' + g.n + ' more with ' + g.ch, ids: g.ids });
+              });
+
+            var scopeHtml = groups.length > 1
+              ? '<div style="font-size:12px;color:var(--text-3,#7D786E);margin-bottom:6px">Take with it</div>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">'
+                + groups.map(function (g, gi) {
+                    return '<button type="button" class="ws-move-scope" data-ids="' + g.ids.join(',') + '"'
+                      + ' style="' + btnStyle + (gi === 0 ? ';border-color:var(--gold,#D4A64A);color:var(--gold,#D4A64A)' : '') + '">'
+                      + g.label + '</button>';
+                  }).join('')
+                + '</div>'
+              : '';
+
+            row.setAttribute('data-ids', String(idx));
             row.innerHTML =
-              '<div style="font-size:13px;color:var(--text-2,#B5AFA3);margin-bottom:8px">Move scene '
-              + '<strong style="color:var(--gold,#D4A64A)">' + label + '</strong> to:</div>'
+              '<div style="font-size:13px;color:var(--text-2,#B5AFA3);margin-bottom:8px">Moving scene '
+              + '<strong style="color:var(--gold,#D4A64A)">' + label + '</strong></div>'
+              + scopeHtml
+              // A day that does not exist yet is offered too. Someone who
+              // needs the lead's scenes on their own day should not have to
+              // regenerate the whole schedule to get one.
+              + '<div style="font-size:12px;color:var(--text-3,#7D786E);margin-bottom:6px">To which day</div>'
               + '<div style="display:flex;flex-wrap:wrap;gap:6px">'
               + days.map(function (d) {
                   if (d.day === from) return '';
-                  return '<button type="button" class="ws-move-to" data-idx="' + idx + '" data-day="' + d.day + '" style="' + btnStyle + '">Day ' + d.day + '</button>';
+                  return '<button type="button" class="ws-move-to" data-day="' + d.day + '" style="' + btnStyle + '">Day ' + d.day + '</button>';
                 }).join('')
-              + '<button type="button" class="ws-move-to" data-idx="' + idx + '" data-day="' + (days.length + 1) + '" style="' + btnStyle + ';border-color:var(--gold-deep,#8A6A2A)">+ Day ' + (days.length + 1) + '</button>'
+              + '<button type="button" class="ws-move-to" data-day="' + (days.length + 1) + '" style="' + btnStyle + ';border-color:var(--gold-deep,#8A6A2A)">+ Day ' + (days.length + 1) + '</button>'
               + '<button type="button" class="ws-move-cancel" style="' + btnStyle + ';color:var(--text-3,#7D786E)">Cancel</button>'
               + '</div>';
             row.style.display = 'block';
             return;
           }
 
+          var scope = t.closest('.ws-move-scope');
+          if (scope) {
+            var srow = scope.closest('.ws-move-row');
+            if (!srow) return;
+            srow.setAttribute('data-ids', scope.getAttribute('data-ids'));
+            Array.prototype.forEach.call(srow.querySelectorAll('.ws-move-scope'), function (b) {
+              var on = b === scope;
+              b.style.borderColor = on ? 'var(--gold,#D4A64A)' : 'var(--line-1,#2E323A)';
+              b.style.color = on ? 'var(--gold,#D4A64A)' : 'var(--paper,#F4EFE6)';
+            });
+            return;
+          }
+
           var to = t.closest('.ws-move-to');
           if (to) {
+            var trow = to.closest('.ws-move-row');
+            var ids = ((trow && trow.getAttribute('data-ids')) || '').split(',')
+              .map(Number).filter(function (n) { return !isNaN(n); });
             closeRows();
-            slateMoveScene(Number(to.getAttribute('data-idx')), Number(to.getAttribute('data-day')));
+            slateMoveScenes(ids, Number(to.getAttribute('data-day')));
             return;
           }
           if (t.closest('.ws-move-cancel')) closeRows();
