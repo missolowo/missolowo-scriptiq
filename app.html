@@ -3598,6 +3598,27 @@
                   + '</div>';
               })()
            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
+           // ── An opportunity, phrased as one ──
+           // Deliberately not the warn colour used for missing locations:
+           // nothing here is wrong. Deliberately not acted on either —
+           // "a compromise shoot" is a conversation between a production
+           // manager, a director and a DP, and they may have had it
+           // already somewhere Slate cannot see.
+           //
+           // One line per location and nothing else. The moment a
+           // schedule carries five advisories, a production manager stops
+           // reading them, including the one that mattered.
+           + ((d.compromise_shoots || []).length
+               ? (d.compromise_shoots || []).map(function (c) {
+                   var ns = (c.night_scenes || []).filter(function (n) { return n != null; });
+                   return '<div style="margin-top:8px;padding:8px 10px;border-left:2px solid var(--gold-deep,#8A6A2A);background:rgba(212,166,74,0.04);font-size:12px;line-height:1.5;color:var(--text-2,#B5AFA3)">'
+                     + '<span style="color:var(--gold,#D4A64A)">' + c.location + '</span> — '
+                     + (ns.length === 1 ? 'scene ' : 'scenes ') + ns.join(', ')
+                     + ' ' + (ns.length === 1 ? 'is' : 'are') + ' night at a set you are already on by day. '
+                     + 'A compromise shoot could save waiting for dark — one for your director and DP.'
+                     + '</div>';
+                 }).join('')
+               : '')
            + '</div>';
         }).join('');
         html += '<div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--line-1,#2E323A)">'

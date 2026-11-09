@@ -187,6 +187,37 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
           var unplaced = d.scenes.filter(function (s) {
             return !String(s.loc || '').trim();
           }).length;
+
+          // ── Where a compromise shoot might save waiting for dark ──
+          // We shoot every day scene before every night scene, so a
+          // location with both on one day means the unit sits at a set
+          // they are already on, waiting for the light to go.
+          //
+          // A production manager raised this: sometimes that night work
+          // can be covered during the day with the director and the DP's
+          // agreement. Sometimes it cannot, and sometimes a compromise
+          // has already been agreed in a room Slate knows nothing about.
+          //
+          // So this is REPORTED and never acted on. Nothing is reordered,
+          // and a night scene stays marked NIGHT — the label describes
+          // what the scene is, not when it happened to be shot. He asked
+          // for it that way, and he is the one who has to defend the
+          // schedule to a crew.
+          var byPlace = {};
+          d.scenes.forEach(function (s) {
+            var loc = String(s.loc || '').trim();
+            if (!loc) return;
+            var k = slatePlaceKey(loc);
+            if (!byPlace[k]) byPlace[k] = { location: loc, day: 0, night: [] };
+            if (slateIsNight(s)) byPlace[k].night.push(s.n);
+            else byPlace[k].day++;
+          });
+          var compromises = Object.keys(byPlace).map(function (k) { return byPlace[k]; })
+            .filter(function (p) { return p.day > 0 && p.night.length > 0; })
+            .map(function (p) {
+              return { location: p.location, night_scenes: p.night.slice() };
+            });
+
           return {
             day: i + 1,
             date: addDays(baseDate, i) || baseDate,
@@ -196,6 +227,8 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             // this can say so plainly instead of implying a place.
             scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
+            // Opportunities, not instructions. Nothing above has moved.
+            compromise_shoots: compromises,
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
