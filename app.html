@@ -3306,6 +3306,16 @@
         window.slateProductionId = null;
         window.slateScriptTitle = null;
 
+        // A new film starts with a clean sheet. Crew, hotels, base camp
+        // and emergency contacts belong to the production they were
+        // entered for — carrying them forward would be right only for
+        // back-to-back shoots with the same unit, and wrong the rest of
+        // the time. Wrong here means a crew driving to last film's
+        // hospital.
+        if (typeof window.slateLoadProductionDetails === 'function') {
+          window.slateLoadProductionDetails();
+        }
+
         try {
           localStorage.removeItem('slate_breakdown');
           localStorage.removeItem('slate_schedule');
@@ -3331,7 +3341,26 @@
 
         window.scrollTo(0, 0);
       };
-      var slateProductionDetails = {
+      // ── Production Details belong to ONE production ──
+      // This used to be a single localStorage key shared by every film a
+      // filmmaker ever made. openProduction swaps the breakdown and the
+      // schedule but had nothing to swap here, so opening last month's
+      // film and printing a call sheet handed the crew the PREVIOUS
+      // production's hotels, base camp and emergency contacts — on a
+      // safety document, under our branding, that a crew acts on.
+      //
+      // Keyed per production now. Nothing carries across: a different
+      // film has a different crew, which is why no attempt is made to be
+      // clever about inheriting. The standard safety notes are the only
+      // thing that defaults in, because those genuinely are universal.
+      function slateDetailsKey() {
+        return 'slate_production_details:' + (window.slateProductionId || 'unsaved');
+      }
+      // A factory, not a shared literal — a new production needs its own
+      // copy, and handing out references to one object is how the arrays
+      // below would end up shared between films.
+      function slateDefaultProductionDetails() {
+        return {
         // Operational data the AI cannot know — user-editable (PM Option A).
         // V3 Production Profile will bind to this same object.
         locations: [], weather_high: '', weather_low: '', precipitation: '',
@@ -3348,7 +3377,9 @@
           'Meal break no later than 6 hours from general crew call, per standard practice.',
           'All crew to sign in with the 2nd AD on arrival.'
         ]
-      };
+        };
+      }
+      var slateProductionDetails = slateDefaultProductionDetails();
 
       async function runWorkspaceSchedule() {
         var user = getCurrentUser();
@@ -4768,14 +4799,28 @@
       // Saves to slateProductionDetails (read by the Call Sheet export) and
       // persists locally. V3's Production Profile binds to this same object.
       function loadProductionDetails() {
+        // Reset to defaults BEFORE loading. Overlaying one production's
+        // record onto another's leftovers is the whole bug: a field the
+        // new production never filled in would quietly keep the old
+        // value, and a half-inherited call sheet is worse than an empty
+        // one because it looks complete.
+        var fresh = slateDefaultProductionDetails();
+        Object.keys(slateProductionDetails).forEach(function (k) {
+          delete slateProductionDetails[k];
+        });
+        Object.keys(fresh).forEach(function (k) { slateProductionDetails[k] = fresh[k]; });
         try {
-          var saved = localStorage.getItem('slate_production_details');
+          var saved = localStorage.getItem(slateDetailsKey());
           if (saved) {
             var p = JSON.parse(saved);
             Object.keys(p).forEach(function(k) { slateProductionDetails[k] = p[k]; });
           }
         } catch (e) {}
       }
+      // Called by openProduction once the production it is opening is the
+      // current one, so the call sheet cannot read the last film's
+      // contacts in the window before the panel renders.
+      window.slateLoadProductionDetails = loadProductionDetails;
 
       function saveProductionDetails() {
         var g = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -4811,7 +4856,7 @@
         });
         var notes = g('pdSafety');
         if (notes) pd.safety_notes = notes.split('\n').filter(Boolean);
-        try { localStorage.setItem('slate_production_details', JSON.stringify(pd)); } catch (e) {}
+        try { localStorage.setItem(slateDetailsKey(), JSON.stringify(pd)); } catch (e) {}
         var status = document.getElementById('pdSaveStatus');
         if (status) {
           status.textContent = 'Saved — these details will appear on your call sheet.';
@@ -5697,6 +5742,14 @@
           // anything generated from here saves back to it rather than
           // starting a new production.
           window.slateProductionId = data.production.production_id;
+
+          // Swap the operational details to this production's own, now
+          // that it is the current one. Without this the breakdown and
+          // schedule switch while the crew, hotels and emergency
+          // contacts stay behind from whatever was open before.
+          if (typeof window.slateLoadProductionDetails === 'function') {
+            window.slateLoadProductionDetails();
+          }
 
           // Hand the restored data to the workspace scope, which owns
           // these variables. Assigning them from here would create new
