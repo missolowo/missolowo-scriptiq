@@ -596,7 +596,18 @@ exports.handler = async function(event, context) {
       schedule = slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnplaced, start_date);
 
       // ── Small AI pass for production notes only — fails safe ──
-      try {
+      // Skipped when the filmmaker sent an assignment. Moving a scene is
+      // something a production manager does several times in a sitting —
+      // this actor Thursday, that location Friday — and an AI call on each
+      // one would cost money and a wait every time, to rewrite notes about
+      // a day that is about to be rearranged again.
+      //
+      // The notes that were already there are not carried over here. A note
+      // written for a day's old scenes describes a day that no longer
+      // exists, and a stale production note names the wrong place, which is
+      // the failure this prompt was written to prevent. The workspace
+      // carries notes forward only for days whose scenes did not change.
+      if (!day_assignment) try {
         // scenes_without_location is sent, and the instruction says what to
         // do about it. Without it the model was told only "day 1, location
         // Igi Odan, 9 scenes" and wrote "All scenes to be shot in Igi Odan"
