@@ -3444,7 +3444,27 @@
       // places holding a view of which scenes sit where, and they would
       // disagree the first time anything went wrong. One of those places
       // prints call sheets.
-      var slateCallsheetStale = false;
+      // ── Does this call sheet still describe its day? ──
+      // Computed rather than flagged. A flag has to be set everywhere a
+      // schedule can change and cleared everywhere it cannot, and the day
+      // it is wrong is the day someone sends a crew to the wrong place.
+      // Comparing the two is cheap and cannot drift.
+      //
+      // Precise on purpose: moving a scene on day 3 does not invalidate
+      // day 1's call sheet, and saying it does teaches a production
+      // manager to ignore the warning.
+      function slateCallsheetOutOfDate() {
+        if (!slateCallsheet || !slateSchedule) return false;
+        var day = (slateSchedule.schedule || []).filter(function (d) {
+          return d.day === slateCallsheet.shoot_day;
+        })[0];
+        if (!day) return true;   // the day itself no longer exists
+        var ids = function (list) {
+          return (list || []).map(function (s) { return s.scene_index; })
+            .sort(function (a, b) { return a - b; }).join(',');
+        };
+        return ids(day.scenes) !== ids(slateCallsheet.scenes_today);
+      }
 
       async function slateMoveScene(sceneIndex, toDay) {
         var user = getCurrentUser();
@@ -3499,11 +3519,12 @@
 
           slateSchedule = next;
           try { localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule)); } catch (e) {}
-          // A call sheet printed before this move describes the old day.
-          // It is not regenerated here — a production manager moving scenes
-          // usually moves several, and rebuilding after each one is both
-          // wasteful and jumpy. It is marked, and they rebuild when ready.
-          if (slateCallsheet) slateCallsheetStale = true;
+          // Nothing to mark: slateCallsheetOutOfDate() compares the call
+          // sheet against the schedule it claims to describe, so the answer
+          // changes by itself the moment this assignment does. The call
+          // sheet is deliberately not regenerated — a production manager
+          // moving scenes usually moves several, and rebuilding after each
+          // one is wasteful and jumpy.
           siqTrack('scene_moved', {
             to_day: toDay, total_days: (next.schedule || []).length,
             production_id: window.slateProductionId || null
@@ -3645,17 +3666,14 @@
         // dropped either — a production manager who printed day 2 an hour
         // ago needs to be told the sheet in their hand is out of date.
         var csOut = document.getElementById('wsCallsheetOut');
-        if (csOut && slateCallsheetStale) {
+        if (csOut && slateCallsheetOutOfDate()) {
           csOut.innerHTML = '<div style="padding:14px 16px;border:1px solid var(--warn,#C97E3D);border-radius:8px;font-size:13px;line-height:1.6;color:var(--warn,#C97E3D)">'
             + 'The schedule has changed since you made this call sheet, so it no longer matches. '
             + 'Rebuild it before sending it to anyone.<br><br>'
             + '<button type="button" class="btn-primary" id="wsRebuildCs">Rebuild from the new schedule</button>'
             + '</div>';
           var rb = document.getElementById('wsRebuildCs');
-          if (rb) rb.addEventListener('click', function () {
-            slateCallsheetStale = false;
-            runWorkspaceCallsheet();
-          });
+          if (rb) rb.addEventListener('click', runWorkspaceCallsheet);
         }
 
          renderProductionDetailsPanel();
@@ -4656,6 +4674,17 @@
       // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
       async function slateExportCallsheet() {
         if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        // The on-screen notice is not enough on its own. This button sits
+        // elsewhere on the page, and a PDF leaves the building: it gets
+        // sent to a unit, printed, and carried onto a set. A call sheet
+        // that disagrees with the schedule sends people to the wrong place
+        // at the wrong time, and there is no good reason to export one
+        // knowing it is wrong. Rebuilding is one tap.
+        if (slateCallsheetOutOfDate()) {
+          alert('This call sheet is out of date — the schedule has changed since it was made.\n\n'
+            + 'Rebuild it from the new schedule before sending it to anyone.');
+          return;
+        }
         window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};
