@@ -1,8 +1,9 @@
 # Tests
 
 ```
-node tests/run.js            # every probe, ~2 seconds, no dependencies
-node tests/page-load.js      # loads each page in a real browser (needs playwright)
+node tests/run.js             # every probe, ~2 seconds, no dependencies
+node tests/page-load.js       # loads each page in a real browser (needs playwright)
+node tests/resume-browser.js  # the resume offer, rendered at phone width (needs playwright)
 ```
 
 `run.js` exits non-zero if anything fails.
@@ -43,6 +44,8 @@ The others read source text and need nothing.
 | `assign-probe` | A scene vanishes from the schedule and surfaces on a morning nobody planned to shoot it. |
 | `move-probe` | A filmmaker's edit is sent wrong, or a stale call sheet is exported as a PDF. |
 | `compromise-probe` | An advisory quietly reorders a crew's day instead of suggesting. |
+| `pricing-probe` | The page advertises a price the checkout does not charge. |
+| `resume-probe` | An interrupted breakdown is lost, charged twice, or resumed into the wrong screenplay. |
 
 ## Things worth knowing before you change them
 

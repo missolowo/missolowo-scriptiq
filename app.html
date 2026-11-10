@@ -531,6 +531,8 @@
       </div>
       <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
       <div id="wsWelcome" style="display:none;margin:0 0 24px;border:1px solid rgba(212,166,74,0.25);border-radius:12px;overflow:hidden"></div>
+      <!-- An interrupted breakdown, offered back when the filmmaker returns. -->
+      <div id="wsResumeOffer" style="display:none;margin:0 0 24px;border:1px solid var(--warn,#C97E3D);border-radius:12px;overflow:hidden"></div>
       <div id="wsHealthPanel" style="display:none;margin:24px 0;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden"></div>
       <div id="wsProgressWrap" style="display:none;margin:24px 0">
         <div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-bottom:8px" id="wsProgressLabel">Preparing...</div>
@@ -918,6 +920,7 @@
           uploadState.style.display = 'none';
           authState.style.display = '';
         }
+        if (raw && typeof slateRenderResumeOffer === 'function') slateRenderResumeOffer();
       }
 
       window.openAuthModal = function(tab) {
@@ -1365,7 +1368,19 @@
           return;
         }
         creditWarning.classList.remove('active');
-        runWorkspaceBreakdown(user);
+        // Is this the screenplay that was interrupted? If the file matches
+        // a stored resume point, carry on from where it stopped rather than
+        // paying OpenAI to redo sections that already worked. A different
+        // script matches nothing and simply starts clean.
+        var slateRec = null;
+        try {
+          var rec = slateReadResume();
+          if (rec && rec.fingerprint === slateScriptFingerprint(extractedScriptText)
+              && slateResumeDoneCount(rec) > 0) {
+            slateRec = rec;
+          }
+        } catch (e) {}
+        runWorkspaceBreakdown(user, slateRec);
       });
      // ============================================================
       // MISSOLOWO SLATE — WORKSPACE BREAKDOWN ENGINE (Phase 3b)
@@ -2827,7 +2842,21 @@
         function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
         var html = '';
         if (partial) {
-          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">Partial result: processing stopped at section ' + partial.failedSection + ' of ' + partial.totalSections + '. Showing everything completed so far — you can retry to attempt the full script.</div>';
+          // "Retry" used to mean the whole screenplay again, from section
+          // one, paying for every section that had already worked. Offer to
+          // carry on from the section that failed instead: the finished
+          // sections are written down, and continuing costs no extra credit
+          // because the credit is charged on the last section only.
+          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">'
+            + 'Partial result: processing stopped at section ' + partial.failedSection
+            + ' of ' + partial.totalSections + '. Sections 1&ndash;' + (partial.failedSection - 1)
+            + ' are saved on this device.'
+            + (slateReadResume()
+                ? '<div style="margin-top:12px"><button id="wsResumeBtn" style="min-height:44px;padding:10px 18px;background:var(--gold,#D4A64A);color:#14161A;border:0;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer">Continue from section '
+                    + partial.failedSection + '</button>'
+                  + '<div style="margin-top:8px;font-size:12px;color:var(--text-3,#7D786E)">No extra credit &mdash; the finished sections are not processed again.</div></div>'
+                : '<div style="margin-top:8px">Please try again when your connection is steady.</div>')
+            + '</div>';
         }
         html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">'
           + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
@@ -2904,7 +2933,17 @@
         box.innerHTML = html;
         box.style.display = 'block';
         var schedBtn = document.getElementById('wsScheduleBtn');
-        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);      
+        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);
+        var resumeBtn = document.getElementById('wsResumeBtn');
+        if (resumeBtn) resumeBtn.onclick = function () {
+          var rec = slateReadResume();
+          if (!rec) return;
+          var who = getCurrentUser();
+          if (!who) { openAuthModal('login'); return; }
+          resumeBtn.disabled = true;
+          resumeBtn.textContent = 'Continuing…';
+          runWorkspaceBreakdown(who, rec);
+        };
       }
 
       // ── SAVING WORK, PROPERLY ──
@@ -3072,10 +3111,204 @@
         return judged >= 2 && (foreign / judged) >= 0.5;
       }
 
-      async function runWorkspaceBreakdown(user) {
+      // ============================================================
+      // RESUMING AN INTERRUPTED BREAKDOWN
+      // ============================================================
+      // Three filmmakers lost their first breakdown on launch day to a
+      // dropped connection. The retry loop now survives a thirty-second
+      // drop, which covers a lift or a tunnel. It does not cover a longer
+      // outage, a phone that dies, a browser that discards a background
+      // tab, or a filmmaker who reloads because nothing seems to be
+      // happening — and in every one of those cases the sections already
+      // finished were held in a local variable and went with the page.
+      //
+      // So each finished section is written down as it lands. What is kept
+      // is the RAW per-section result, indexed by its section number, not
+      // the merged breakdown: merging renumbers scenes against a running
+      // offset, so a merged document cannot be taken apart again and
+      // resumed from.
+      //
+      // Nothing here may break a run that is working. Every read and write
+      // is wrapped, and a failure to store means only that this run cannot
+      // be resumed — never that it cannot finish.
+      var SLATE_RESUME_KEY = 'slate_resume';
+
+      // Is this the same screenplay? Resuming into a DIFFERENT script would
+      // staple half of one film to half of another, which is the production
+      // isolation bug wearing a new hat. Length plus a sample from three
+      // places is enough to catch a different file or an edited one; it is
+      // not a security hash and does not need to be.
+      function slateScriptFingerprint(text) {
+        var t = String(text || '');
+        if (!t) return '';
+        function h(s) {
+          var n = 0;
+          for (var i = 0; i < s.length; i++) { n = ((n << 5) - n + s.charCodeAt(i)) | 0; }
+          return (n >>> 0).toString(36);
+        }
+        var mid = Math.floor(t.length / 2);
+        return t.length.toString(36) + '-' + h(t.slice(0, 400))
+          + '-' + h(t.slice(mid, mid + 400)) + '-' + h(t.slice(-400));
+      }
+
+      function slateReadResume() {
+        try {
+          var raw = localStorage.getItem(SLATE_RESUME_KEY);
+          if (!raw) return null;
+          var rec = JSON.parse(raw);
+          if (!rec || !rec.production_id || !rec.fingerprint) return null;
+          if (!rec.sections || typeof rec.sections !== 'object') return null;
+          if (!rec.total_sections) return null;
+          return rec;
+        } catch (e) { return null; }
+      }
+
+      function slateClearResume() {
+        try { localStorage.removeItem(SLATE_RESUME_KEY); } catch (e) {}
+      }
+
+      // Which section does a resumed run start at? The FIRST gap, not the
+      // count: sections complete in order today, but a gap must restart at
+      // the gap rather than skipping it, or a scene disappears from the
+      // middle of the film.
+      function slateResumeNextIndex(rec) {
+        if (!rec || !rec.total_sections) return 0;
+        for (var i = 0; i < rec.total_sections; i++) {
+          if (!rec.sections[String(i)]) return i;
+        }
+        return rec.total_sections;
+      }
+
+      function slateResumeDoneCount(rec) {
+        if (!rec) return 0;
+        var n = 0;
+        for (var i = 0; i < (rec.total_sections || 0); i++) {
+          if (rec.sections[String(i)]) n++;
+        }
+        return n;
+      }
+
+      // Rebuild the completed sections IN INDEX ORDER. mergeBreakdownChunks
+      // walks the array and numbers scenes against a running offset, so the
+      // order of this array is the order of the film.
+      function slateResumeChunks(rec, upTo) {
+        var out = [];
+        for (var i = 0; i < upTo; i++) {
+          var s = rec.sections[String(i)];
+          if (!s) break;
+          out.push(s);
+        }
+        return out;
+      }
+
+      // Write one finished section. Returns false if nothing could be
+      // stored, which the caller uses to stop trying rather than fill the
+      // console on every section of a long script.
+      function slateWriteResume(rec) {
+        try {
+          localStorage.setItem(SLATE_RESUME_KEY, JSON.stringify(rec));
+          return true;
+        } catch (e) {
+          // Quota. A feature screenplay plus six sections of structured
+          // output can run past what a phone browser will keep, and an
+          // older Android gives the smallest allowance of all — exactly the
+          // filmmaker this feature is for. Drop the screenplay text first:
+          // without it, a resume in THIS tab still works, and a resume
+          // after a reload asks for the same file back.
+          if (rec.script_text) {
+            var withoutScript = {};
+            for (var k in rec) { if (rec.hasOwnProperty(k)) withoutScript[k] = rec[k]; }
+            delete withoutScript.script_text;
+            try {
+              localStorage.setItem(SLATE_RESUME_KEY, JSON.stringify(withoutScript));
+              return true;
+            } catch (e2) {}
+          }
+          console.warn('[Slate] Could not store resume point:', e && e.message);
+          return false;
+        }
+      }
+
+      // ── The offer, when a filmmaker comes back to a broken run ──
+      // This is the case the launch-day failures actually looked like: the
+      // connection went, the page was reloaded or the phone was put away,
+      // and there was nothing to come back to. Now there is.
+      function slateRenderResumeOffer() {
+        var el = document.getElementById('wsResumeOffer');
+        if (!el) return;
+        var rec = slateReadResume();
+        var done = slateResumeDoneCount(rec);
+        if (!rec || !done) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+        var next = slateResumeNextIndex(rec) + 1;
+        var haveScript = !!rec.script_text;
+        el.innerHTML = '<div style="padding:16px 18px;background:rgba(201,126,61,0.07)">'
+          + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--warn,#C97E3D);margin-bottom:8px">Unfinished breakdown</div>'
+          + '<div style="color:var(--paper,#F4EFE6);font-size:14px;line-height:1.5">'
+          + (rec.title ? '<strong>' + rec.title + '</strong> &mdash; ' : '')
+          + done + ' of ' + rec.total_sections + ' sections finished'
+          + (rec.failed_section ? ', stopped at section ' + rec.failed_section : '')
+          + '. They are saved on this device.</div>'
+          + (haveScript
+              ? '<div style="margin-top:14px"><button id="wsResumeOfferBtn" style="min-height:44px;padding:11px 20px;background:var(--gold,#D4A64A);color:#14161A;border:0;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer">Continue from section ' + next + '</button></div>'
+              // No screenplay stored means the browser ran out of room for
+              // it. The sections are still here, so ask for the same file
+              // back rather than throwing the work away: the breakdown
+              // picks up where it stopped as soon as the file matches.
+              : '<div style="margin-top:12px;font-size:13px;color:var(--text-2,#B5AFA3)">Upload the same screenplay below and it will carry on from section ' + next + '.</div>')
+          + '<div style="margin-top:10px;font-size:12px;color:var(--text-3,#7D786E)">No extra credit &mdash; a breakdown is charged once, when it finishes. '
+          + '<a href="#" id="wsResumeDiscard" style="color:var(--text-3,#7D786E);text-decoration:underline">Start a new breakdown instead</a></div>'
+          + '</div>';
+        el.style.display = 'block';
+
+        var go = document.getElementById('wsResumeOfferBtn');
+        if (go) go.onclick = function () {
+          var who = getCurrentUser();
+          if (!who) { openAuthModal('login'); return; }
+          var fresh = slateReadResume();
+          if (!fresh) { slateRenderResumeOffer(); return; }
+          el.style.display = 'none';
+          runWorkspaceBreakdown(who, fresh);
+        };
+        var drop = document.getElementById('wsResumeDiscard');
+        if (drop) drop.onclick = function (ev) {
+          ev.preventDefault();
+          // Said plainly, because it cannot be undone. The sections are
+          // only on this device and nothing else is holding them.
+          if (!window.confirm('Discard the ' + done + ' finished sections? They are not stored anywhere else, so this cannot be undone.')) return;
+          slateClearResume();
+          slateRenderResumeOffer();
+        };
+      }
+      window.slateRenderResumeOffer = slateRenderResumeOffer;
+
+      async function runWorkspaceBreakdown(user, resumeRec) {
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var script = extractedScriptText;
-        var productionId = (crypto.randomUUID && crypto.randomUUID()) ||
+        // A resume record may carry the screenplay when the page was
+        // reloaded and the text in memory went with it.
+        if (!script && resumeRec && resumeRec.script_text) {
+          script = extractedScriptText = resumeRec.script_text;
+        }
+        var slateFingerprint = slateScriptFingerprint(script);
+
+        // Refuse a resume that does not belong to this screenplay. A
+        // mismatch here would staple half of one film to half of another,
+        // so the run starts clean instead — it costs the filmmaker the
+        // sections already done, and costs them nothing they can see.
+        if (resumeRec && resumeRec.fingerprint !== slateFingerprint) {
+          console.warn('[Slate] Resume point belongs to a different script — starting fresh');
+          slateClearResume();
+          resumeRec = null;
+        }
+
+        // The SAME production id on a resume, deliberately. The credit is
+        // charged on the last section and recorded against the production
+        // id, so reusing it is what keeps a resumed run from being charged
+        // a second time — and it keeps one production row rather than
+        // leaving an orphan stuck at 'processing'.
+        var productionId = (resumeRec && resumeRec.production_id) ||
+          (crypto.randomUUID && crypto.randomUUID()) ||
           ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
             window.slateProductionId = productionId;
         generateBtn.disabled = true;
@@ -3096,10 +3329,58 @@
             }
           }
           const totalChunks = chunks.length;
-          siqTrack('breakdown_started', { script_size_chars: script.length, total_sections: totalChunks, production_id: productionId });
-          let completedChunks = [];
+
+          // A resume is only safe if the script splits the same way it did
+          // last time. Same text and same CHUNK_SIZE means it does — but if
+          // the section count disagrees for any reason, the stored sections
+          // no longer describe the same pieces of film, so they are dropped.
+          if (resumeRec && resumeRec.total_sections !== totalChunks) {
+            console.warn('[Slate] Resume point has a different section count — starting fresh');
+            slateClearResume();
+            resumeRec = null;
+          }
+
+          var slateStartAt = resumeRec ? slateResumeNextIndex(resumeRec) : 0;
+          // Everything already done, which happens if the page died between
+          // the last section and the save. Assemble and deliver rather than
+          // paying for the whole screenplay again.
+          if (slateStartAt >= totalChunks) slateStartAt = totalChunks - 1;
+
+          var slateResume = resumeRec || {
+            production_id: productionId,
+            fingerprint: slateFingerprint,
+            total_sections: totalChunks,
+            sections: {},
+            started_at: new Date().toISOString(),
+            // Named, so the offer to continue says which screenplay it is
+            // rather than "an unfinished breakdown".
+            title: window.slateScriptTitle || '',
+            script_text: script
+          };
+          // An older record may predate the screenplay being stored.
+          if (!slateResume.script_text) slateResume.script_text = script;
+          var slateCanStore = true;
+
+          siqTrack('breakdown_started', {
+            script_size_chars: script.length, total_sections: totalChunks,
+            production_id: productionId,
+            resumed_from_section: slateStartAt > 0 ? slateStartAt + 1 : null
+          });
+          let completedChunks = slateResumeChunks(slateResume, slateStartAt);
           let partialFailure = null;
-          for (let i = 0; i < totalChunks; i++) {
+
+          // Show the filmmaker what was recovered before the first request
+          // goes out, so a resumed run does not look like it is starting
+          // from nothing.
+          if (completedChunks.length) {
+            try {
+              renderWorkspaceResults(mergeBreakdownChunks(completedChunks), null,
+                { done: completedChunks.length, total: totalChunks });
+              document.getElementById('wsResults').style.display = 'block';
+            } catch (e) { console.warn('[Slate] Could not show recovered sections:', e && e.message); }
+          }
+
+          for (let i = slateStartAt; i < totalChunks; i++) {
             const sectionStart = Date.now();
             wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
             const sectionLang = (typeof selectedLang !== 'undefined' ? selectedLang : 'English');
@@ -3188,15 +3469,39 @@
               }));
               siqTrack('breakdown_failed', { section_number: i + 1, duration_ms: chunkDuration, failure_reason: result.message, production_id: productionId });
               partialFailure = { failedSection: i + 1, totalSections: totalChunks, reason: result.message };
+              // Leave the resume point in place — that is the whole point —
+              // but record where it stopped, so the offer to continue can
+              // name the section without re-deriving it.
+              if (slateCanStore) {
+                slateResume.failed_section = i + 1;
+                slateResume.failed_reason = result.message || '';
+                slateResume.updated_at = new Date().toISOString();
+                slateCanStore = slateWriteResume(slateResume);
+              }
               break;
             }
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
             completedChunks.push(result);
+
+            // Write the section down the moment it lands, BEFORE anything
+            // else is attempted. Everything that follows — the merge, the
+            // render, the next request — can throw or be cut off, and this
+            // section must survive all of it.
+            //
+            // Stored raw and by index: merging renumbers scenes against a
+            // running offset, so a merged document cannot be taken apart
+            // and resumed from.
+            if (slateCanStore) {
+              slateResume.sections[String(i)] = result;
+              slateResume.updated_at = new Date().toISOString();
+              slateCanStore = slateWriteResume(slateResume);
+            }
+
             // Progressive reveal (PM-approved Aug 14) — show what's done so far
-             var soFar = mergeBreakdownChunks(completedChunks);  
+             var soFar = mergeBreakdownChunks(completedChunks);
             renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
           }
-          
+
           if (completedChunks.length === 0) {
             // The reason was known all along and thrown away. Every failure —
             // out of credits, too many requests, a section that timed out,
@@ -3271,6 +3576,10 @@
           if (!partialFailure) {
             siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
             updateCreditsAfterRun(user, isAdmin);
+            // Finished and saved. The resume point has nothing left to
+            // protect, and leaving it would offer to continue a breakdown
+            // that is already done.
+            slateClearResume();
           }
           renderWorkspaceResults(slateBreakdown, partialFailure, { complete: true });
           document.getElementById('wsExportBar').style.display = 'block';

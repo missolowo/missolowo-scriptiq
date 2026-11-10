@@ -14,7 +14,8 @@ const PROBES = [
   'assign-probe',      // accepting (and refusing) an assignment
   'move-probe',        // what the workspace sends when a scene moves
   'compromise-probe',  // advisories that report and never act
-  'pricing-probe'      // the three copies of a price still agree
+  'pricing-probe',     // the three copies of a price still agree
+  'resume-probe'       // an interrupted breakdown carries on, charged once
 ];
 
 let total = 0, failed = 0, broken = [];
@@ -41,5 +42,7 @@ for (const name of PROBES) {
 
 console.log('\n' + total + ' assertions passed, ' + failed + ' failed');
 if (broken.length) console.log('failing: ' + broken.join(', '));
-console.log('\nBrowser check (needs playwright):  node tests/page-load.js');
+console.log('\nBrowser checks (need playwright):');
+console.log('  node tests/page-load.js        every page loads');
+console.log('  node tests/resume-browser.js   the resume offer at phone width');
 process.exit(failed ? 1 : 0);
