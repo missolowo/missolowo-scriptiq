@@ -13,7 +13,8 @@ const PROBES = [
   'derive-probe',      // everything that follows from a day assignment
   'assign-probe',      // accepting (and refusing) an assignment
   'move-probe',        // what the workspace sends when a scene moves
-  'compromise-probe'   // advisories that report and never act
+  'compromise-probe',  // advisories that report and never act
+  'pricing-probe'      // the three copies of a price still agree
 ];
 
 let total = 0, failed = 0, broken = [];
