@@ -3039,6 +3039,23 @@
       // Turn the reason a section failed into something a filmmaker can act
       // on. Anything unrecognised is passed through rather than replaced:
       // a message we did not anticipate is still better than a generic one.
+      // ── A reference a filmmaker can quote, instead of their screenplay ──
+      // The production id is written into every diagnostic line this run
+      // produces, so eight characters of it is enough to find the whole run
+      // in the logs. Short because a full UUID in an error message reads as
+      // a second failure rather than a way out of the first.
+      //
+      // Returns an empty string rather than a broken sentence if there is
+      // no production id — an error message is the worst possible place for
+      // a second error.
+      function slateSupportRef() {
+        try {
+          var id = String(window.slateProductionId || '').replace(/^prod-/, '');
+          if (!id) return '';
+          return ' quoting reference ' + id.slice(0, 8).toUpperCase();
+        } catch (e) { return ''; }
+      }
+
       function slateFailureMessage(reason) {
         var r = String(reason || '');
         if (!r) return 'Could not process the script. Please try again.';
@@ -3049,7 +3066,17 @@
           return 'Too many breakdowns from this connection in the last hour. Please try again shortly — nothing has been charged.';
         }
         if (/took too long|timed out|timeout/i.test(r)) {
-          return 'A section of this screenplay took too long to process. Nothing has been charged. Please try again — if it keeps happening, send us the script and we will look at it.';
+          // Never ask a filmmaker for their screenplay to debug our own
+          // infrastructure. It is the single most valuable thing they own,
+          // we have no business holding copies of scripts we do not need,
+          // and asking reads as though we cannot see our own system.
+          //
+          // The reference below is the production id, which is already in
+          // our logs against every section of this run. It finds the run
+          // faster than the screenplay would, and costs them nothing.
+          return 'A section of this screenplay took too long to process. Nothing has been charged. '
+            + 'Please try again — if it keeps happening, email support@missolowo.com'
+            + slateSupportRef() + ' and we will look into it. You do not need to send your screenplay.';
         }
         if (/disabled/i.test(r)) return r;
         return r + ' Nothing has been charged.';

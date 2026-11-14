@@ -15,7 +15,8 @@ const PROBES = [
   'move-probe',        // what the workspace sends when a scene moves
   'compromise-probe',  // advisories that report and never act
   'pricing-probe',     // the three copies of a price still agree
-  'resume-probe'       // an interrupted breakdown carries on, charged once
+  'resume-probe',      // an interrupted breakdown carries on, charged once
+  'copy-probe'         // what we promise filmmakers, in the words they read
 ];
 
 let total = 0, failed = 0, broken = [];
