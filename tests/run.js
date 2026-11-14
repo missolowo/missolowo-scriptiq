@@ -17,7 +17,8 @@ const PROBES = [
   'pricing-probe',     // the three copies of a price still agree
   'resume-probe',      // an interrupted breakdown carries on, charged once
   'copy-probe',        // what we promise filmmakers, in the words they read
-  'prompt-probe'       // what we pay the model for, and what we derive
+  'prompt-probe',      // what we pay the model for, and what we derive
+  'merge-probe'        // the merge actually run: are the derived lists right
 ];
 
 let total = 0, failed = 0, broken = [];
