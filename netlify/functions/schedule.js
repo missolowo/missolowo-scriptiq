@@ -25,232 +25,67 @@ const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 
-exports.handler = async function(event, context) {
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS'
-      },
-      body: ''
-    };
-  }
+// ── One key for "is this the same place?" ──
+// slateKey keeps spaces, so the model writing a Yorùbá name two ways —
+// "Ìdí Ọ̀GÁN" and "Ìdí Ọ̀ GÁN" — produced two different places. Scene 1
+// was grouped away from scenes 5, 7, 9 and 11 at that same location,
+// and across a longer script the two spellings can land on different
+// SHOOT DAYS: two trips to one place.
+//
+// Joining without spaces is the convention slateLocationKey already
+// uses in the breakdown, which is why Report 3 groups these correctly
+// while the schedule did not. This belongs in lib/slate-core.js beside
+// slateKey so there is one implementation; it is here only because that
+// file is not in hand.
+function slatePlaceKey(v) {
+  // slateKey directly, not the handler's local `normKey` alias — this
+  // function now lives at module scope and that alias is not in scope here.
+  return slateKey(String(v == null ? '' : v)).replace(/\s+/g, '');
+}
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*'
-  };
-
-  try {
-    const { breakdown, start_date, shoot_days } = JSON.parse(event.body);
-
-    if (!breakdown) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
-    }
-
-    // ── STEP 2: Initialize Supabase ──
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
-
-    // ── STEP 3: Single-pass user verification ──
-    // Verified, not claimed. user_email and user_id used to come straight
-    // from the request body, so a caller named themselves — including
-    // naming themselves an admin, which skips the rate limit.
-    const auth = await slateAuthenticate(event, supabase);
-    if (!auth.ok) {
-      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
-    }
-    const user = auth.user;
-    const isAdminEmail = isAdmin(auth.email);
-
-    // Rate limit AFTER authenticating: it keys on the account and exempts
-    // admins, and both of those were previously decided by the caller.
-    if (!isAdminEmail) {
-      const clientIP = getClientIP(event);
-      const rateLimit = await checkRateLimit(clientIP, 'schedule', 5, SUPABASE_SECRET, auth.authId || null);
-      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'schedule');
-    }
-
-    // ── STEP 3b: Core access guard ──
-    // No credit check here, deliberately. The breakdown is the paywall: one
-    // credit buys a complete job, and the schedule is part of that job.
-    //
-    // Blocking on a zero balance broke the promise from the other end. A
-    // filmmaker with one credit ran their breakdown, which spent it, and was
-    // then told "No credits remaining" when they asked for the schedule they
-    // had just paid for — the last step of the job they bought, refused.
-    //
-    // A schedule cannot be built without a breakdown to build it from, and
-    // that breakdown was already paid for, so there is nothing here to
-    // protect. The call sheet has never charged or gated for the same
-    // reason. is_disabled still applies: that is an account state, not a
-    // balance.
-    if (user && !isAdminEmail) {
-      if (user.is_disabled) {
-        return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
-      }
-    }
-
-    // ── STEP 4: Slim the scenes ──
-    // Scheduling only needs scene identity, location, timing and cast.
-    // Sending full descriptions/props/costume blew the function timeout.
-       const slimScenes = (breakdown.scenes || []).map(function (s, i) {
-      return {
-        // Permanent identity — carried through so the call sheet can match
-        // scenes by identity instead of by number. Falls back to array
-        // position for breakdowns saved before scene_index existed.
-        idx: s.scene_index || (i + 1),
-        n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
-        ie: s.int_ext || 'INT',
-        tod: s.time_of_day || 'DAY',
-        loc: s.location || s.set_location || '',
-        set: s.set || '',
-        // Page length, measured off the script at split time. A day's total
-        // is how a production manager judges whether the day is achievable,
-        // so it has to travel with the scene.
-        eighths: Number(s.slate_eighths) || 0,
-        cast: (s.cast || []).slice(0, 8),
-        // Flagged, never counted — how many is a producer decision.
-        bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
-      };
-    });
-
-    // ── STEP 5: Build the schedule in CODE — deterministic, instant, no timeout ──
-    // The AI only adds production notes afterwards. Grouping scenes by
-    // location is arithmetic, not judgement, so code does it reliably.
-    let schedule;
-    try {
-      const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
-
-      // Matching key only — never displayed. Now the shared implementation:
-      // the local copy stripped to A-Z, so every Korean, Russian, Arabic,
-      // Hindi and Chinese name and location normalised to an empty string
-      // and collapsed into one another.
+// ── Deriving a schedule from an assignment ──
+// Everything below follows from ONE fact: which scenes sit on which day.
+// Shooting order, each day's locations and header, company moves, page
+// counts, dates, and the cast release schedule are all consequences of
+// that assignment rather than independent data.
+//
+// It lives apart from the code that PRODUCES an assignment because there
+// is now more than one way to produce one. Today the packer below groups
+// by location and spreads across the requested days. Next a production
+// manager moves a scene because an actor is unavailable, and later a
+// scheduler reads cast availability and assigns around it. All three must
+// derive the same way, or a hand-moved scene gets a cast release computed
+// by different rules than a generated one — and an actor released a day
+// before they are called is a mistake a crew acts on.
+function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnplaced, start_date) {
       const normKey = slateKey;
 
-      // ── One key for "is this the same place?" ──
-      // slateKey keeps spaces, so the model writing a Yorùbá name two ways —
-      // "Ìdí Ọ̀GÁN" and "Ìdí Ọ̀ GÁN" — produced two different places. Scene 1
-      // was grouped away from scenes 5, 7, 9 and 11 at that same location,
-      // and across a longer script the two spellings can land on different
-      // SHOOT DAYS: two trips to one place.
+      // ── A day's locations are its scenes' locations. Always recomputed. ──
+      // The packer happens to track these as it fills each day, and for a
+      // freshly generated schedule its answer and this one agree. But the
+      // moment a scene moves day — by hand, or by a scheduler working
+      // around an actor's dates — a list carried over from the packer is
+      // describing where the scenes USED to be.
       //
-      // Joining without spaces is the convention slateLocationKey already
-      // uses in the breakdown, which is why Report 3 groups these correctly
-      // while the schedule did not. This belongs in lib/slate-core.js beside
-      // slateKey so there is one implementation; it is here only because that
-      // file is not in hand.
-      function slatePlaceKey(v) {
-        return normKey(String(v == null ? '' : v)).replace(/\s+/g, '');
-      }
-
-      // ── Scenes the screenplay never placed ──
-      // These used to be grouped like everywhere else. Every one of them
-      // shares the empty location key, so they formed a single large group —
-      // and "largest groups first", which is right for real locations, then
-      // sorted that group to the FRONT. The filmmaker's day 1 call sheet was
-      // therefore the emptiest document the product could produce: on LORI
-      // NKAN MI, nine scenes with no location, no set and mostly no cast.
+      // That list is the day header. It is the address a crew reads and
+      // drives to. So it is derived here from what is actually on the day,
+      // and nothing upstream is trusted to have kept it current.
       //
-      // A 1st AD does not put a scene with no location on a call sheet; they
-      // flag it and chase the writer. So these leave the day structure
-      // entirely and are reported on their own, where a producer can act on
-      // them. Nothing is dropped — slateUnplaced + the scheduled scenes
-      // always add back up to the total, and the cover prints that sum.
-      function slateIsUnplaced(s) {
-        var loc = String(s.loc || '').trim();
-        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
-        return !loc && !String(s.set || '').trim();
-      }
-      const slateUnplaced = slimScenes.filter(slateIsUnplaced);
-      const slatePlaced = slimScenes.filter(function (s) { return !slateIsUnplaced(s); });
-
-      // Group scenes by location, keeping day and night separate
-      const groups = {};
-      slatePlaced.forEach(function (s) {
-        var loc = String(s.loc || '').trim();
-        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
-        // slatePlaceKey, not normKey — see the note above. Two spellings of
-        // one location must not become two groups, or they become two trips.
-        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
-        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
-        groups[key].scenes.push(s);
-      });
-      // Largest groups first so big locations aren't split across days
-      const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
-        .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
-
-      // Distribute into shoot days.
-      // A day records EVERY location it contains, not just the first —
-      // otherwise the call sheet prints one address while listing scenes
-      // shot somewhere else, and crew go to the wrong place.
-      const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
-      const days = [];
-      let current = { scenes: [], locations: [] };
-
-      function closeDay() {
-        if (current.scenes.length) days.push(current);
-        current = { scenes: [], locations: [] };
-      }
-
-    
-      // Split each location into evenly-sized pieces first. A location with
-      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
-      // three-scene day still costs a full crew, so an even spread is both
-      // cheaper and more realistic to shoot.
-      var pieces = [];
-      ordered.forEach(function (g) {
-        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
-        var size = Math.ceil(g.scenes.length / needed);
-        for (var i = 0; i < g.scenes.length; i += size) {
-          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
-        }
-      });
-
-       // Pack pieces into days, so small locations share rather than each
-      // taking a day to itself.
-      var overflow = [];
-      pieces.forEach(function (p) {
-        // Once every day is spoken for, hold the rest back rather than
-        // dumping them all into the final day — twenty scenes across
-        // seventeen locations is not a day anyone can shoot.
-        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
-          overflow.push(p);
-          return;
-        }
-        if (current.scenes.length &&
-            current.scenes.length + p.scenes.length > perDay &&
-            days.length < dayCount - 1) {
-          closeDay();
-        }
-        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
-        p.scenes.forEach(function (s) { current.scenes.push(s); });
-      });
-      closeDay();
-
-      // Place whatever is left. Prefer a day already going to that location —
-      // returning to a place you have wrapped means travelling back, which is
-      // the cost the whole grouping exists to avoid. Only when no such day
-      // exists does it go to the emptiest one.
-      overflow.forEach(function (p) {
-        if (!days.length) {
-        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
-          return;
-        }
-        var sameLocation = days.filter(function (d) {
-          return d.locations.indexOf(p.location) >= 0;
+      // Deduplicated on the place key rather than the raw string, for the
+      // same reason the packer groups on it: one location spelled two ways
+      // is one place, and printing both would read as two.
+      days.forEach(function (d) {
+        var seen = {}, locs = [];
+        (d.scenes || []).forEach(function (s) {
+          var loc = String((s && s.loc) || '').trim();
+          if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+          if (!loc) return;
+          var k = slatePlaceKey(loc);
+          if (seen[k]) return;
+          seen[k] = true;
+          locs.push(loc);
         });
-        var pool = sameLocation.length ? sameLocation : days;
-        var target = pool.reduce(function (a, b) {
-          return a.scenes.length <= b.scenes.length ? a : b;
-        });
-      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
-        p.scenes.forEach(function (s) { target.scenes.push(s); });
+        d.locations = locs;
       });
       // ── Shooting order within a day ──
       // This used to sort by scene number, which is SCRIPT order, not
@@ -336,7 +171,7 @@ exports.handler = async function(event, context) {
       // move between. We do not silently produce an impossible day.
       var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
       
-      schedule = {
+      var schedule = {
         title: breakdown.title || 'Untitled Production',
         total_shoot_days: days.length,
         total_scenes: Object.keys(uniqueScenes).length,
@@ -352,6 +187,37 @@ exports.handler = async function(event, context) {
           var unplaced = d.scenes.filter(function (s) {
             return !String(s.loc || '').trim();
           }).length;
+
+          // ── Where a compromise shoot might save waiting for dark ──
+          // We shoot every day scene before every night scene, so a
+          // location with both on one day means the unit sits at a set
+          // they are already on, waiting for the light to go.
+          //
+          // A production manager raised this: sometimes that night work
+          // can be covered during the day with the director and the DP's
+          // agreement. Sometimes it cannot, and sometimes a compromise
+          // has already been agreed in a room Slate knows nothing about.
+          //
+          // So this is REPORTED and never acted on. Nothing is reordered,
+          // and a night scene stays marked NIGHT — the label describes
+          // what the scene is, not when it happened to be shot. He asked
+          // for it that way, and he is the one who has to defend the
+          // schedule to a crew.
+          var byPlace = {};
+          d.scenes.forEach(function (s) {
+            var loc = String(s.loc || '').trim();
+            if (!loc) return;
+            var k = slatePlaceKey(loc);
+            if (!byPlace[k]) byPlace[k] = { location: loc, day: 0, night: [] };
+            if (slateIsNight(s)) byPlace[k].night.push(s.n);
+            else byPlace[k].day++;
+          });
+          var compromises = Object.keys(byPlace).map(function (k) { return byPlace[k]; })
+            .filter(function (p) { return p.day > 0 && p.night.length > 0; })
+            .map(function (p) {
+              return { location: p.location, night_scenes: p.night.slice() };
+            });
+
           return {
             day: i + 1,
             date: addDays(baseDate, i) || baseDate,
@@ -361,13 +227,21 @@ exports.handler = async function(event, context) {
             // this can say so plainly instead of implying a place.
             scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
+            // Opportunities, not instructions. Nothing above has moved.
+            compromise_shoots: compromises,
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
                 scene_number: s.n,
-                int_ext: s.ie,         
+                int_ext: s.ie,
                 time_of_day: s.tod,
                 set: s.set || '',
+                // The place, as distinct from the set — a bedroom and a
+                // courtyard are two sets at one location. The workspace
+                // needs it per scene to offer "move the rest of this
+                // location too", which it cannot get from the day header
+                // once a day holds more than one place.
+                location: s.loc || '',
                 description: '',
                 eighths: s.eighths || 0,
                 cast_required: s.cast || [],
@@ -454,8 +328,325 @@ exports.handler = async function(event, context) {
         return String(a.character).localeCompare(String(b.character));
       });
 
+      return schedule;
+}
+
+// ── Deciding an assignment: which scenes go on which day ──
+// The default way. Group by location so a place is visited once, split
+// each group evenly rather than filling days to the brim, and hold back
+// what will not fit instead of dumping it all on the last day.
+//
+// This is ONE way to produce an assignment. slateDaysFromAssignment is
+// another, for when a production manager knows something the screenplay
+// does not — that an actor is only free on Thursday. Both hand the same
+// shape to slateDeriveSchedule, which is what stops a hand-moved scene
+// and a generated one being described by different rules.
+function slateAssignDays(slatePlaced, dayCount) {
+      const normKey = slateKey;
+      // Group scenes by location, keeping day and night separate
+      const groups = {};
+      slatePlaced.forEach(function (s) {
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        // slatePlaceKey, not normKey — see the note above. Two spellings of
+        // one location must not become two groups, or they become two trips.
+        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
+        groups[key].scenes.push(s);
+      });
+      // Largest groups first so big locations aren't split across days
+      const ordered = Object.keys(groups).map(function (k) { return groups[k]; })
+        .sort(function (a, b) { return b.scenes.length - a.scenes.length; });
+
+      // Distribute into shoot days.
+      // A day records EVERY location it contains, not just the first —
+      // otherwise the call sheet prints one address while listing scenes
+      // shot somewhere else, and crew go to the wrong place.
+      const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
+      const days = [];
+      let current = { scenes: [], locations: [] };
+
+      function closeDay() {
+        if (current.scenes.length) days.push(current);
+        current = { scenes: [], locations: [] };
+      }
+
+    
+      // Split each location into evenly-sized pieces first. A location with
+      // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
+      // three-scene day still costs a full crew, so an even spread is both
+      // cheaper and more realistic to shoot.
+      var pieces = [];
+      ordered.forEach(function (g) {
+        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
+        var size = Math.ceil(g.scenes.length / needed);
+        for (var i = 0; i < g.scenes.length; i += size) {
+          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
+        }
+      });
+
+       // Pack pieces into days, so small locations share rather than each
+      // taking a day to itself.
+      var overflow = [];
+      pieces.forEach(function (p) {
+        // Once every day is spoken for, hold the rest back rather than
+        // dumping them all into the final day — twenty scenes across
+        // seventeen locations is not a day anyone can shoot.
+        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
+          overflow.push(p);
+          return;
+        }
+        if (current.scenes.length &&
+            current.scenes.length + p.scenes.length > perDay &&
+            days.length < dayCount - 1) {
+          closeDay();
+        }
+        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
+        p.scenes.forEach(function (s) { current.scenes.push(s); });
+      });
+      closeDay();
+
+      // Place whatever is left. Prefer a day already going to that location —
+      // returning to a place you have wrapped means travelling back, which is
+      // the cost the whole grouping exists to avoid. Only when no such day
+      // exists does it go to the emptiest one.
+      overflow.forEach(function (p) {
+        if (!days.length) {
+        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
+          return;
+        }
+        var sameLocation = days.filter(function (d) {
+          return d.locations.indexOf(p.location) >= 0;
+        });
+        var pool = sameLocation.length ? sameLocation : days;
+        var target = pool.reduce(function (a, b) {
+          return a.scenes.length <= b.scenes.length ? a : b;
+        });
+      if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
+        p.scenes.forEach(function (s) { target.scenes.push(s); });
+      });
+
+      return days;
+}
+
+// ── Taking an assignment from the filmmaker ──
+// A map of scene index to day number, sent by the workspace when someone
+// moves a scene to another day.
+//
+// Validated rather than trusted, and refused rather than repaired. A
+// schedule quietly missing a scene is worse than an error message: the
+// filmmaker has no reason to go looking, and the scene surfaces on the
+// morning nobody planned to shoot it. So every placeable scene must
+// appear exactly once, and anything else is a 400 that says what is
+// wrong.
+function slateDaysFromAssignment(slatePlaced, assignment) {
+  if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) {
+    return { error: 'Expected a day assignment: scene index to day number.' };
+  }
+  var want = {}, maxDay = 0;
+  var keys = Object.keys(assignment);
+  if (!keys.length) {
+    return { error: 'The day assignment is empty.' };
+  }
+  for (var k = 0; k < keys.length; k++) {
+    var day = assignment[keys[k]];
+    if (typeof day !== 'number' || !isFinite(day) || day < 1 || day !== Math.floor(day)) {
+      return { error: 'Scene ' + keys[k] + ' was given day "' + day + '", which is not a shoot day.' };
+    }
+    want[String(keys[k])] = day;
+    if (day > maxDay) maxDay = day;
+  }
+
+  // Every placeable scene, exactly once. One missing loses it from the
+  // schedule entirely; one we do not recognise means the workspace and
+  // the breakdown disagree about what this production contains, and
+  // choosing which of them is right is not ours to do.
+  var missing = [];
+  slatePlaced.forEach(function (s) {
+    if (want[String(s.idx)] === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
+  });
+  if (missing.length) {
+    return { error: 'These scenes were left out of the assignment: ' + missing.join(', ') + '.' };
+  }
+  var known = {};
+  slatePlaced.forEach(function (s) { known[String(s.idx)] = true; });
+  var unknown = keys.filter(function (key) { return !known[key]; });
+  if (unknown.length) {
+    return { error: 'The assignment refers to scenes this breakdown does not have: ' + unknown.join(', ') + '.' };
+  }
+
+  // Empty days are kept rather than squeezed out. Dropping one renumbers
+  // every day after it and silently moves their dates, which is a
+  // surprising thing to do to someone who emptied a day meaning to refill
+  // it.
+  var days = [];
+  for (var d = 0; d < maxDay; d++) days.push({ scenes: [], locations: [] });
+  slatePlaced.forEach(function (s) { days[want[String(s.idx)] - 1].scenes.push(s); });
+  return { days: days };
+}
+
+exports.handler = async function(event, context) {
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS'
+      },
+      body: ''
+    };
+  }
+
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*'
+  };
+
+  try {
+    const { breakdown, start_date, shoot_days, day_assignment } = JSON.parse(event.body);
+
+    if (!breakdown) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'No breakdown data provided' }) };
+    }
+
+    // ── STEP 2: Initialize Supabase ──
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
+
+    // ── STEP 3: Single-pass user verification ──
+    // Verified, not claimed. user_email and user_id used to come straight
+    // from the request body, so a caller named themselves — including
+    // naming themselves an admin, which skips the rate limit.
+    const auth = await slateAuthenticate(event, supabase);
+    if (!auth.ok) {
+      return { statusCode: auth.status, headers, body: JSON.stringify({ error: auth.error }) };
+    }
+    const user = auth.user;
+    const isAdminEmail = isAdmin(auth.email);
+
+    // Rate limit AFTER authenticating: it keys on the account and exempts
+    // admins, and both of those were previously decided by the caller.
+    if (!isAdminEmail) {
+      const clientIP = getClientIP(event);
+      const rateLimit = await checkRateLimit(clientIP, 'schedule', 5, SUPABASE_SECRET, auth.authId || null);
+      if (!rateLimit.allowed) return rateLimitResponse(rateLimit.resetAt, 'schedule');
+    }
+
+    // ── STEP 3b: Core access guard ──
+    // No credit check here, deliberately. The breakdown is the paywall: one
+    // credit buys a complete job, and the schedule is part of that job.
+    //
+    // Blocking on a zero balance broke the promise from the other end. A
+    // filmmaker with one credit ran their breakdown, which spent it, and was
+    // then told "No credits remaining" when they asked for the schedule they
+    // had just paid for — the last step of the job they bought, refused.
+    //
+    // A schedule cannot be built without a breakdown to build it from, and
+    // that breakdown was already paid for, so there is nothing here to
+    // protect. The call sheet has never charged or gated for the same
+    // reason. is_disabled still applies: that is an account state, not a
+    // balance.
+    if (user && !isAdminEmail) {
+      if (user.is_disabled) {
+        return { statusCode: 403, headers, body: JSON.stringify({ error: 'Account disabled. Contact support.' }) };
+      }
+    }
+
+    // ── STEP 4: Slim the scenes ──
+    // Scheduling only needs scene identity, location, timing and cast.
+    // Sending full descriptions/props/costume blew the function timeout.
+       const slimScenes = (breakdown.scenes || []).map(function (s, i) {
+      return {
+        // Permanent identity — carried through so the call sheet can match
+        // scenes by identity instead of by number. Falls back to array
+        // position for breakdowns saved before scene_index existed.
+        idx: s.scene_index || (i + 1),
+        n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
+        ie: s.int_ext || 'INT',
+        tod: s.time_of_day || 'DAY',
+        loc: s.location || s.set_location || '',
+        set: s.set || '',
+        // Page length, measured off the script at split time. A day's total
+        // is how a production manager judges whether the day is achievable,
+        // so it has to travel with the scene.
+        eighths: Number(s.slate_eighths) || 0,
+        cast: (s.cast || []).slice(0, 8),
+        // Flagged, never counted — how many is a producer decision.
+        bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
+      };
+    });
+
+    // ── STEP 5: Build the schedule in CODE — deterministic, instant, no timeout ──
+    // The AI only adds production notes afterwards. Grouping scenes by
+    // location is arithmetic, not judgement, so code does it reliably.
+    let schedule;
+    try {
+      const dayCount = Math.max(1, parseInt(shoot_days, 10) || 10);
+
+      // Matching key only — never displayed. Now the shared implementation:
+      // the local copy stripped to A-Z, so every Korean, Russian, Arabic,
+      // Hindi and Chinese name and location normalised to an empty string
+      // and collapsed into one another.
+      const normKey = slateKey;
+
+
+      // ── Scenes the screenplay never placed ──
+      // These used to be grouped like everywhere else. Every one of them
+      // shares the empty location key, so they formed a single large group —
+      // and "largest groups first", which is right for real locations, then
+      // sorted that group to the FRONT. The filmmaker's day 1 call sheet was
+      // therefore the emptiest document the product could produce: on LORI
+      // NKAN MI, nine scenes with no location, no set and mostly no cast.
+      //
+      // A 1st AD does not put a scene with no location on a call sheet; they
+      // flag it and chase the writer. So these leave the day structure
+      // entirely and are reported on their own, where a producer can act on
+      // them. Nothing is dropped — slateUnplaced + the scheduled scenes
+      // always add back up to the total, and the cover prints that sum.
+      function slateIsUnplaced(s) {
+        var loc = String(s.loc || '').trim();
+        if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
+        return !loc && !String(s.set || '').trim();
+      }
+      const slateUnplaced = slimScenes.filter(slateIsUnplaced);
+      const slatePlaced = slimScenes.filter(function (s) { return !slateIsUnplaced(s); });
+
+      // One assignment, two ways to arrive at one. A filmmaker who has
+      // moved a scene sends theirs; everyone else gets the packer's. Both
+      // go through the same derivation below, which is the whole point.
+      var days;
+      if (day_assignment) {
+        var built = slateDaysFromAssignment(slatePlaced, day_assignment);
+        if (built.error) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: built.error }) };
+        }
+        days = built.days;
+      } else {
+        days = slateAssignDays(slatePlaced, dayCount);
+      }
+
+      // Everything from here follows from the day assignment above, and is
+      // derived in one place so that a hand-moved scene and a generated one
+      // can never be computed by different rules.
+      schedule = slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnplaced, start_date);
+
       // ── Small AI pass for production notes only — fails safe ──
-      try {
+      // Skipped when the filmmaker sent an assignment. Moving a scene is
+      // something a production manager does several times in a sitting —
+      // this actor Thursday, that location Friday — and an AI call on each
+      // one would cost money and a wait every time, to rewrite notes about
+      // a day that is about to be rearranged again.
+      //
+      // The notes that were already there are not carried over here. A note
+      // written for a day's old scenes describes a day that no longer
+      // exists, and a stale production note names the wrong place, which is
+      // the failure this prompt was written to prevent. The workspace
+      // carries notes forward only for days whose scenes did not change.
+      if (!day_assignment) try {
         // scenes_without_location is sent, and the instruction says what to
         // do about it. Without it the model was told only "day 1, location
         // Igi Odan, 9 scenes" and wrote "All scenes to be shot in Igi Odan"
@@ -543,3 +734,10 @@ exports.handler = async function(event, context) {
     };
   }
 };
+
+
+// Exported so the derivation can be tested directly, without a request.
+module.exports.slateDeriveSchedule = slateDeriveSchedule;
+
+module.exports.slateAssignDays = slateAssignDays;
+module.exports.slateDaysFromAssignment = slateDaysFromAssignment;

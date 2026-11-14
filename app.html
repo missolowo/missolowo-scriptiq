@@ -531,6 +531,8 @@
       </div>
       <!-- ── BREAKDOWN PROGRESS + RESULTS (engine renders here) ── -->
       <div id="wsWelcome" style="display:none;margin:0 0 24px;border:1px solid rgba(212,166,74,0.25);border-radius:12px;overflow:hidden"></div>
+      <!-- An interrupted breakdown, offered back when the filmmaker returns. -->
+      <div id="wsResumeOffer" style="display:none;margin:0 0 24px;border:1px solid var(--warn,#C97E3D);border-radius:12px;overflow:hidden"></div>
       <div id="wsHealthPanel" style="display:none;margin:24px 0;border:1px solid var(--line-1,#2E323A);border-radius:12px;overflow:hidden"></div>
       <div id="wsProgressWrap" style="display:none;margin:24px 0">
         <div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-bottom:8px" id="wsProgressLabel">Preparing...</div>
@@ -918,6 +920,7 @@
           uploadState.style.display = 'none';
           authState.style.display = '';
         }
+        if (raw && typeof slateRenderResumeOffer === 'function') slateRenderResumeOffer();
       }
 
       window.openAuthModal = function(tab) {
@@ -1365,7 +1368,19 @@
           return;
         }
         creditWarning.classList.remove('active');
-        runWorkspaceBreakdown(user);
+        // Is this the screenplay that was interrupted? If the file matches
+        // a stored resume point, carry on from where it stopped rather than
+        // paying OpenAI to redo sections that already worked. A different
+        // script matches nothing and simply starts clean.
+        var slateRec = null;
+        try {
+          var rec = slateReadResume();
+          if (rec && rec.fingerprint === slateScriptFingerprint(extractedScriptText)
+              && slateResumeDoneCount(rec) > 0) {
+            slateRec = rec;
+          }
+        } catch (e) {}
+        runWorkspaceBreakdown(user, slateRec);
       });
      // ============================================================
       // MISSOLOWO SLATE — WORKSPACE BREAKDOWN ENGINE (Phase 3b)
@@ -2827,7 +2842,21 @@
         function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
         var html = '';
         if (partial) {
-          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">Partial result: processing stopped at section ' + partial.failedSection + ' of ' + partial.totalSections + '. Showing everything completed so far — you can retry to attempt the full script.</div>';
+          // "Retry" used to mean the whole screenplay again, from section
+          // one, paying for every section that had already worked. Offer to
+          // carry on from the section that failed instead: the finished
+          // sections are written down, and continuing costs no extra credit
+          // because the credit is charged on the last section only.
+          html += '<div style="padding:12px 16px;margin-bottom:20px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">'
+            + 'Partial result: processing stopped at section ' + partial.failedSection
+            + ' of ' + partial.totalSections + '. Sections 1&ndash;' + (partial.failedSection - 1)
+            + ' are saved on this device.'
+            + (slateReadResume()
+                ? '<div style="margin-top:12px"><button id="wsResumeBtn" style="min-height:44px;padding:10px 18px;background:var(--gold,#D4A64A);color:#14161A;border:0;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer">Continue from section '
+                    + partial.failedSection + '</button>'
+                  + '<div style="margin-top:8px;font-size:12px;color:var(--text-3,#7D786E)">No extra credit &mdash; the finished sections are not processed again.</div></div>'
+                : '<div style="margin-top:8px">Please try again when your connection is steady.</div>')
+            + '</div>';
         }
         html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">'
           + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
@@ -2904,7 +2933,17 @@
         box.innerHTML = html;
         box.style.display = 'block';
         var schedBtn = document.getElementById('wsScheduleBtn');
-        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);      
+        if (schedBtn) schedBtn.addEventListener('click', runWorkspaceSchedule);
+        var resumeBtn = document.getElementById('wsResumeBtn');
+        if (resumeBtn) resumeBtn.onclick = function () {
+          var rec = slateReadResume();
+          if (!rec) return;
+          var who = getCurrentUser();
+          if (!who) { openAuthModal('login'); return; }
+          resumeBtn.disabled = true;
+          resumeBtn.textContent = 'Continuing…';
+          runWorkspaceBreakdown(who, rec);
+        };
       }
 
       // ── SAVING WORK, PROPERLY ──
@@ -3072,10 +3111,204 @@
         return judged >= 2 && (foreign / judged) >= 0.5;
       }
 
-      async function runWorkspaceBreakdown(user) {
+      // ============================================================
+      // RESUMING AN INTERRUPTED BREAKDOWN
+      // ============================================================
+      // Three filmmakers lost their first breakdown on launch day to a
+      // dropped connection. The retry loop now survives a thirty-second
+      // drop, which covers a lift or a tunnel. It does not cover a longer
+      // outage, a phone that dies, a browser that discards a background
+      // tab, or a filmmaker who reloads because nothing seems to be
+      // happening — and in every one of those cases the sections already
+      // finished were held in a local variable and went with the page.
+      //
+      // So each finished section is written down as it lands. What is kept
+      // is the RAW per-section result, indexed by its section number, not
+      // the merged breakdown: merging renumbers scenes against a running
+      // offset, so a merged document cannot be taken apart again and
+      // resumed from.
+      //
+      // Nothing here may break a run that is working. Every read and write
+      // is wrapped, and a failure to store means only that this run cannot
+      // be resumed — never that it cannot finish.
+      var SLATE_RESUME_KEY = 'slate_resume';
+
+      // Is this the same screenplay? Resuming into a DIFFERENT script would
+      // staple half of one film to half of another, which is the production
+      // isolation bug wearing a new hat. Length plus a sample from three
+      // places is enough to catch a different file or an edited one; it is
+      // not a security hash and does not need to be.
+      function slateScriptFingerprint(text) {
+        var t = String(text || '');
+        if (!t) return '';
+        function h(s) {
+          var n = 0;
+          for (var i = 0; i < s.length; i++) { n = ((n << 5) - n + s.charCodeAt(i)) | 0; }
+          return (n >>> 0).toString(36);
+        }
+        var mid = Math.floor(t.length / 2);
+        return t.length.toString(36) + '-' + h(t.slice(0, 400))
+          + '-' + h(t.slice(mid, mid + 400)) + '-' + h(t.slice(-400));
+      }
+
+      function slateReadResume() {
+        try {
+          var raw = localStorage.getItem(SLATE_RESUME_KEY);
+          if (!raw) return null;
+          var rec = JSON.parse(raw);
+          if (!rec || !rec.production_id || !rec.fingerprint) return null;
+          if (!rec.sections || typeof rec.sections !== 'object') return null;
+          if (!rec.total_sections) return null;
+          return rec;
+        } catch (e) { return null; }
+      }
+
+      function slateClearResume() {
+        try { localStorage.removeItem(SLATE_RESUME_KEY); } catch (e) {}
+      }
+
+      // Which section does a resumed run start at? The FIRST gap, not the
+      // count: sections complete in order today, but a gap must restart at
+      // the gap rather than skipping it, or a scene disappears from the
+      // middle of the film.
+      function slateResumeNextIndex(rec) {
+        if (!rec || !rec.total_sections) return 0;
+        for (var i = 0; i < rec.total_sections; i++) {
+          if (!rec.sections[String(i)]) return i;
+        }
+        return rec.total_sections;
+      }
+
+      function slateResumeDoneCount(rec) {
+        if (!rec) return 0;
+        var n = 0;
+        for (var i = 0; i < (rec.total_sections || 0); i++) {
+          if (rec.sections[String(i)]) n++;
+        }
+        return n;
+      }
+
+      // Rebuild the completed sections IN INDEX ORDER. mergeBreakdownChunks
+      // walks the array and numbers scenes against a running offset, so the
+      // order of this array is the order of the film.
+      function slateResumeChunks(rec, upTo) {
+        var out = [];
+        for (var i = 0; i < upTo; i++) {
+          var s = rec.sections[String(i)];
+          if (!s) break;
+          out.push(s);
+        }
+        return out;
+      }
+
+      // Write one finished section. Returns false if nothing could be
+      // stored, which the caller uses to stop trying rather than fill the
+      // console on every section of a long script.
+      function slateWriteResume(rec) {
+        try {
+          localStorage.setItem(SLATE_RESUME_KEY, JSON.stringify(rec));
+          return true;
+        } catch (e) {
+          // Quota. A feature screenplay plus six sections of structured
+          // output can run past what a phone browser will keep, and an
+          // older Android gives the smallest allowance of all — exactly the
+          // filmmaker this feature is for. Drop the screenplay text first:
+          // without it, a resume in THIS tab still works, and a resume
+          // after a reload asks for the same file back.
+          if (rec.script_text) {
+            var withoutScript = {};
+            for (var k in rec) { if (rec.hasOwnProperty(k)) withoutScript[k] = rec[k]; }
+            delete withoutScript.script_text;
+            try {
+              localStorage.setItem(SLATE_RESUME_KEY, JSON.stringify(withoutScript));
+              return true;
+            } catch (e2) {}
+          }
+          console.warn('[Slate] Could not store resume point:', e && e.message);
+          return false;
+        }
+      }
+
+      // ── The offer, when a filmmaker comes back to a broken run ──
+      // This is the case the launch-day failures actually looked like: the
+      // connection went, the page was reloaded or the phone was put away,
+      // and there was nothing to come back to. Now there is.
+      function slateRenderResumeOffer() {
+        var el = document.getElementById('wsResumeOffer');
+        if (!el) return;
+        var rec = slateReadResume();
+        var done = slateResumeDoneCount(rec);
+        if (!rec || !done) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+        var next = slateResumeNextIndex(rec) + 1;
+        var haveScript = !!rec.script_text;
+        el.innerHTML = '<div style="padding:16px 18px;background:rgba(201,126,61,0.07)">'
+          + '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--warn,#C97E3D);margin-bottom:8px">Unfinished breakdown</div>'
+          + '<div style="color:var(--paper,#F4EFE6);font-size:14px;line-height:1.5">'
+          + (rec.title ? '<strong>' + rec.title + '</strong> &mdash; ' : '')
+          + done + ' of ' + rec.total_sections + ' sections finished'
+          + (rec.failed_section ? ', stopped at section ' + rec.failed_section : '')
+          + '. They are saved on this device.</div>'
+          + (haveScript
+              ? '<div style="margin-top:14px"><button id="wsResumeOfferBtn" style="min-height:44px;padding:11px 20px;background:var(--gold,#D4A64A);color:#14161A;border:0;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer">Continue from section ' + next + '</button></div>'
+              // No screenplay stored means the browser ran out of room for
+              // it. The sections are still here, so ask for the same file
+              // back rather than throwing the work away: the breakdown
+              // picks up where it stopped as soon as the file matches.
+              : '<div style="margin-top:12px;font-size:13px;color:var(--text-2,#B5AFA3)">Upload the same screenplay below and it will carry on from section ' + next + '.</div>')
+          + '<div style="margin-top:10px;font-size:12px;color:var(--text-3,#7D786E)">No extra credit &mdash; a breakdown is charged once, when it finishes. '
+          + '<a href="#" id="wsResumeDiscard" style="color:var(--text-3,#7D786E);text-decoration:underline">Start a new breakdown instead</a></div>'
+          + '</div>';
+        el.style.display = 'block';
+
+        var go = document.getElementById('wsResumeOfferBtn');
+        if (go) go.onclick = function () {
+          var who = getCurrentUser();
+          if (!who) { openAuthModal('login'); return; }
+          var fresh = slateReadResume();
+          if (!fresh) { slateRenderResumeOffer(); return; }
+          el.style.display = 'none';
+          runWorkspaceBreakdown(who, fresh);
+        };
+        var drop = document.getElementById('wsResumeDiscard');
+        if (drop) drop.onclick = function (ev) {
+          ev.preventDefault();
+          // Said plainly, because it cannot be undone. The sections are
+          // only on this device and nothing else is holding them.
+          if (!window.confirm('Discard the ' + done + ' finished sections? They are not stored anywhere else, so this cannot be undone.')) return;
+          slateClearResume();
+          slateRenderResumeOffer();
+        };
+      }
+      window.slateRenderResumeOffer = slateRenderResumeOffer;
+
+      async function runWorkspaceBreakdown(user, resumeRec) {
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var script = extractedScriptText;
-        var productionId = (crypto.randomUUID && crypto.randomUUID()) ||
+        // A resume record may carry the screenplay when the page was
+        // reloaded and the text in memory went with it.
+        if (!script && resumeRec && resumeRec.script_text) {
+          script = extractedScriptText = resumeRec.script_text;
+        }
+        var slateFingerprint = slateScriptFingerprint(script);
+
+        // Refuse a resume that does not belong to this screenplay. A
+        // mismatch here would staple half of one film to half of another,
+        // so the run starts clean instead — it costs the filmmaker the
+        // sections already done, and costs them nothing they can see.
+        if (resumeRec && resumeRec.fingerprint !== slateFingerprint) {
+          console.warn('[Slate] Resume point belongs to a different script — starting fresh');
+          slateClearResume();
+          resumeRec = null;
+        }
+
+        // The SAME production id on a resume, deliberately. The credit is
+        // charged on the last section and recorded against the production
+        // id, so reusing it is what keeps a resumed run from being charged
+        // a second time — and it keeps one production row rather than
+        // leaving an orphan stuck at 'processing'.
+        var productionId = (resumeRec && resumeRec.production_id) ||
+          (crypto.randomUUID && crypto.randomUUID()) ||
           ('prod-' + Date.now() + '-' + Math.random().toString(36).slice(2));
             window.slateProductionId = productionId;
         generateBtn.disabled = true;
@@ -3096,10 +3329,58 @@
             }
           }
           const totalChunks = chunks.length;
-          siqTrack('breakdown_started', { script_size_chars: script.length, total_sections: totalChunks, production_id: productionId });
-          let completedChunks = [];
+
+          // A resume is only safe if the script splits the same way it did
+          // last time. Same text and same CHUNK_SIZE means it does — but if
+          // the section count disagrees for any reason, the stored sections
+          // no longer describe the same pieces of film, so they are dropped.
+          if (resumeRec && resumeRec.total_sections !== totalChunks) {
+            console.warn('[Slate] Resume point has a different section count — starting fresh');
+            slateClearResume();
+            resumeRec = null;
+          }
+
+          var slateStartAt = resumeRec ? slateResumeNextIndex(resumeRec) : 0;
+          // Everything already done, which happens if the page died between
+          // the last section and the save. Assemble and deliver rather than
+          // paying for the whole screenplay again.
+          if (slateStartAt >= totalChunks) slateStartAt = totalChunks - 1;
+
+          var slateResume = resumeRec || {
+            production_id: productionId,
+            fingerprint: slateFingerprint,
+            total_sections: totalChunks,
+            sections: {},
+            started_at: new Date().toISOString(),
+            // Named, so the offer to continue says which screenplay it is
+            // rather than "an unfinished breakdown".
+            title: window.slateScriptTitle || '',
+            script_text: script
+          };
+          // An older record may predate the screenplay being stored.
+          if (!slateResume.script_text) slateResume.script_text = script;
+          var slateCanStore = true;
+
+          siqTrack('breakdown_started', {
+            script_size_chars: script.length, total_sections: totalChunks,
+            production_id: productionId,
+            resumed_from_section: slateStartAt > 0 ? slateStartAt + 1 : null
+          });
+          let completedChunks = slateResumeChunks(slateResume, slateStartAt);
           let partialFailure = null;
-          for (let i = 0; i < totalChunks; i++) {
+
+          // Show the filmmaker what was recovered before the first request
+          // goes out, so a resumed run does not look like it is starting
+          // from nothing.
+          if (completedChunks.length) {
+            try {
+              renderWorkspaceResults(mergeBreakdownChunks(completedChunks), null,
+                { done: completedChunks.length, total: totalChunks });
+              document.getElementById('wsResults').style.display = 'block';
+            } catch (e) { console.warn('[Slate] Could not show recovered sections:', e && e.message); }
+          }
+
+          for (let i = slateStartAt; i < totalChunks; i++) {
             const sectionStart = Date.now();
             wsProgress(10 + (i / totalChunks) * 75, totalChunks > 1 ? ('Processing section ' + (i + 1) + ' of ' + totalChunks + '...') : 'Analyzing your screenplay...');
             const sectionLang = (typeof selectedLang !== 'undefined' ? selectedLang : 'English');
@@ -3188,15 +3469,39 @@
               }));
               siqTrack('breakdown_failed', { section_number: i + 1, duration_ms: chunkDuration, failure_reason: result.message, production_id: productionId });
               partialFailure = { failedSection: i + 1, totalSections: totalChunks, reason: result.message };
+              // Leave the resume point in place — that is the whole point —
+              // but record where it stopped, so the offer to continue can
+              // name the section without re-deriving it.
+              if (slateCanStore) {
+                slateResume.failed_section = i + 1;
+                slateResume.failed_reason = result.message || '';
+                slateResume.updated_at = new Date().toISOString();
+                slateCanStore = slateWriteResume(slateResume);
+              }
               break;
             }
             siqTrack('section_completed', { section_number: i + 1, duration_ms: chunkDuration, production_id: productionId });
             completedChunks.push(result);
+
+            // Write the section down the moment it lands, BEFORE anything
+            // else is attempted. Everything that follows — the merge, the
+            // render, the next request — can throw or be cut off, and this
+            // section must survive all of it.
+            //
+            // Stored raw and by index: merging renumbers scenes against a
+            // running offset, so a merged document cannot be taken apart
+            // and resumed from.
+            if (slateCanStore) {
+              slateResume.sections[String(i)] = result;
+              slateResume.updated_at = new Date().toISOString();
+              slateCanStore = slateWriteResume(slateResume);
+            }
+
             // Progressive reveal (PM-approved Aug 14) — show what's done so far
-             var soFar = mergeBreakdownChunks(completedChunks);  
+             var soFar = mergeBreakdownChunks(completedChunks);
             renderWorkspaceResults(soFar, null, { done: i + 1, total: totalChunks });
           }
-          
+
           if (completedChunks.length === 0) {
             // The reason was known all along and thrown away. Every failure —
             // out of credits, too many requests, a section that timed out,
@@ -3271,6 +3576,10 @@
           if (!partialFailure) {
             siqTrack('breakdown_completed', { total_sections: completedChunks.length, production_id: productionId });
             updateCreditsAfterRun(user, isAdmin);
+            // Finished and saved. The resume point has nothing left to
+            // protect, and leaving it would offer to continue a breakdown
+            // that is already done.
+            slateClearResume();
           }
           renderWorkspaceResults(slateBreakdown, partialFailure, { complete: true });
           document.getElementById('wsExportBar').style.display = 'block';
@@ -3431,11 +3740,149 @@
         }
       }
 
+      // ── Moving a scene to another day ──
+      // Slate groups by location and keeps day apart from night. It cannot
+      // know that the lead actress is only free on Thursday, or that a
+      // location opens late, or what was agreed in the room yesterday.
+      // That is the production manager's knowledge, so applying it has to
+      // be theirs.
+      //
+      // The WHOLE assignment is sent, not just the scene that moved. The
+      // server rebuilds every day from it — headers, company moves, page
+      // counts, cast release. Sending only the change would leave two
+      // places holding a view of which scenes sit where, and they would
+      // disagree the first time anything went wrong. One of those places
+      // prints call sheets.
+      // ── Does this call sheet still describe its day? ──
+      // Computed rather than flagged. A flag has to be set everywhere a
+      // schedule can change and cleared everywhere it cannot, and the day
+      // it is wrong is the day someone sends a crew to the wrong place.
+      // Comparing the two is cheap and cannot drift.
+      //
+      // Precise on purpose: moving a scene on day 3 does not invalidate
+      // day 1's call sheet, and saying it does teaches a production
+      // manager to ignore the warning.
+      function slateCallsheetOutOfDate() {
+        if (!slateCallsheet || !slateSchedule) return false;
+        var day = (slateSchedule.schedule || []).filter(function (d) {
+          return d.day === slateCallsheet.shoot_day;
+        })[0];
+        if (!day) return true;   // the day itself no longer exists
+        var ids = function (list) {
+          return (list || []).map(function (s) { return s.scene_index; })
+            .sort(function (a, b) { return a - b; }).join(',');
+        };
+        return ids(day.scenes) !== ids(slateCallsheet.scenes_today);
+      }
+
+      // Takes a list, not one scene. The reason a production manager moves
+      // anything is usually an actor, and an actor is in several scenes —
+      // so moving them one at a time is exactly the tedium this is meant
+      // to remove. What travels is still his choice; only the tapping is
+      // automated.
+      async function slateMoveScenes(sceneIndexes, toDay) {
+        var user = getCurrentUser();
+        if (!user || !slateSchedule || !slateBreakdown) return;
+        var days = slateSchedule.schedule || [];
+
+        var assignment = {};
+        days.forEach(function (d) {
+          (d.scenes || []).forEach(function (s) { assignment[s.scene_index] = d.day; });
+        });
+        var moving = [].concat(sceneIndexes).filter(function (i) {
+          return assignment[i] !== undefined && assignment[i] !== toDay;
+        });
+        if (!moving.length) return;
+        moving.forEach(function (i) { assignment[i] = toDay; });
+
+        // Which days come back with exactly the scenes they had? Those keep
+        // their production notes. The rest lose them, because a note written
+        // for a day's old scenes describes a day that no longer exists, and
+        // a note naming the wrong location is worse than no note at all.
+        var before = {};
+        var sceneKey = function (d) {
+          return (d.scenes || []).map(function (s) { return s.scene_index; })
+            .sort(function (a, b) { return a - b; }).join(',');
+        };
+        days.forEach(function (d) { before[d.day] = { key: sceneKey(d), note: d.production_notes || '' }; });
+
+        var busy = document.getElementById('wsMoveStatus');
+        if (busy) { busy.style.color = 'var(--text-2,#B5AFA3)'; busy.textContent = 'Rebuilding the schedule…'; }
+
+        try {
+          var res = await slateFetch('/.netlify/functions/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              breakdown: slateBreakdown,
+              start_date: (document.getElementById('wsStartDate') || {}).value || '',
+              day_assignment: assignment,
+              user_email: user.email, user_id: user.id
+            })
+          });
+          var raw = await res.text();
+          if (raw.trim().startsWith('<') || !res.ok) {
+            var msg = 'Could not move that scene. Please try again.';
+            try { msg = JSON.parse(raw).error || msg; } catch (e) {}
+            if (busy) { busy.style.color = 'var(--error,#D96A57)'; busy.textContent = msg; }
+            return;
+          }
+          var next = JSON.parse(raw);
+
+          (next.schedule || []).forEach(function (d) {
+            var was = before[d.day];
+            if (was && was.note && was.key === sceneKey(d)) d.production_notes = was.note;
+          });
+
+          slateSchedule = next;
+          try { localStorage.setItem('slate_schedule', JSON.stringify(slateSchedule)); } catch (e) {}
+          // Nothing to mark: slateCallsheetOutOfDate() compares the call
+          // sheet against the schedule it claims to describe, so the answer
+          // changes by itself the moment this assignment does. The call
+          // sheet is deliberately not regenerated — a production manager
+          // moving scenes usually moves several, and rebuilding after each
+          // one is wasteful and jumpy.
+          siqTrack('scene_moved', {
+            to_day: toDay, scenes_moved: moving.length,
+            total_days: (next.schedule || []).length,
+            production_id: window.slateProductionId || null
+          });
+          renderWorkspaceSchedule(slateSchedule);
+
+          var pid = window.slateProductionId || null;
+          if (pid) {
+            await slateSave('schedule', {
+              kind: 'schedule', production_id: pid,
+              user_id: user.id, user_email: user.email, payload: slateSchedule
+            }, { label: 'shooting schedule' });
+          }
+        } catch (err) {
+          if (busy) { busy.style.color = 'var(--error,#D96A57)'; busy.textContent = err.message || 'Could not move that scene.'; }
+        }
+      }
+
       function renderWorkspaceSchedule(sched) {
         var out = document.getElementById('wsScheduleOut');
         if (!out) return;
         var days = sched.schedule || [];
         var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + ' days</div>';
+
+        // ── Say that this can be changed, and why it looks like this ──
+        // No other tool a production manager has used lets them do this, so
+        // nobody goes looking for the control. Saying what Slate COULD NOT
+        // know does two jobs at once: it invites the edit, and it explains
+        // in advance why the first pass is not how they would have shot it.
+        // Deliberately not a dismissible toast — someone coming back for
+        // their second film needs it as much as they did for the first.
+        html += '<div style="padding:14px 16px;margin-bottom:16px;border:1px solid var(--gold-deep,#8A6A2A);border-left:3px solid var(--gold,#D4A64A);border-radius:8px;background:rgba(212,166,74,0.06);font-size:13px;line-height:1.6;color:var(--text-2,#B5AFA3)">'
+          + '<strong style="color:var(--gold,#D4A64A);font-weight:600">This is a first pass.</strong> '
+          + 'Scenes are grouped by location, with day scenes before night. Slate does not know '
+          + 'your cast&rsquo;s availability or when a location opens — so '
+          + '<strong style="color:var(--paper,#F4EFE6);font-weight:600">tap any scene number to move it to another day</strong>. '
+          + 'The schedule, the cast release and your call sheets all follow.'
+          + '</div>'
+          + '<div id="wsMoveStatus" style="font-size:13px;margin-bottom:12px;min-height:0;color:var(--text-2,#B5AFA3)"></div>';
+
           if (sched.schedule_warning) {
           html += '<div style="padding:12px 16px;margin-bottom:12px;border:1px solid var(--warn,#C97E3D);border-radius:8px;color:var(--warn,#C97E3D);font-size:13px">'
             + sched.schedule_warning + '</div>';
@@ -3443,7 +3890,24 @@
        html += days.map(function(d) {
           return '<div style="padding:14px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px">'
             + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:14px;font-weight:600">DAY ' + d.day + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">' + (d.date || '') + ' · ' + (d.location || 'No location set') + (d.scenes_without_location ? '</span><span style="color:var(--warn,#C97E3D);font-family:inherit;font-size:12px;margin-left:10px">\u00b7 ' + d.scenes_without_location + ' scene' + (d.scenes_without_location > 1 ? 's' : '') + ' with no location in the script' : '') + '</span></div>'
-            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">Scenes: ' + (d.scenes || []).map(function(s) { return (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number; }).join(', ') + '</div>'
+            // Every scene number is a control. A chip that is plainly
+            // tappable beats a note explaining a hidden one — and on a
+            // phone, which is where most of our filmmakers are, tapping a
+            // target beats dragging one.
+            + '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+            + '<span>Scenes:</span>'
+            + (d.scenes || []).map(function(s) {
+                var label = (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number;
+                return '<button type="button" class="ws-scene-chip" data-idx="' + s.scene_index + '" data-label="' + label + '" data-day="' + d.day + '"'
+                  + ' title="Move scene ' + label + ' to another day"'
+                  // 44px is Apple's minimum touch target and Android asks
+                  // for 48dp. Three quarters of our filmmakers are on a
+                  // phone, often on set with one hand full.
+                  + ' style="font-family:monospace;font-size:14px;padding:4px 12px;min-height:44px;min-width:44px;background:var(--ink-0,#121418);color:var(--paper,#F4EFE6);border:1px solid var(--line-1,#2E323A);border-radius:6px;cursor:pointer">'
+                  + label + '</button>';
+              }).join('')
+            + '</div>'
+            + '<div class="ws-move-row" data-for="' + d.day + '" style="display:none;margin-top:10px;padding:10px 12px;background:var(--ink-0,#121418);border:1px solid var(--gold-deep,#8A6A2A);border-radius:8px"></div>'
            + (function () {
                 var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
                 if (!bgScenes.length) return '';
@@ -3452,6 +3916,27 @@
                   + '</div>';
               })()
            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
+           // ── An opportunity, phrased as one ──
+           // Deliberately not the warn colour used for missing locations:
+           // nothing here is wrong. Deliberately not acted on either —
+           // "a compromise shoot" is a conversation between a production
+           // manager, a director and a DP, and they may have had it
+           // already somewhere Slate cannot see.
+           //
+           // One line per location and nothing else. The moment a
+           // schedule carries five advisories, a production manager stops
+           // reading them, including the one that mattered.
+           + ((d.compromise_shoots || []).length
+               ? (d.compromise_shoots || []).map(function (c) {
+                   var ns = (c.night_scenes || []).filter(function (n) { return n != null; });
+                   return '<div style="margin-top:8px;padding:8px 10px;border-left:2px solid var(--gold-deep,#8A6A2A);background:rgba(212,166,74,0.04);font-size:12px;line-height:1.5;color:var(--text-2,#B5AFA3)">'
+                     + '<span style="color:var(--gold,#D4A64A)">' + c.location + '</span> — '
+                     + (ns.length === 1 ? 'scene ' : 'scenes ') + ns.join(', ')
+                     + ' ' + (ns.length === 1 ? 'is' : 'are') + ' night at a set you are already on by day. '
+                     + 'A compromise shoot could save waiting for dark — one for your director and DP.'
+                     + '</div>';
+                 }).join('')
+               : '')
            + '</div>';
         }).join('');
         html += '<div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--line-1,#2E323A)">'
@@ -3466,6 +3951,149 @@
         out.innerHTML = html;
         var cb = document.getElementById('wsCallsheetBtn');
         if (cb) cb.addEventListener('click', runWorkspaceCallsheet);
+
+        // onclick rather than addEventListener: this function runs again on
+        // every move, and addEventListener would stack a fresh handler each
+        // time until one tap moved a scene five days at once.
+        var btnStyle = 'font-family:monospace;font-size:13px;padding:8px 12px;min-height:40px;background:var(--ink-2,#1B1D22);color:var(--paper,#F4EFE6);border:1px solid var(--line-1,#2E323A);border-radius:6px;cursor:pointer';
+        var closeRows = function () {
+          Array.prototype.forEach.call(out.querySelectorAll('.ws-move-row'), function (r) {
+            r.style.display = 'none'; r.innerHTML = '';
+          });
+        };
+        out.onclick = function (ev) {
+          var t = ev.target;
+          if (!t || !t.closest) return;
+
+          var chip = t.closest('.ws-scene-chip');
+          if (chip) {
+            var idx = Number(chip.getAttribute('data-idx'));
+            var label = chip.getAttribute('data-label');
+            var from = Number(chip.getAttribute('data-day'));
+            closeRows();
+            var row = out.querySelector('.ws-move-row[data-for="' + from + '"]');
+            if (!row) return;
+
+            // ── What should travel with it? ──
+            // Asked before the day, because it changes what the day buttons
+            // do. The production manager asked for this: an actor's
+            // availability is the usual reason to move anything, and an
+            // actor is in several scenes. Tapping them one by one is the
+            // work we are supposed to be removing.
+            //
+            // Offered rather than assumed. Taking five scenes along because
+            // we guessed he meant to is the same mistake as reordering his
+            // day for him.
+            var all = [];
+            days.forEach(function (dd) { (dd.scenes || []).forEach(function (s) { all.push(s); }); });
+            var me = all.filter(function (s) { return s.scene_index === idx; })[0] || {};
+            var placeKey = function (v) {
+              return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            };
+            var groups = [{ label: 'Just this scene', ids: [idx] }];
+
+            var mine = placeKey(me.location);
+            if (mine) {
+              var sameplace = all.filter(function (s) {
+                return s.scene_index !== idx && placeKey(s.location) === mine;
+              });
+              if (sameplace.length) {
+                groups.push({
+                  label: '+ ' + sameplace.length + ' more at ' + me.location,
+                  ids: [idx].concat(sameplace.map(function (s) { return s.scene_index; }))
+                });
+              }
+            }
+
+            // Two characters at most. Every principal in the scene would
+            // be a wall of buttons on a phone, and the ones worth offering
+            // are the ones that actually save taps.
+            (me.cast_required || []).map(function (ch) {
+              var withThem = all.filter(function (s) {
+                return s.scene_index !== idx && (s.cast_required || []).some(function (c) {
+                  return placeKey(c) === placeKey(ch);
+                });
+              });
+              return { ch: ch, n: withThem.length, ids: [idx].concat(withThem.map(function (s) { return s.scene_index; })) };
+            }).filter(function (g) { return g.n > 0; })
+              .sort(function (a, b) { return b.n - a.n; })
+              .slice(0, 2)
+              .forEach(function (g) {
+                groups.push({ label: '+ ' + g.n + ' more with ' + g.ch, ids: g.ids });
+              });
+
+            var scopeHtml = groups.length > 1
+              ? '<div style="font-size:12px;color:var(--text-3,#7D786E);margin-bottom:6px">Take with it</div>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">'
+                + groups.map(function (g, gi) {
+                    return '<button type="button" class="ws-move-scope" data-ids="' + g.ids.join(',') + '"'
+                      + ' style="' + btnStyle + (gi === 0 ? ';border-color:var(--gold,#D4A64A);color:var(--gold,#D4A64A)' : '') + '">'
+                      + g.label + '</button>';
+                  }).join('')
+                + '</div>'
+              : '';
+
+            row.setAttribute('data-ids', String(idx));
+            row.innerHTML =
+              '<div style="font-size:13px;color:var(--text-2,#B5AFA3);margin-bottom:8px">Moving scene '
+              + '<strong style="color:var(--gold,#D4A64A)">' + label + '</strong></div>'
+              + scopeHtml
+              // A day that does not exist yet is offered too. Someone who
+              // needs the lead's scenes on their own day should not have to
+              // regenerate the whole schedule to get one.
+              + '<div style="font-size:12px;color:var(--text-3,#7D786E);margin-bottom:6px">To which day</div>'
+              + '<div style="display:flex;flex-wrap:wrap;gap:6px">'
+              + days.map(function (d) {
+                  if (d.day === from) return '';
+                  return '<button type="button" class="ws-move-to" data-day="' + d.day + '" style="' + btnStyle + '">Day ' + d.day + '</button>';
+                }).join('')
+              + '<button type="button" class="ws-move-to" data-day="' + (days.length + 1) + '" style="' + btnStyle + ';border-color:var(--gold-deep,#8A6A2A)">+ Day ' + (days.length + 1) + '</button>'
+              + '<button type="button" class="ws-move-cancel" style="' + btnStyle + ';color:var(--text-3,#7D786E)">Cancel</button>'
+              + '</div>';
+            row.style.display = 'block';
+            return;
+          }
+
+          var scope = t.closest('.ws-move-scope');
+          if (scope) {
+            var srow = scope.closest('.ws-move-row');
+            if (!srow) return;
+            srow.setAttribute('data-ids', scope.getAttribute('data-ids'));
+            Array.prototype.forEach.call(srow.querySelectorAll('.ws-move-scope'), function (b) {
+              var on = b === scope;
+              b.style.borderColor = on ? 'var(--gold,#D4A64A)' : 'var(--line-1,#2E323A)';
+              b.style.color = on ? 'var(--gold,#D4A64A)' : 'var(--paper,#F4EFE6)';
+            });
+            return;
+          }
+
+          var to = t.closest('.ws-move-to');
+          if (to) {
+            var trow = to.closest('.ws-move-row');
+            var ids = ((trow && trow.getAttribute('data-ids')) || '').split(',')
+              .map(Number).filter(function (n) { return !isNaN(n); });
+            closeRows();
+            slateMoveScenes(ids, Number(to.getAttribute('data-day')));
+            return;
+          }
+          if (t.closest('.ws-move-cancel')) closeRows();
+        };
+
+        // A call sheet made before the last move describes a day that has
+        // changed. It is not quietly regenerated and it is not quietly
+        // dropped either — a production manager who printed day 2 an hour
+        // ago needs to be told the sheet in their hand is out of date.
+        var csOut = document.getElementById('wsCallsheetOut');
+        if (csOut && slateCallsheetOutOfDate()) {
+          csOut.innerHTML = '<div style="padding:14px 16px;border:1px solid var(--warn,#C97E3D);border-radius:8px;font-size:13px;line-height:1.6;color:var(--warn,#C97E3D)">'
+            + 'The schedule has changed since you made this call sheet, so it no longer matches. '
+            + 'Rebuild it before sending it to anyone.<br><br>'
+            + '<button type="button" class="btn-primary" id="wsRebuildCs">Rebuild from the new schedule</button>'
+            + '</div>';
+          var rb = document.getElementById('wsRebuildCs');
+          if (rb) rb.addEventListener('click', runWorkspaceCallsheet);
+        }
+
          renderProductionDetailsPanel();
       }
 
@@ -4464,6 +5092,17 @@
       // ── DOCUMENT: CALL SHEET (Design v3 layout) ──
       async function slateExportCallsheet() {
         if (!slateCallsheet) { alert('Generate a call sheet first.'); return; }
+        // The on-screen notice is not enough on its own. This button sits
+        // elsewhere on the page, and a PDF leaves the building: it gets
+        // sent to a unit, printed, and carried onto a set. A call sheet
+        // that disagrees with the schedule sends people to the wrong place
+        // at the wrong time, and there is no good reason to export one
+        // knowing it is wrong. Rebuilding is one tap.
+        if (slateCallsheetOutOfDate()) {
+          alert('This call sheet is out of date — the schedule has changed since it was made.\n\n'
+            + 'Rebuild it from the new schedule before sending it to anyone.');
+          return;
+        }
         window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};

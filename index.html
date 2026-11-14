@@ -70,11 +70,11 @@
     "jobTitle": "Film Producer and Production Manager"
   },
   "offers": [
-    { "@type": "Offer", "name": "Starter \u00b7 5 credits", "price": "4000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
+    { "@type": "Offer", "name": "Starter \u00b7 5 credits", "price": "5000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
       "priceSpecification": { "@type": "UnitPriceSpecification", "priceType": "https://schema.org/ListPrice", "price": "5000", "priceCurrency": "NGN" } },
-    { "@type": "Offer", "name": "Professional \u00b7 15 credits", "price": "10000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
+    { "@type": "Offer", "name": "Professional \u00b7 15 credits", "price": "12500", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
       "priceSpecification": { "@type": "UnitPriceSpecification", "priceType": "https://schema.org/ListPrice", "price": "12500", "priceCurrency": "NGN" } },
-    { "@type": "Offer", "name": "Studio \u00b7 40 credits", "price": "25000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
+    { "@type": "Offer", "name": "Studio \u00b7 40 credits", "price": "31000", "priceCurrency": "NGN", "url": "https://missolowo.com/app.html?auth=signup#billing",
       "priceSpecification": { "@type": "UnitPriceSpecification", "priceType": "https://schema.org/ListPrice", "price": "31000", "priceCurrency": "NGN" } }
   ]
 }
@@ -1259,42 +1259,46 @@ a { color: inherit; }
            what they pay cannot drift apart. The launch offer also ends by
            itself once the hundredth customer has paid — nobody has to
            remember to take the banner down. -->
-      <!-- ── The prices below are a STARTING STATE, not the source of truth ──
-           The script at the foot of this page replaces them with live values
-           from /.netlify/functions/pricing the moment it runs.
-
-           They are written out here because crawlers and AI summarisers do
-           not run JavaScript. With an empty grid, Google's own AI read this
-           page and reported that we "do not list the actual price per
-           credit" — so anyone asking it what Slate costs was told we would
-           not say, which reads as evasive rather than as a technical quirk.
-
-           THIS IS THE ONE PLACE A PRICE IS DUPLICATED.
-           If you change pricing, edit netlify/functions/lib/slate-pricing.js
-           AND these three cards, or a crawler will keep quoting the old
-           figure long after the page shows the new one. Visitors always see
-           the live price; only machines see this. -->
       <div id="pricingOffer">
         <span class="price__offer">Launch offer &middot; first 100 customers</span>
       </div>
-      <!-- NO PRICES IN THIS MARKUP, DELIBERATELY.
-           The script below replaces this whole grid with the live figures
-           from /pricing, which reads lib/slate-pricing.js. These cards are
-           only what shows in the moment before that answers.
+      <!-- ── THE PRICES BELOW ARE THE REGULAR ONES, AND THAT IS THE POINT ──
+           The script at the foot of this page replaces this whole grid with
+           live figures from /.netlify/functions/pricing, which reads
+           lib/slate-pricing.js. A visitor sees the launch price. Only
+           something that does not run JavaScript ever sees what is typed
+           here.
 
-           They used to carry typed prices, and those prices went stale:
-           ₦3,000 / ₦8,500 / ₦20,000 against the ₦4,000 / ₦10,000 / ₦25,000
-           we charge. Every first load flashed a cheaper price than the
-           checkout would ask for, and with JavaScript blocked it simply
-           stayed there. The pricing file's own rule is that charging less
-           than promised is recoverable and charging more is not, and a page
-           promising ₦3,000 before a ₦4,000 checkout breaks it on the
-           homepage.
-           A price nobody typed here cannot drift. If the endpoint fails,
-           the catch below says prices are in the app rather than guessing. -->
+           WHY THEY ARE HERE AT ALL. With an empty grid, three separate
+           systems read this page and concluded we do not publish pricing —
+           Google's AI reported we "do not list the actual price per
+           credit", and a competitor-analysis crawler scored us 20/100 on
+           pricing transparency. To anyone asking a machine what Slate
+           costs, that reads as evasive rather than as a technical quirk.
+
+           WHY REGULAR AND NOT LAUNCH. Typed prices lived here once and were
+           removed, correctly, because they had gone stale and sat BELOW
+           what checkout charged. This file's own rule is that charging
+           someone less than expected is recoverable and charging them more
+           is not — and a page promising less than the checkout asks breaks
+           it in the worse direction.
+
+           The regular price is the ceiling. It is the most this product
+           ever costs. A crawler quoting ₦5,000 while we charge ₦4,000
+           undersells the discount and harms nobody; the reverse would be a
+           promise we break at the till. It also becomes exactly right the
+           moment the hundredth customer pays and prices revert — which
+           happens on its own, with nobody watching.
+
+           DRIFT IS NOW A TEST FAILURE, NOT A SURPRISE. tests/pricing-probe.js
+           asserts these three cards, the JSON-LD at the top of this file and
+           lib/slate-pricing.js all agree. That is what was missing the first
+           time: the duplication was not the bug, the silence was. -->
+      <!-- These are regular prices. See above before changing one. -->
       <div class="price__grid" id="pricingGrid">
         <article class="price__card">
           <p class="price__name">Starter</p>
+          <p class="price__amount">&#8358;5,000</p>
           <p class="price__copy"><span class="price__credits">5 credits</span> &mdash;
             5 screenplays prepared for production.</p>
           <a class="btn btn--gold" href="/app.html?auth=signup#billing"
@@ -1302,6 +1306,7 @@ a { color: inherit; }
         </article>
         <article class="price__card">
           <p class="price__name">Professional</p>
+          <p class="price__amount">&#8358;12,500</p>
           <p class="price__copy"><span class="price__credits">15 credits</span> &mdash;
             15 screenplays prepared for production.</p>
           <a class="btn btn--gold" href="/app.html?auth=signup#billing"
@@ -1309,6 +1314,7 @@ a { color: inherit; }
         </article>
         <article class="price__card">
           <p class="price__name">Studio</p>
+          <p class="price__amount">&#8358;31,000</p>
           <p class="price__copy"><span class="price__credits">40 credits</span> &mdash;
             40 screenplays prepared for production.</p>
           <a class="btn btn--gold" href="/app.html?auth=signup#billing"
