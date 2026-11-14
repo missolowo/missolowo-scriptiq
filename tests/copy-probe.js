@@ -92,6 +92,43 @@ console.log('\nA failure gives them a way forward that costs them nothing');
 }
 
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+console.log('\nWe never claim Slate knows the cast’s availability');
+{
+  // The app says the opposite, above every schedule: "Slate does not know
+  // your cast's availability or when a location opens." Marketing that
+  // contradicts the product in writing costs more than the feature it
+  // oversells — a production manager who reads both trusts neither.
+  //
+  // Cast availability scheduling is a real thing we may build. Until then
+  // the filmmaker is the one adjusting and Slate keeps the documents in
+  // step while they do.
+  const overclaims = [
+    /slate (knows|tracks|understands|checks)[^.]{0,40}availabilit/i,
+    /schedules? (around|based on)[^.]{0,30}(cast|actor)[^.]{0,20}availabilit/i,
+    /automatically[^.]{0,40}(cast|actor)[^.]{0,20}availabilit/i,
+    /(cast|actor)[^.]{0,20}availabilit[^.]{0,40}automatic/i
+  ];
+  overclaims.forEach(re => {
+    ok('nothing matching ' + re.source.slice(0, 40) + '…',
+       !re.test(INDEX_SAID) && !re.test(APP_SAID));
+  });
+
+  // Matched on the half that sits inside one string literal. The banner is
+  // built by concatenation, so "Slate does not know " and "your cast's
+  // availability" live on separate source lines with quotes and a plus
+  // between them, and a regex spanning both matches nothing.
+  ok('the schedule still tells filmmakers what Slate cannot see',
+     /availability or when a location opens/i.test(APP_SAID),
+     'the honest banner is the reason the homepage claim has to stay modest');
+  ok('  ...and still tells them what to do about it',
+     /tap any scene number to move it to another day/i.test(APP_SAID));
+  ok('the homepage says the filmmaker is the one adapting',
+     /Adapt your schedule as production changes/.test(INDEX_SAID));
+  ok('  ...and that the documents follow them',
+     /cast release dates/.test(INDEX_SAID) && /call sheets/.test(INDEX_SAID));
+}
+
 console.log('\nEvery failure tells them about their money');
 {
   const src = block(APP, 'function slateSupportRef') + '\n'
