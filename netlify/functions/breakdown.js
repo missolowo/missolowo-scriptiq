@@ -381,12 +381,6 @@ Return ONLY valid JSON:
       "production_notes": "Notes, in English"
     }
   ],
-  "character_breakdown": [
-    { "character": "CHARACTER NAME", "scenes": [1], "total": 1 }
-  ],
-  "outline_schedule": [
-    { "set_location": "Location Name, in English", "scenes": [1], "total": 1 }
-  ],  
   "production_elements": {
     "all_cast": ["Character Name"],
     "all_props": ["prop item"],
@@ -401,9 +395,28 @@ Return ONLY valid JSON:
   }
 }
 RULES:
-1. character_breakdown: Sort by total scenes HIGHEST to LOWEST.
-2. outline_schedule: Group ALL scenes by location.
-3. Include EVERY scene. Empty categories use [].`;
+1. Include EVERY scene. Empty categories use [].`;
+
+    // ── Why Reports 2 and 3 are not asked for ──
+    // They used to be. The model was asked for character_breakdown and
+    // outline_schedule on every section, wrote them, we paid for the tokens
+    // — and mergeBreakdownChunks overwrote both from the scenes before
+    // anything was rendered. Not merged with, not preferred over:
+    // overwritten. Every token spent on them was deleted on arrival.
+    //
+    // Both are grouping operations over data the model has already given
+    // us. Report 2 is "which scenes is each character in", Report 3 is
+    // "which scenes happen at each location" — the old rule said so in as
+    // many words: "Group ALL scenes by location". Deriving them from the
+    // scenes is not an approximation of the model's answer, it is a better
+    // one: it cannot disagree with the scenes, because it is made of them.
+    //
+    // The same reasoning the merge already applies to scene numbers, in
+    // its own words: derive, don't ask.
+    //
+    // Writing less is also the point. Generation time is what pushes a
+    // section past the gateway, and the only way to spend less of it is to
+    // ask for less text.
 
     // ── Call OpenAI ──
     const response = await fetch('https://api.openai.com/v1/chat/completions', {

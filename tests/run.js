@@ -16,7 +16,8 @@ const PROBES = [
   'compromise-probe',  // advisories that report and never act
   'pricing-probe',     // the three copies of a price still agree
   'resume-probe',      // an interrupted breakdown carries on, charged once
-  'copy-probe'         // what we promise filmmakers, in the words they read
+  'copy-probe',        // what we promise filmmakers, in the words they read
+  'prompt-probe'       // what we pay the model for, and what we derive
 ];
 
 let total = 0, failed = 0, broken = [];

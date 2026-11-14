@@ -2351,8 +2351,20 @@
             });
             return out;
           }
-          chunk.character_breakdown = slateDedupe(chunk.character_breakdown, 'character');
-          chunk.outline_schedule = slateDedupe(chunk.outline_schedule, 'set_location');
+          // Reports 2 and 3 used to be deduped here, from what the model
+          // returned. Nothing ever read the result: both are rebuilt from
+          // merged.scenes further down, and that rebuild OVERWRITES rather
+          // than merges. So the model wrote two reports on every section of
+          // every breakdown, we paid for the tokens, and they were deleted
+          // on arrival — while the version a filmmaker actually read was
+          // derived from the scenes all along.
+          //
+          // The ask has been removed from the prompt. These two lines went
+          // with it, because dead code that looks live is how the next
+          // person concludes the model's answer matters.
+          //
+          // slateDedupe is still used — see the production elements below.
+
           // Scene numbers are LABELS, not numbers. "2.01", "47A" and "00"
           // are all valid and none survive Number(). Converting them was
           // producing NaN rows and collapsing 2.10 into 2.1.
