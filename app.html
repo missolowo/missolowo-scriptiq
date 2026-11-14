@@ -1404,7 +1404,24 @@
       // Scripts like that are not unusual in Nollywood. Sections are now
       // capped both ways, so a dense script gets MORE sections rather than
       // one that times out.
-      var SLATE_MAX_SCENES_PER_CHUNK = 6;
+      //
+      // ── Six to four, 14 Nov ──
+      // The comment above is the reason this is the right dial and
+      // CHUNK_SIZE is not: output tracks SCENE COUNT, and output is what
+      // takes the time. A section of six scenes was measured at ~45 seconds
+      // against a gateway that gives up around 30, so breakdowns were
+      // failing for every filmmaker, on any connection.
+      //
+      // Four rather than three: each step down buys time but costs the
+      // model context — it sees less of the story at once, and continuity
+      // between scenes is read across a section, not within one. Three
+      // would be safer on the clock and worse on the page.
+      //
+      // Taken together with no longer asking for Reports 2 and 3 or the
+      // nine all_* roll-ups, a section should now write roughly half what
+      // it did. That is arithmetic, not measurement — the measurement is a
+      // real breakdown on a real phone, which is the next thing to do.
+      var SLATE_MAX_SCENES_PER_CHUNK = 4;
       var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
 
       // Same guard as index.html. gtag is defined on a preview too, so
@@ -2448,42 +2465,16 @@
           // scenes up by this, never by scene_number — a script can leave a
           // scene unnumbered, or number two scenes the same, and matching on
           // the number then pulls in every other scene that shares it.         
+          // ── Only special_requirements still comes from the model ──
+          // The nine all_* lists used to be merged here from what each
+          // section returned. They are now derived from the scenes once
+          // everything is in — see below the loop. special_requirements is
+          // the one with no per-scene source: it is the model's own reading
+          // of what a production will need beyond the elements it listed,
+          // so there is nothing to derive it from and we still ask.
           const pe = chunk.production_elements || {};
-          // Cast names need the same normalisation as Report 2, or "Abake"
-          // and "ABAKE" appear as two people in the elements list while
-          // Report 2 correctly shows one.
-          (pe.all_cast || []).forEach(function (name) {
-            var clean = String(name || '').trim();
-            if (!clean) return;
-            var k = slateKey(clean);
-            if (!k) return;
-            var found = -1;
-            for (var ci = 0; ci < merged.production_elements.all_cast.length; ci++) {
-              if (slateKey(merged.production_elements.all_cast[ci]) === k) { found = ci; break; }
-            }
-            if (found >= 0) {
-              merged.production_elements.all_cast[found] = slateTitleCase(
-                slateBetterLabel(merged.production_elements.all_cast[found], clean));
-            } else {
-              merged.production_elements.all_cast.push(slateTitleCase(clean));
-            }
-          });
-          // slateMergeElements, not new Set. A Set only merges byte-identical
-          // strings, which is why ALL PROPS carried the same item twice.
-          merged.production_elements.all_props = slateMergeElements(merged.production_elements.all_props, pe.all_props);
-          merged.production_elements.all_costume = slateMergeElements(merged.production_elements.all_costume, pe.all_costume);
-          merged.production_elements.all_equipment = slateMergeElements(merged.production_elements.all_equipment, pe.all_equipment);
-          // The department lists merge exactly like the others. Listed by
-          // name rather than looped so a category added to the prompt without
-          // being added here fails loudly in review instead of silently
-          // vanishing between chunks.
-          merged.production_elements.all_stunts = slateMergeElements(merged.production_elements.all_stunts, pe.all_stunts);
-          merged.production_elements.all_vehicles = slateMergeElements(merged.production_elements.all_vehicles, pe.all_vehicles);
-          merged.production_elements.all_animals = slateMergeElements(merged.production_elements.all_animals, pe.all_animals);
-          merged.production_elements.all_special_effects = slateMergeElements(merged.production_elements.all_special_effects, pe.all_special_effects);
-          merged.production_elements.all_makeup_hair = slateMergeElements(merged.production_elements.all_makeup_hair, pe.all_makeup_hair);
           merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
-        } 
+        }
          // ── Rebuild the indexes from the assembled scenes ──
         // These were previously merged per chunk, but a chunk only ever
         // sees its own scenes, so its counts were local. That is where
@@ -2820,8 +2811,50 @@
           if (lk && slateCanonLoc[lk]) s.location = slateCanonLoc[lk];
         });
 
-        return merged; 
-      }  
+        // ── Production elements, collected from the scenes ──
+        // Every one of these lists is a roll-up of something already written
+        // on the scenes: all_props is the props across every scene, and so
+        // on for all nine. We used to ask the model to write the roll-up as
+        // well as the scenes, which cost generation time on every section —
+        // and generation time is what pushes a section past the gateway.
+        //
+        // Collected AFTER the canonical-name pass above, so the elements
+        // carry the same spelling the scenes do. That was not previously
+        // guaranteed: the roll-up was the model's and the scenes were the
+        // model's, but nothing made the two agree.
+        //
+        // slateMergeElements rather than a Set, for the reason the old code
+        // gave: a Set only merges byte-identical strings, which is how ALL
+        // PROPS carried the same item twice.
+        function slateCollectElement(field) {
+          var out = [];
+          merged.scenes.forEach(function (s) {
+            var v = s[field];
+            if (!Array.isArray(v)) v = v ? [v] : [];
+            out = slateMergeElements(out, v);
+          });
+          return out;
+        }
+        // Cast comes from Report 2 rather than from the scenes directly, so
+        // the elements list and the character breakdown cannot disagree —
+        // same names, same spellings, same people. Report 2 is already
+        // title-cased and normalised by this point.
+        merged.production_elements.all_cast =
+          (merged.character_breakdown || []).map(function (c) { return c.character; });
+        // Listed by name rather than looped, deliberately: a category added
+        // to the scene schema without being added here fails loudly in
+        // review instead of silently vanishing from the documents.
+        merged.production_elements.all_props           = slateCollectElement('props');
+        merged.production_elements.all_costume         = slateCollectElement('costume');
+        merged.production_elements.all_equipment       = slateCollectElement('equipment');
+        merged.production_elements.all_stunts          = slateCollectElement('stunts');
+        merged.production_elements.all_vehicles        = slateCollectElement('vehicles');
+        merged.production_elements.all_animals         = slateCollectElement('animals');
+        merged.production_elements.all_special_effects = slateCollectElement('special_effects');
+        merged.production_elements.all_makeup_hair     = slateCollectElement('makeup_hair');
+
+        return merged;
+      }
 
       function wsProgress(pct, label) {
         var wrap = document.getElementById('wsProgressWrap');

@@ -190,8 +190,24 @@ exports.handler = async function(event) {
       // only charged when the LAST section finishes, so abandoned runs cost
       // us AI calls and charge nothing.
       //
-      // Twenty is invisible to a filmmaker and immediate to a script.
-      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 20, verifiedUserId || null);
+      // ── Twenty was not invisible to a filmmaker. Eighty is. ──
+      // The old comment claimed twenty an hour was invisible. It was not,
+      // and the arithmetic was never done: one section is one request, and
+      // a feature screenplay is twenty to thirty sections. A producer
+      // breaking down one film could exhaust an hour's allowance inside a
+      // single run and be told to come back later, mid-breakdown, having
+      // paid nothing and received nothing.
+      //
+      // Capping scenes per section at four makes that worse, because it
+      // makes sections more numerous. So this moves with it.
+      //
+      // Eighty still protects what the limit is for: the credit is charged
+      // only when the last section finishes, so an abandoned run costs us
+      // AI calls and charges nothing, and this is what stops someone
+      // scripting that in a loop. Eighty is roughly two feature screenplays
+      // an hour — more than any real filmmaker does, and far short of what
+      // an attacker needs to hurt us.
+      const rateLimit = await checkRateLimit(supabase, clientIP, 'breakdown', 80, verifiedUserId || null);
       if (!rateLimit.allowed) {
         return {
           statusCode: 429, headers,
@@ -382,16 +398,7 @@ Return ONLY valid JSON:
     }
   ],
   "production_elements": {
-    "all_cast": ["Character Name"],
-    "all_props": ["prop item"],
-    "all_costume": ["costume item"],
-    "all_equipment": ["equipment item"],
-    "all_stunts": ["stunt or fight"],
-    "all_vehicles": ["vehicle"],
-    "all_animals": ["animal"],
-    "all_special_effects": ["practical effect"],
-    "all_makeup_hair": ["special makeup or hair"],
-    "special_requirements": []
+    "special_requirements": ["anything this section needs beyond the items already listed on its scenes, in English"]
   }
 }
 RULES:
@@ -417,6 +424,24 @@ RULES:
     // Writing less is also the point. Generation time is what pushes a
     // section past the gateway, and the only way to spend less of it is to
     // ask for less text.
+    //
+    // ── And why the nine all_* lists are not asked for either ──
+    // Same reasoning, applied once we had checked it. all_props is the
+    // props across the scenes, all_vehicles the vehicles across the scenes,
+    // and so on for all nine — every one is a roll-up of something the
+    // model has already written on the scene it belongs to. Asking for the
+    // roll-up as well means writing every element twice.
+    //
+    // Deriving them also makes them agree with the scenes, which was never
+    // guaranteed before: the roll-up was one answer from the model and the
+    // scenes were another, and nothing reconciled them. A prop could sit in
+    // ALL PROPS and appear on no scene, or sit on a scene and be missing
+    // from the list a buyer works from.
+    //
+    // special_requirements is the exception and is still asked for. It has
+    // no per-scene source — it is the model's reading of what a section
+    // needs beyond the items it listed — so there is nothing to derive it
+    // from.
 
     // ── Call OpenAI ──
     const response = await fetch('https://api.openai.com/v1/chat/completions', {

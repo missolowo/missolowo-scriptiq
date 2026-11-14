@@ -101,15 +101,61 @@ ok('nothing dedupes a report the model no longer sends',
 ok('  ...but slateDedupe itself still exists for the production elements',
    /function slateDedupe/.test(APP));
 
+// ══════════════════════════════════════════════
+// The nine roll-ups. Each is "this element across all the scenes", and the
+// model was writing every element twice: once on its scene, once in the
+// roll-up. Now collected from the scenes after the merge.
+//
+// The pairing below is the point. A derived list is only as good as the
+// per-scene field it is collected from — so for every all_* we check BOTH
+// that we stopped asking for it AND that its source still exists on the
+// scene schema. Drop `props` from the scene and ALL PROPS silently becomes
+// an empty list on every document a buyer works from.
+console.log('\nEvery roll-up is collected from a field we still ask for');
+const ROLLUPS = [
+  ['all_props', 'props'],
+  ['all_costume', 'costume'],
+  ['all_equipment', 'equipment'],
+  ['all_stunts', 'stunts'],
+  ['all_vehicles', 'vehicles'],
+  ['all_animals', 'animals'],
+  ['all_special_effects', 'special_effects'],
+  ['all_makeup_hair', 'makeup_hair']
+];
+ROLLUPS.forEach(([rollup, field]) => {
+  ok(rollup + ' is no longer requested', !new RegExp('"' + rollup + '"').test(SCHEMA));
+  ok('  ...its source "' + field + '" is still on every scene',
+     new RegExp('"' + field + '":').test(SCHEMA),
+     'without this the derived list is silently empty');
+  ok('  ...and it is collected from exactly that field',
+     new RegExp('all_' + field.replace(/_/g, '_') + '\\s*=\\s*slateCollectElement\\(\'' + field + '\'\\)')
+       .test(mergeSrc) ||
+     new RegExp(rollup + '\\s*=\\s*slateCollectElement\\(\'' + field + '\'\\)').test(mergeSrc));
+});
+
+console.log('\nCast is taken from Report 2, so the two cannot disagree');
+ok('all_cast comes from the character breakdown',
+   /all_cast\s*=\s*\(merged\.character_breakdown \|\| \[\]\)\.map/.test(mergeSrc),
+   'not re-derived separately, or the elements list and Report 2 can drift');
+ok('all_cast is NOT requested from the model', !/"all_cast"/.test(SCHEMA));
+
 console.log('\nWhat we still DO ask for, deliberately');
-// production_elements is derivable too — every all_* array has a per-scene
-// source. It is still requested because, unlike Reports 2 and 3, the merge
-// genuinely uses what comes back. Changing that is a separate decision with
-// a real quality question attached, not a free win.
-ok('production elements are still requested', /"production_elements"/.test(SCHEMA));
-ok('  ...and the merge genuinely reads them',
-   /chunk\.production_elements/.test(APP),
-   'this is the difference between this and Reports 2 and 3');
+// special_requirements is the one element list with no per-scene source.
+// It is the model's reading of what a section needs beyond the items it
+// listed, so there is nothing to collect it from.
+ok('special_requirements is still requested', /"special_requirements"/.test(SCHEMA));
+ok('  ...and the merge still reads it from each section',
+   /merged\.production_elements\.special_requirements = slateMergeElements/.test(mergeSrc));
+ok('  ...and nothing tries to derive it', !/slateCollectElement\('special_requirements'\)/.test(mergeSrc));
+
+console.log('\nThe dials that decide how much a section writes');
+ok('at most 4 scenes per section', /SLATE_MAX_SCENES_PER_CHUNK = 4\b/.test(APP),
+   'output tracks scene count, which is what pushes a section past the gateway');
+ok('the rate limit allows a feature screenplay in one sitting',
+   /'breakdown', 80,/.test(BD),
+   'one section is one request; 20 could not finish one film');
+ok('  ...and the scene cap is still enforced in the splitter',
+   /SLATE_MAX_SCENES_PER_CHUNK/.test(APP.replace(/SLATE_MAX_SCENES_PER_CHUNK = 4/, '')));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
