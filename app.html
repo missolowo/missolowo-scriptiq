@@ -27,6 +27,28 @@
     gtag('js', new Date());
     gtag('config', 'G-G1F83JSDLX');
   }
+
+  /* ONE tracker for the whole page, defined here because this is the only
+     block every other block can see. There were two — one per script block,
+     each private to its own IIFE — and the auth code sat in a third block
+     that could reach neither. That is why signup and login reported nothing
+     for months: not a decision, an accident of scope.
+
+     Analytics must never interrupt the product, hence the swallow. The
+     preview guard lives here as well as above, because gtag is defined on a
+     deploy preview too and every test run would otherwise land in the
+     production property.
+
+     WHAT NEVER GOES IN params: an email address, a name, a script title, a
+     line of a screenplay, a payment reference. Counts, durations and fixed
+     category words only — the same rule ops-metrics keeps. A funnel is
+     built from how many, not from who. */
+  window.siqTrack = function (name, params) {
+    try {
+      if (siqIsPreview) return;
+      if (typeof gtag === 'function') gtag('event', name, params || {});
+    } catch (e) { /* swallow */ }
+  };
 </script>
 
 <script>
@@ -926,6 +948,9 @@
       window.openAuthModal = function(tab) {
         document.getElementById('authOverlay').classList.add('open');
         switchAuthTab(tab || 'login');
+        // The top of the funnel we can actually see. Everything before this
+        // is a pageview; everything after it used to be silence.
+        if (window.siqTrack) window.siqTrack('auth_opened', { tab: tab || 'login' });
       };
       window.closeAuthModal = function() {
         document.getElementById('authOverlay').classList.remove('open');
@@ -1113,6 +1138,29 @@
         });
       }
 
+      // An auth failure, reduced to a category we can count.
+      //
+      // The message itself NEVER goes to analytics: it can carry the address
+      // someone typed, and an error field is exactly where a typo'd email
+      // ends up. A fixed word from this list goes instead, and anything
+      // unrecognised is 'other' rather than a passthrough.
+      //
+      // 'password_rule' is the one to watch. The signup form answers a
+      // rejected password with "8+ characters with uppercase, lowercase, and
+      // a number", and if that is where filmmakers are stopping, this is the
+      // line that will say so.
+      function slateAuthFailReason(msg) {
+        var m = String(msg || '').toLowerCase();
+        if (/already registered|already exists|user already/.test(m)) return 'email_taken';
+        if (/invalid login|invalid email or password|credentials/.test(m)) return 'wrong_credentials';
+        if (/password/.test(m)
+            && /(least|character|upper|lower|number|weak|short|8)/.test(m)) return 'password_rule';
+        if (/email/.test(m) && /(invalid|valid|format)/.test(m)) return 'email_invalid';
+        if (/rate|too many/.test(m)) return 'rate_limited';
+        if (/confirm/.test(m)) return 'needs_confirmation';
+        return 'other';
+      }
+
       window.handleSignupInline = function() {
         var name = document.getElementById('signupName2').value.trim();
         var email = document.getElementById('signupEmail2').value.trim();
@@ -1122,7 +1170,12 @@
         var errEl = document.getElementById('signupError2');
         var btn = document.getElementById('signupSubmitBtn');
         errEl.textContent = '';
-        if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+        if (!email || !password) {
+          errEl.textContent = 'Please fill in all fields.';
+          if (window.siqTrack) window.siqTrack('signup_failed', { reason: 'missing_fields' });
+          return;
+        }
+        if (window.siqTrack) window.siqTrack('signup_submitted', {});
         btn.textContent = 'Creating account…';
         btn.disabled = true;
         window.slateJustSignedUp = true;
@@ -1135,7 +1188,12 @@
         .then(function(result) {
           var res = result.res, data = result.data;
           if (!res.ok || data.error || data.error_code || data.msg) {
-            errEl.textContent = data.msg || (data.error && data.error.message) || 'Signup failed. Password must be 8+ characters with uppercase, lowercase, and a number.';
+            var slateWhy = data.msg || (data.error && data.error.message) || '';
+            errEl.textContent = slateWhy || 'Signup failed. Password must be 8+ characters with uppercase, lowercase, and a number.';
+            // No message was returned, so the default above is what she read
+            // — and that default is the password rule. Count it as such.
+            if (window.siqTrack) window.siqTrack('signup_failed',
+              { reason: slateWhy ? slateAuthFailReason(slateWhy) : 'password_rule' });
             btn.textContent = 'Create Free Account';
             btn.disabled = false;
             return;
@@ -1144,16 +1202,22 @@
           var userId = data.user ? data.user.id : (data.id || null);
           if (!token || !userId) {
             errEl.textContent = 'Account created — please sign in.';
+            // The account exists but she has to sign in again. Counted apart
+            // from a clean signup: it is a step she did not expect, and a
+            // place people give up without any error being shown.
+            if (window.siqTrack) window.siqTrack('signup_completed', { then: 'must_sign_in' });
             btn.textContent = 'Create Free Account';
             btn.disabled = false;
             switchAuthTab('login');
             return;
           }
+          if (window.siqTrack) window.siqTrack('signup_completed', { then: 'signed_in' });
           fetchProfileAndFinish(token, userId, email, data.refresh_token
             || (data.session && data.session.refresh_token));
         })
         .catch(function() {
           errEl.textContent = 'Signup failed. Please try again.';
+          if (window.siqTrack) window.siqTrack('signup_failed', { reason: 'network' });
           btn.textContent = 'Create Free Account';
           btn.disabled = false;
         });
@@ -1165,7 +1229,11 @@
         var errEl = document.getElementById('loginError2');
         var btn = document.getElementById('loginSubmitBtn');
         errEl.textContent = '';
-        if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+        if (!email || !password) {
+          errEl.textContent = 'Please fill in all fields.';
+          if (window.siqTrack) window.siqTrack('login_failed', { reason: 'missing_fields' });
+          return;
+        }
         btn.textContent = 'Signing in…';
         btn.disabled = true;
         fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
@@ -1177,7 +1245,10 @@
         .then(function(result) {
           var res = result.res, data = result.data;
           if (!res.ok || data.error) {
-            errEl.textContent = (data.error_description || data.msg || (data.error && data.error.message) || 'Invalid email or password.');
+            var slateWhy = data.error_description || data.msg || (data.error && data.error.message) || '';
+            errEl.textContent = slateWhy || 'Invalid email or password.';
+            if (window.siqTrack) window.siqTrack('login_failed',
+              { reason: slateWhy ? slateAuthFailReason(slateWhy) : 'wrong_credentials' });
             btn.textContent = 'Sign In';
             btn.disabled = false;
             return;
@@ -1186,15 +1257,18 @@
           var userId = data.user ? data.user.id : null;
           if (!token || !userId) {
             errEl.textContent = 'Sign in failed. Please try again.';
+            if (window.siqTrack) window.siqTrack('login_failed', { reason: 'no_session' });
             btn.textContent = 'Sign In';
             btn.disabled = false;
             return;
           }
+          if (window.siqTrack) window.siqTrack('login_completed', {});
           fetchProfileAndFinish(token, userId, email, data.refresh_token
             || (data.session && data.session.refresh_token));
         })
         .catch(function() {
           errEl.textContent = 'Sign in failed. Please try again.';
+          if (window.siqTrack) window.siqTrack('login_failed', { reason: 'network' });
           btn.textContent = 'Sign In';
           btn.disabled = false;
         });
@@ -1340,12 +1414,30 @@
           var sizeKb = Math.round(file.size / 1024);
           fileMeta.textContent = sizeKb + ' KB · ' + text.length.toLocaleString() + ' characters — ready';
           generateBtn.classList.add('ready');
-          renderHealthPanel(text); 
+          renderHealthPanel(text);
+          // A screenplay is in the box. The format and a rounded length, and
+          // nothing else — never the filename, which is often the title, and
+          // never a character of the script.
+          if (window.siqTrack) window.siqTrack('script_provided', {
+            format: lowerName.replace(/^.*\./, ''),
+            length_band: text.length < 20000 ? 'under_20k'
+                       : text.length < 60000 ? '20k_60k'
+                       : text.length < 120000 ? '60k_120k' : 'over_120k'
+          });
         } catch (err) {
           extractedScriptText = '';
           fileMeta.classList.add('error');
           fileMeta.textContent = err.message || 'Could not read this file. Please try again.';
           generateBtn.classList.remove('ready');
+          // Someone chose a file and got nothing. Until now this was the
+          // quietest failure in the product: no document, no error reported
+          // anywhere, and a filmmaker with no reason to tell us.
+          if (window.siqTrack) window.siqTrack('script_rejected', {
+            format: lowerName.replace(/^.*\./, '').slice(0, 12),
+            reason: /Unsupported format/.test(err.message || '') ? 'unsupported_format'
+                  : /very little readable text/.test(err.message || '') ? 'no_readable_text'
+                  : 'could_not_read'
+          });
         }
       }
 
@@ -1358,12 +1450,24 @@
       var ADMIN_EMAILS_UPLOAD = ['missolowoai@gmail.com', 'omoyeni38@gmail.com'];
 
       generateBtn.addEventListener('click', function() {
-        if (!extractedScriptText) return;
+        // Three ways this button does nothing, and until now all three were
+        // invisible. Someone who clicks Generate has decided to use the
+        // product; a click that goes nowhere is the most expensive thing
+        // that can happen on this page.
+        if (!extractedScriptText) {
+          if (window.siqTrack) window.siqTrack('breakdown_blocked', { reason: 'no_script' });
+          return;
+        }
          var user = getCurrentUser();
-        if (!user) { openAuthModal('login'); return; }
+        if (!user) {
+          if (window.siqTrack) window.siqTrack('breakdown_blocked', { reason: 'not_signed_in' });
+          openAuthModal('login');
+          return;
+        }
         var isAdmin = user.role === 'admin' || ADMIN_EMAILS_UPLOAD.indexOf(user.email) !== -1;
         var hasCredits = isAdmin || (user.credits_remaining || 0) > 0;
         if (!hasCredits) {
+          if (window.siqTrack) window.siqTrack('breakdown_blocked', { reason: 'no_credits' });
           creditWarning.classList.add('active');
           return;
         }
@@ -1424,16 +1528,11 @@
       var SLATE_MAX_SCENES_PER_CHUNK = 4;
       var slateBreakdown = null; // completed breakdown (schedule wiring reads this next phase)
 
-      // Same guard as index.html. gtag is defined on a preview too, so
-      // testing for it alone would send every deploy-preview run into
-      // production analytics; siqIsPreview is what actually keeps them out.
-      // Analytics must never interrupt the product, hence the swallow.
-      function siqTrack(name, params) {
-        try {
-          if (typeof siqIsPreview !== 'undefined' && siqIsPreview) return;
-          if (typeof gtag === 'function') gtag('event', name, params || {});
-        } catch (e) {}
-      }
+      // siqTrack is window.siqTrack, defined once in the head block. It used
+      // to be redefined here, privately to this IIFE, which is why the auth
+      // code in the block above could not reach it and the whole signup and
+      // login funnel went unreported. The twenty-one calls below are
+      // unchanged and now resolve to the one definition.
       // Is this front-matter line something other than the title?
       // Title pages open with dates, drafts, page numbers, credits and
       // contact details far more often than with the title itself.
