@@ -21,7 +21,8 @@ const PROBES = [
   'merge-probe',       // the merge actually run: are the derived lists right
   'numbering-probe',   // what the # means, and whether we say so
   'cast-probe',        // who is one person, who is two, who is not a person
-  'korean-probe'       // a heading with no INT/EXT word in it at all
+  'korean-probe',      // a heading with no INT/EXT word in it at all
+  'funnel-probe'       // where the 233 who did not get a breakdown went
 ];
 
 let total = 0, failed = 0, broken = [];
@@ -51,4 +52,5 @@ if (broken.length) console.log('failing: ' + broken.join(', '));
 console.log('\nBrowser checks (need playwright):');
 console.log('  node tests/page-load.js        every page loads');
 console.log('  node tests/resume-browser.js   the resume offer at phone width');
+console.log('  node tests/funnel-browser.js   the funnel events actually fire');
 process.exit(failed ? 1 : 0);

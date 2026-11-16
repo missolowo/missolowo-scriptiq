@@ -52,6 +52,7 @@ The others read source text and need nothing.
 | `numbering-probe` | `#11` and `11` appear in one report with nothing to say they are different scenes. |
 | `cast-probe` | Two performers are merged into one call-sheet row, or a voice credit is billed as a second actor. |
 | `korean-probe` | The panel tells a Korean filmmaker we cannot read their screenplay while the splitter reads it fine. |
+| `funnel-probe` | The steps before a breakdown go silent again, or an event carries somebody's email address. |
 
 ## Things worth knowing before you change them
 
@@ -67,6 +68,20 @@ nobody was charged for the failures on launch day. If you move that, expect
 soon as it ran — once a function referencing a variable that existed only
 inside another function, once a value used before it was declared. Both were
 caught by running the code. Run the probes.
+
+**A window measured in characters fails whenever something above it grows.**
+`resume-probe` sliced 1400 characters after the Generate handler and broke
+three times on 16 November because three analytics calls were added inside
+that handler — the code correct every time. `numbering-probe` had the same
+failure on Report 2. Bound a slice by the next landmark, not by a count.
+
+**An analytics call is the easiest thing here to delete by accident.**
+Nothing breaks, nothing fails, and no filmmaker complains — the funnel just
+goes quiet and nobody notices for a month. That is not hypothetical:
+app.html carried eighteen `siqTrack` calls and no GA4 tag, so `typeof gtag`
+was never `'function'` and every one was dropped by its own guard.
+`funnel-probe` asserts the calls exist; `funnel-browser.js` proves they
+arrive.
 
 **Before any change to scene-heading detection, run it against real
 screenplays.** `node tests/ab-real-scripts.js production script.txt ...`

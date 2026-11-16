@@ -295,8 +295,14 @@ ok('  ...and says nothing is processed twice',
 
 // The uploader has to find the record on its own, because a filmmaker who
 // comes back the next day uploads the file rather than pressing Continue.
-const btnSrc = APP.slice(APP.indexOf("generateBtn.addEventListener('click'"),
-                         APP.indexOf("generateBtn.addEventListener('click'") + 1400);
+// Bounded by where the handler ENDS, not by a character count. It was
+// +1400, and on 16 November adding three analytics calls inside the handler
+// pushed the resume logic past that line — three failures, with the code
+// correct every time. A window measured in characters fails whenever
+// something above it grows. Same mistake, and same fix, as numbering-probe.
+const btnStart = APP.indexOf("generateBtn.addEventListener('click'");
+const btnEnd = APP.indexOf('WORKSPACE BREAKDOWN ENGINE', btnStart);
+const btnSrc = APP.slice(btnStart, btnEnd > btnStart ? btnEnd : btnStart + 4000);
 ok('pressing Start on the same screenplay picks up the resume point',
    /rec\.fingerprint === slateScriptFingerprint\(extractedScriptText\)/.test(btnSrc));
 ok('  ...only when something was actually finished',
