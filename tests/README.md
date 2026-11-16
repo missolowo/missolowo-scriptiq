@@ -68,6 +68,16 @@ soon as it ran — once a function referencing a variable that existed only
 inside another function, once a value used before it was declared. Both were
 caught by running the code. Run the probes.
 
+**Before any change to scene-heading detection, run it against real
+screenplays.** `node tests/ab-real-scripts.js production script.txt ...`
+prints every field that changed between the deployed code and the working
+copy. On 16 November a change passed all 442 assertions and still read LORI
+NKAN MI as 53 scenes instead of 47, dropping it from green to amber, because
+every fixture in the suite put the scene number on the heading line and
+Nollywood scripts put it on a line of its own. No assertion was wrong. The
+suite had never seen the shape. Fixtures cover what someone thought of;
+real scripts cover what nobody did.
+
 **Scene-heading detection is a PAIR, and the pair is the bug.** The health
 panel and the splitter read headings through different regexes. Twice now
 one has been taught a new format and the other has not — Turkish, then

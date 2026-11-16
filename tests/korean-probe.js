@@ -139,6 +139,38 @@ Ada joko.
 
 Ojo n ro.`;
 
+// The shape the whole suite was missing, and the reason branch B nearly
+// shipped broken. LORI NKAN MI, IRIRI and most Nollywood scripts put the
+// scene number on a line of its OWN, with the heading beneath it — and
+// without the period after EXT that a Western script would have.
+//
+// As one regex with an alternation, branch B matched "Scene 1" and branch A
+// matched "EXT DAY COMPOUND", so each scene was counted twice. Three scenes
+// read as six. The suite passed anyway, because every other fixture in it
+// carries its number ON the heading line.
+const NOLLYWOOD = `Scene 1
+EXT DAY COMPOUND
+A ri Adahunse ti o duro.
+
+Scene 2
+EXT DAY MARKET
+Ojo n ro.
+
+Scene 3
+INT NIGHT ILE ADA
+Ada joko.`;
+
+// And the variant with no heading line at all — the writer numbers the
+// scene and goes straight into the action.
+const NOLLYWOOD_BARE = `Scene 1
+A ri Adahunse ti o duro ni compound.
+
+Scene 2
+Ojo n ro ni oja.
+
+Scene 3
+Ada joko ninu ile.`;
+
 // ══════════════════════════════════════════════════
 console.log('\nA Korean script is a script');
 {
@@ -159,10 +191,21 @@ console.log('\nA Japanese script is a script');
 }
 
 // ══════════════════════════════════════════════════
+console.log('\nA number on its own line, with the heading beneath it, is ONE scene');
+{
+  const r = check(NOLLYWOOD);
+  ok('three scenes, not six', r.sceneCount === 3, 'sceneCount ' + r.sceneCount);
+  ok('  ...and it stays green', r.band === 'green', r.band + ' / score ' + r.score);
+  const b = check(NOLLYWOOD_BARE);
+  ok('and with no heading line at all, still three',
+     b.sceneCount === 3, 'sceneCount ' + b.sceneCount);
+}
+
 console.log('\nThe panel and the splitter agree — this is the real invariant');
 [['Korean', KOREAN], ['Japanese', JAPANESE], ['English', ENGLISH],
  ['English numbered', ENGLISH_NUMBERED], ['Russian', RUSSIAN],
- ['Turkish', TURKISH], ['Yoruba', YORUBA]].forEach(([name, text]) => {
+ ['Turkish', TURKISH], ['Yoruba', YORUBA],
+ ['Nollywood', NOLLYWOOD], ['Nollywood bare', NOLLYWOOD_BARE]].forEach(([name, text]) => {
   const panel = check(text).sceneCount;
   const splitter = count(text).total;
   ok(name + ': panel ' + panel + ' = splitter ' + splitter, panel === splitter,
@@ -261,9 +304,16 @@ console.log('\nThe vocabulary is where both halves can see it');
 {
   ok('S# is in SLATE_NUM', /S#/.test(stmt('var SLATE_NUM  =')), stmt('var SLATE_NUM  ='));
   ok('  ...and the written-out Korean forms', /씬/.test(stmt('var SLATE_NUM  =')));
-  ok('headingRe has the number-only branch',
-     /\|\(\?:\^\|\\\\s\)\(\?:' \+ SLATE_NUM \+ '\)/.test(block('function slateHealthCheck')),
-     'without branch B, headingRe needs an INT/EXT word that Korean does not have');
+  const HC = block('function slateHealthCheck');
+  ok('the two branches are separate regexes, not one alternation',
+     /var headingReA = new RegExp/.test(HC) && /var headingReB = new RegExp/.test(HC),
+     'as one regex, both matched the same Nollywood scene and counted it twice');
+  ok('  ...and B is tried only when A found nothing',
+     HC.indexOf('slateReadHeadings(headingReA') < HC.indexOf('slateReadHeadings(headingReB'),
+     'a script with any INT/EXT heading must read exactly as it did before');
+  ok('  ...and B is anchored to the line start',
+     /var headingReB = new RegExp\(\s*'\^\[ \\\\t\]\*/.test(HC),
+     'unanchored, "back in scene 12 he says" becomes a scene heading');
   ok('and so does withNum, inside slateCountScenes',
      (block('function slateCountScenes').match(/SLATE_NUM/g) || []).length >= 3,
      'numOnly, branch A and branch B each reference it');
