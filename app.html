@@ -2014,6 +2014,29 @@
           .trim();
       } 
   
+      // ── Cast names specifically ──
+      // slateKey also keys LOCATIONS, so voice handling cannot live in it:
+      // a set called "Voice Studio" is not the set called "Studio".
+      //
+      // A voice credit is the same actor. A script writes GIRL (V.O.) and
+      // the model returns it variously as "Girl (V.O.)", "Girl Voice" or
+      // "Voice of Girl" — slateKey catches only the parenthesised form, so
+      // a real character report carried "Girl" with two scenes and "Girl
+      // Voice" with one, as two people with two cast numbers.
+      //
+      // Only stripped when something is left behind: a character actually
+      // called VOICE keeps its name rather than being keyed to nothing.
+      function slateCastKey(name) {
+        var k = slateKey(name);
+        if (!k) return k;
+        var stripped = k
+          .replace(/^VOICE\s+(?:OF|OVER)\s+/, '')
+          .replace(/\s+VOICE$/, '')
+          .replace(/\s+VOICE\s+OVER$/, '')
+          .trim();
+        return stripped || k;
+      }
+
       // ── Element lists (props, costume, equipment, requirements) ──
       // The cast list is deduped by slateKey; these four were on a raw Set,
       // so only byte-identical strings merged. "Ghana must go bag" and
@@ -2701,7 +2724,9 @@
           (s.cast || []).forEach(function (c) {
             var name = String(c || '').trim();
             if (!name) return;
-            var k = slateKey(name);
+            // slateCastKey, not slateKey: a voice credit is the same actor
+            // and must not open a second row with a second cast number.
+            var k = slateCastKey(name);
             if (!k) return;
             // This walk is already in script order, so the first time a name
             // appears IS their first appearance. Recorded for the cast
@@ -2787,7 +2812,9 @@
         // The maps above already hold the cleanest spelling of each name;
         // this applies it back to the scenes the crew actually reads.
         var slateCanonCast = {}, slateCanonLoc = {};
-        merged.character_breakdown.forEach(function (c) { slateCanonCast[slateKey(c.character)] = c.character; });
+        // Keyed the same way charMap was, or the two disagree and a scene
+        // keeps a spelling the report has already merged away.
+        merged.character_breakdown.forEach(function (c) { slateCanonCast[slateCastKey(c.character)] = c.character; });
         // The unplaced group is not a place, so it must not become the
         // canonical spelling of anything.
         merged.outline_schedule.forEach(function (l) {
@@ -2798,10 +2825,10 @@
           if (Array.isArray(s.cast)) {
             var seen = {};
             s.cast = s.cast.map(function (c) {
-              var k = slateKey(c);
+              var k = slateCastKey(c);
               return slateCanonCast[k] || c;
             }).filter(function (n) {
-              var k = slateKey(n);
+              var k = slateCastKey(n);
               if (!k || seen[k]) return false;
               seen[k] = true;
               return true;
@@ -2920,6 +2947,73 @@
              + 'the script removes the ambiguity.';
       }
 
+      // ── Cast entries worth a second look ──
+      // Two faults in a real character report that normalisation must NOT
+      // fix by itself:
+      //
+      // "Paul" with one scene sat beneath "Ben Paul" with thirteen. Almost
+      // certainly one man. But "Paul" and "Ben Paul" CAN be two characters,
+      // and nothing in the data settles it. Merging them wrongly puts two
+      // actors on one call sheet row with one call time, which is worse
+      // than the duplicate — so this reports and never acts.
+      //
+      // "All The Guys" is a stage direction the model read as a person, and
+      // it now holds a cast number. A cast number is what a call sheet
+      // calls. Left in place, flagged: the scene genuinely does have a
+      // crowd in it, and silently deleting a line from a breakdown is how
+      // somebody discovers on the day that their extras were never booked.
+      var SLATE_GROUP_CAST = /^(?:ALL|BOTH|EVERYONE|EVERYBODY|OTHERS|THE\s+REST|CROWD|GROUP|GUESTS|VILLAGERS|STUDENTS|CHILDREN|PASSENGERS|CUSTOMERS|MOURNERS|DANCERS|CONGREGATION|ALL\s+THE\s+\w+|THE\s+\w+S)$/;
+
+      function slateCastReview(characters) {
+        var list = (characters || []).filter(function (c) { return c && c.character; });
+        var groups = [], pairs = [];
+
+        list.forEach(function (c) {
+          if (SLATE_GROUP_CAST.test(slateKey(c.character))) groups.push(c.character);
+        });
+
+        // One name wholly inside another, on a word boundary. "Paul" inside
+        // "Ben Paul" counts; "Ada" inside "Adaeze" does not, because that is
+        // a different name rather than a shortening.
+        list.forEach(function (a) {
+          list.forEach(function (b) {
+            if (a === b) return;
+            var ka = slateKey(a.character), kb = slateKey(b.character);
+            if (!ka || !kb || ka.length >= kb.length) return;
+            var words = kb.split(' ');
+            if (words.length < 2) return;
+            if (words.indexOf(ka) < 0) return;
+            pairs.push({ shorter: a.character, longer: b.character,
+                         shortTotal: a.total || (a.scenes || []).length,
+                         longTotal: b.total || (b.scenes || []).length });
+          });
+        });
+
+        if (!groups.length && !pairs.length) return null;
+        return { groups: groups, pairs: pairs };
+      }
+
+      function slateCastReviewHtml(characters) {
+        var r = slateCastReview(characters);
+        if (!r) return '';
+        var bits = [];
+        r.pairs.forEach(function (p) {
+          bits.push('<strong>' + p.shorter + '</strong> (' + p.shortTotal + ' scene'
+            + (p.shortTotal === 1 ? '' : 's') + ') and <strong>' + p.longer + '</strong> ('
+            + p.longTotal + ') may be the same person.');
+        });
+        r.groups.forEach(function (g) {
+          bits.push('<strong>' + g + '</strong> reads as a group rather than one performer — '
+            + 'it holds a cast number, and cast numbers are what a call sheet calls.');
+        });
+        return '<div style="margin-top:10px;padding:10px 14px;border:1px solid var(--line-1,#2E323A);'
+          + 'border-radius:6px;font-size:12px;line-height:1.5;color:var(--text-2,#B5AFA3)">'
+          + '<strong style="color:var(--paper,#F4EFE6)">Worth a second look.</strong> '
+          + bits.join(' ')
+          + ' We have left them as they are — merging two performers into one row would be the '
+          + 'worse mistake.</div>';
+      }
+
       function slateNumberingNoteHtml(scenes) {
         var note = slateNumberingNote(scenes);
         if (!note) return '';
@@ -3004,6 +3098,7 @@
           }).join('') + '</div>';
         // Under the report rather than above it: a reader meets the numbers
         // first and the explanation when they need it.
+        html += slateCastReviewHtml(chars);
         html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
