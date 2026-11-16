@@ -41,6 +41,10 @@ const SRC = [
   line("var SLATE_NO_LOCATION_KEY ="),
   block('function slateCleanSceneNumber'),
   block('function slateKey'),
+  // Added 16 Nov when the merge started keying cast through its own
+  // function. The harness threw rather than silently testing a stale copy,
+  // which is the whole reason these extract by name.
+  block('function slateCastKey'),
   block('function slateElementKey'),
   block('function slateMergeElements'),
   block('function slateIsPlaceholderLocation'),
