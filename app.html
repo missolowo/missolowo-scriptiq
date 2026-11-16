@@ -5952,13 +5952,40 @@
         // could not read their screenplay. That is the Turkish bug again,
         // described in the comment on slateHeadingSrc, and it has been live.
         //
-        // Branch B's number lands in group 3, so the number is m[1] || m[3].
-        var headingRe = new RegExp(
+        // The two branches are SEPARATE regexes, tried one after the other,
+        // and never both on one script. A script either writes INT/EXT or it
+        // does not, and that is a property of the whole screenplay rather
+        // than of a line.
+        //
+        // They were one regex with an alternation first, and that was wrong
+        // in a way the whole test suite missed. LORI NKAN MI writes:
+        //
+        //     Scene 1
+        //     EXT DAY ÌDÍ ỌÀ GÁN
+        //
+        // Branch B matched the number line and branch A matched the heading,
+        // so a 47-scene script read as 53 scenes and fell from green to
+        // amber, and IRIRI reported three duplicate scene numbers where it
+        // has one. Every fixture in the suite carried its number ON the
+        // heading line; Nollywood scripts mostly do not. Caught by running
+        // the old code against the new one on the real screenplays, which is
+        // the check that should have come first.
+        //
+        // Cascading instead means a script that works today is untouched:
+        // if there is a single INT/EXT heading anywhere, branch B never
+        // runs. Korean and Japanese scripts have none, so it carries them.
+        // Same shape as the Layer 2 → Layer 1 cascade just below.
+        var headingReA = new RegExp(
           '(?:^|\\s)(?:(?:' + SLATE_NUM + ')[ \\t]*)?'
           + '([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \\t]*'
           + '(' + SLATE_HEAD + ')'
-          + '(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s\\/]*'
-          + '|(?:^|\\s)(?:' + SLATE_NUM + ')[ \\t]*([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)[.):]?', 'gi');
+          + '(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s\\/]*', 'gi');
+        // Anchored, unlike branch A. Two headings can share one line in a
+        // Western script, so A has to run mid-line; a bare scene number in
+        // running prose ("...back in scene 12 he says") is not a heading,
+        // so B must not.
+        var headingReB = new RegExp(
+          '^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)[.):]?', 'gi');
         var scenes = [];
         var format = 'standard';
  
@@ -5977,12 +6004,12 @@
         });
  
         // Layer 1 only if Layer 2 found nothing
-        if (!scenes.length) {
+        function slateReadHeadings(re, numberFrom) {
           lines.forEach(function (line, i) {
-            headingRe.lastIndex = 0;
+            re.lastIndex = 0;
             var marks = [], m;
-            while ((m = headingRe.exec(line)) !== null) {
-              marks.push({ idx: m.index, end: headingRe.lastIndex, number: m[1] || m[3] || null });
+            while ((m = re.exec(line)) !== null) {
+              marks.push({ idx: m.index, end: re.lastIndex, number: numberFrom(m) });
             }
             marks.forEach(function (mk, k) {
               // Stop at the next heading on this line, so one scene's action
@@ -6000,7 +6027,16 @@
             });
           });
         }
- 
+        if (!scenes.length) {
+          slateReadHeadings(headingReA, function (m) { return m[1] || null; });
+        }
+        // Only now, and only for a screenplay with no INT/EXT anywhere in
+        // it. On everything else this never runs and the panel reads exactly
+        // what it read before branch B existed.
+        if (!scenes.length) {
+          slateReadHeadings(headingReB, function (m) { return m[1] || null; });
+        }
+
 
         if (!scenes.length) {
           return {
