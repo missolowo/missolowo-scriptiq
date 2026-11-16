@@ -1547,6 +1547,90 @@ document.addEventListener('click', function (e) {
   });
 });
 
+/* ── How far down this page people actually get ──
+   In the 30 days to 16 November, 246 people reached this page and 39
+   reached the workspace. The page recorded clicks and nothing else, so
+   somebody who left after two seconds and somebody who read all the way
+   to the founder's note and still did not sign up were the same row in
+   the report. This is the difference between "the first screen is not
+   convincing" and "the page is too long", which are opposite fixes.
+
+   One event per section, once per visit. The COUNT per section is the
+   drop-off curve — no scroll handler, and no event fired during unload,
+   which is the usual way this measurement quietly loses its last and
+   most interesting data point.
+
+   The section's name is derived from markup that is already there, so
+   there is nothing to add to the HTML and nothing to forget to add when
+   a section is next edited. It is prefixed with its position because a
+   GA4 table sorts alphabetically, and "close" is not the first section
+   just because it starts with C.
+
+   The threshold is deliberately not a percentage of the section: a
+   section taller than the phone screen can never be 40% visible, and on
+   a phone most of these are. Instead a section counts as reached when
+   its top rises into the upper two thirds of the screen — which is what
+   a person reaching it looks like, on any screen size. */
+(function () {
+  if (!('IntersectionObserver' in window)) return;
+  var sections = document.querySelectorAll('section');
+  if (!sections.length) return;
+
+  var names = [], seen = {};
+  Array.prototype.forEach.call(sections, function (el, i) {
+    var labelled = el.getAttribute('aria-labelledby') || '';
+    var base = labelled
+      ? labelled.replace(/-title$/, '')
+      : ((el.className || '').split(/\s+/)[0] || 'section');
+    names.push((i + 1 < 10 ? '0' : '') + (i + 1) + '_' + base);
+  });
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      var i = Array.prototype.indexOf.call(sections, entry.target);
+      if (i < 0) return;
+      // Unobserve first: once a section has been reached, scrolling back
+      // up and down again is the same visitor, not a second one.
+      io.unobserve(entry.target);
+      if (seen[names[i]]) return;
+      seen[names[i]] = true;
+      siqTrack('home_section_seen', { section: names[i] });
+    });
+  }, { rootMargin: '0px 0px -33% 0px', threshold: 0.01 });
+
+  Array.prototype.forEach.call(sections, function (el) { io.observe(el); });
+
+  /* The last section needs its own rule, and finding out why is the
+     reason this has a browser test.
+
+     The closing section is 144px tall. On a 844px phone screen, scrolled
+     as far as the page goes, its top sits at 646px — below the 565px line
+     the rule above draws. It could never fire, on any phone, however
+     carefully somebody read. The one event meaning "this person read the
+     entire page and still did not sign up" was the one event that could
+     not happen.
+
+     So: reaching the bottom of the page counts as reaching the last
+     section. Deliberately only the last one — marking every unseen
+     section as read the moment somebody jumps to the bottom would turn
+     one impatient visitor into a full-page reader, which is the same lie
+     in the other direction. */
+  var lastIdx = sections.length - 1;
+  function slateAtBottom() {
+    if (seen[names[lastIdx]]) { window.removeEventListener('scroll', slateAtBottom); return; }
+    var scrolled = (window.pageYOffset || document.documentElement.scrollTop || 0)
+                   + window.innerHeight;
+    var full = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+    if (scrolled < full - 4) return;
+    seen[names[lastIdx]] = true;
+    io.unobserve(sections[lastIdx]);
+    window.removeEventListener('scroll', slateAtBottom);
+    siqTrack('home_section_seen', { section: names[lastIdx] });
+  }
+  window.addEventListener('scroll', slateAtBottom, { passive: true });
+})();
+
 // ── Pricing ──
 // Read from the server, never written here. One edit to
 // lib/slate-pricing.js changes the homepage, the app and what Paystack

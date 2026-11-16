@@ -75,6 +75,15 @@ three times on 16 November because three analytics calls were added inside
 that handler — the code correct every time. `numbering-probe` had the same
 failure on Report 2. Bound a slice by the next landmark, not by a count.
 
+**A scroll-depth threshold expressed as a percentage of a section is a
+trap.** A section taller than the screen can never be 40% visible, and on a
+phone most of them are. The homepage rule is "the section's top rises into
+the upper two thirds", plus a separate rule for the last section: the
+closing section is 144px tall, so on an 844px phone its top sits at 646px
+even scrolled fully to the bottom, below any such line. Without that second
+rule the one event meaning *this person read the whole page and still did
+not sign up* was the one event that could never fire.
+
 **An analytics call is the easiest thing here to delete by accident.**
 Nothing breaks, nothing fails, and no filmmaker complains — the funnel just
 goes quiet and nobody notices for a month. That is not hypothetical:
