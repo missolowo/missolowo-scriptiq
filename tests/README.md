@@ -46,6 +46,12 @@ The others read source text and need nothing.
 | `compromise-probe` | An advisory quietly reorders a crew's day instead of suggesting. |
 | `pricing-probe` | The page advertises a price the checkout does not charge. |
 | `resume-probe` | An interrupted breakdown is lost, charged twice, or resumed into the wrong screenplay. |
+| `copy-probe` | We ask a filmmaker to send us their screenplay, or promise something the product does not do. |
+| `prompt-probe` | We pay the model for a list we already derive from the scenes. |
+| `merge-probe` | A shopping list is missing items, or the cast list and Report 2 name different people. |
+| `numbering-probe` | `#11` and `11` appear in one report with nothing to say they are different scenes. |
+| `cast-probe` | Two performers are merged into one call-sheet row, or a voice credit is billed as a second actor. |
+| `korean-probe` | The panel tells a Korean filmmaker we cannot read their screenplay while the splitter reads it fine. |
 
 ## Things worth knowing before you change them
 
@@ -61,6 +67,14 @@ nobody was charged for the failures on launch day. If you move that, expect
 soon as it ran — once a function referencing a variable that existed only
 inside another function, once a value used before it was declared. Both were
 caught by running the code. Run the probes.
+
+**Scene-heading detection is a PAIR, and the pair is the bug.** The health
+panel and the splitter read headings through different regexes. Twice now
+one has been taught a new format and the other has not — Turkish, then
+Korean and Japanese — and the result each time was the worst shape of
+wrong: the breakdown ran correctly while the panel told the filmmaker we
+could not read their screenplay. `korean-probe` asserts the two agree on
+every fixture. Improve either half and run it.
 
 **A failing test is not necessarily a bug.** One assertion here was wrong
 rather than the code: it claimed an actor worked only day 2 while a scene of

@@ -1472,7 +1472,19 @@
       // convention in every script we have tested, so the uppercase forms
       // are what matter; the alternatives are listed rather than assumed.
       var SLATE_HEAD = 'INT\\.?\\/?EXT\\.?|I\\.?\\/?E\\.?|INTERIOR|EXTERIOR|INT|EXT|ИНТ|НАТ|ПАВ|İÇ|IÇ|DIŞ';
-      var SLATE_NUM  = 'SCENE|SC|СЦЕНА';
+      // S# is the Korean television standard: "S#12. 거실 - 밤" is scene
+      // twelve, the living room, at night. The convention descends from
+      // Japanese broadcast practice, so there is no INT/EXT word in it at
+      // all — the number IS the heading marker, which is why branch B of
+      // headingRe exists.
+      //
+      // 씬 and 장면 are the written-out forms. Evidence for S# in TV drama
+      // is solid; those two are plausible and cost nothing to carry, but
+      // are unverified against a real script. Korean FEATURE convention may
+      // differ again and we have not seen one.
+      //
+      // S# before SC in the alternation so "S#12" is not half-matched.
+      var SLATE_NUM  = 'SCENE|S#|SC|СЦЕНА|씬|장면';
       // A scene-number line standing on its own: "SCENE 5", "Scene 12.",
       // and — the shape that broke this — "Scene 36 (FLASHBACK)".
       //
@@ -1609,7 +1621,19 @@
         var raw = String(sectionText || '').split(/\r?\n/);
         var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
         var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
-        var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
+        // Two shapes again, matching headingRe. The first wants an INT/EXT
+        // word; the second is a scene number that IS the heading, as Korean
+        // and Japanese write it. Without the second, the splitter found the
+        // Korean scenes and then threw their numbers away — every scene
+        // relabelled #1, #2, #3 while the script plainly said S#1, S#2, S#3,
+        // and an AD holding that script could not find any of them.
+        //
+        // Fourth place in this file that assumed a heading contains an
+        // interior/exterior word. slateHeadingSrc was generalised; headingRe
+        // and this were not. Worth consolidating properly one day.
+        var withNum = new RegExp(
+          '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
+          + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
         var out = [];
         for (var i = 0; i < raw.length; i++) {
           var m = raw[i].match(numOnly);
@@ -1633,7 +1657,11 @@
             // never recorded. slateSceneTypeFrom returns null for anything
             // that is not a known marker, so "(MAIN HOUSE)" stays harmless.
             var hp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
-            out.push({ number: wn ? slateCleanSceneNumber(wn[1]) : null,
+            // wn[2] is branch B's number — a Korean or Japanese heading,
+            // where the number is all there is. This is the copy that
+            // reaches the report: slateRecordNumbers reads it into
+            // window.slateChunkNumbers, which is what labelFor prints.
+            out.push({ number: wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null,
                        type: hp ? slateSceneTypeFrom(hp[1]) : null, at: i });
           }
         }
@@ -1672,7 +1700,14 @@
         var raw = String(sectionText || '').split(/\r?\n/);
         var numOnly = new RegExp(SLATE_NUM_ONLY_SRC, 'i');
         var headStart = new RegExp('^[ \\t]*' + slateHeadingSrc, 'i');
-        var withNum = new RegExp('^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')', 'i');
+        // Two shapes. First: a number in front of an INT/EXT heading, the
+        // way A BROTHER'S LOVE and Better Half write it. Second: a number
+        // with NO heading word after it, because Korean and Japanese
+        // scripts have none — "S#12. 거실 - 밤" is the whole heading, and
+        // the number is the only part we can key on.
+        var withNum = new RegExp(
+          '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
+          + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
         var out = [], numbered = 0, unnumbered = 0, unreadable = [];
         for (var i = 0; i < raw.length; i++) {
           var m = raw[i].match(numOnly);
@@ -1695,7 +1730,7 @@
           }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
-            var slateN = wn ? slateCleanSceneNumber(wn[1]) : null;
+            var slateN = wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null;
             out.push(slateN);
             // "Numbered" means we know this scene's number, wherever the
             // writer put it. A BROTHER'S LOVE writes "1.EXT. COMPOUND - DAY"
@@ -5894,11 +5929,36 @@
         // script while this told the filmmaker "No scene headings found".
         // The worst shape of wrong: the product works and the panel says
         // it cannot read your screenplay.
+        // ── Two shapes of heading, because not every film industry writes
+        //    INT/EXT ──
+        // Branch A is the slug line: an optional SCENE word, an optional
+        // number, then an INT/EXT word that must be there.
+        //
+        // Branch B is a scene number carrying its own heading, with no
+        // interior/exterior word at all:
+        //
+        //     S#12. 거실 – 밤          (Korean television)
+        //     SCENE 5 居間 (夜)        (Japanese)
+        //
+        // Korean drama format descends from Japanese broadcast practice
+        // rather than from Hollywood, and has no INT/EXT equivalent to find.
+        // This was never a missing-vocabulary problem — adding 실내 and 실외
+        // to SLATE_HEAD would have matched almost nothing real.
+        //
+        // The splitter has accepted branch B all along: slateHeadingSrc says
+        // a heading is an INT/EXT word OR a SCENE word plus a number. This
+        // regex required the INT/EXT word, so for a Japanese script the
+        // splitter read three scenes while the panel told the filmmaker we
+        // could not read their screenplay. That is the Turkish bug again,
+        // described in the comment on slateHeadingSrc, and it has been live.
+        //
+        // Branch B's number lands in group 3, so the number is m[1] || m[3].
         var headingRe = new RegExp(
           '(?:^|\\s)(?:(?:' + SLATE_NUM + ')[ \\t]*)?'
           + '([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)?[.)]?[ \\t]*'
           + '(' + SLATE_HEAD + ')'
-          + '(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s\\/]*', 'gi');
+          + '(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s\\/]*'
+          + '|(?:^|\\s)(?:' + SLATE_NUM + ')[ \\t]*([0-9]+(?:[.\\-][0-9A-Za-z]+)*[A-Za-z]?)[.):]?', 'gi');
         var scenes = [];
         var format = 'standard';
  
@@ -5922,7 +5982,7 @@
             headingRe.lastIndex = 0;
             var marks = [], m;
             while ((m = headingRe.exec(line)) !== null) {
-              marks.push({ idx: m.index, end: headingRe.lastIndex, number: m[1] || null });
+              marks.push({ idx: m.index, end: headingRe.lastIndex, number: m[1] || m[3] || null });
             }
             marks.forEach(function (mk, k) {
               // Stop at the next heading on this line, so one scene's action
