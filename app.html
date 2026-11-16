@@ -2877,6 +2877,60 @@
         } catch (e) {}
       }
 
+      // ── What the # in front of a scene number means ──
+      // labelFor() prints the script's own scene number when the script has
+      // one, and '#' + our position when it does not. Two numbering systems
+      // sharing one number space, and until now nothing on the page said so.
+      //
+      // A producer read his character report and saw "Bayo — #1, 1, #3, #4,
+      // … 9, 12, 14, #19" with no way to tell whether #1 and 1 were one scene
+      // or two. He was pleased with the breakdown and did not mention it;
+      // Elizabeth found it anyway.
+      //
+      // The mixed case is the dangerous one. If a script numbers some scenes
+      // and not others, "#11" is OUR eleventh scene and "11" is the script's
+      // scene 11 — different scenes, and an AD looking up "scene 11" finds
+      // two of them.
+      //
+      // We do not renumber. Replacing the script's numbers with our own
+      // would leave somebody holding the script unable to find the scene,
+      // which is worse than ambiguity. We explain instead.
+      //
+      // Returns null when there is nothing to explain, so a cleanly numbered
+      // script gets no clutter.
+      function slateNumberingNote(scenes) {
+        var list = (scenes || []), ours = 0, theirs = 0;
+        list.forEach(function (s) {
+          var label = String((s && s.scene_label) || '');
+          if (!label) return;
+          if (label.charAt(0) === '#') ours++; else theirs++;
+        });
+        if (!ours) return null;
+        if (!theirs) {
+          // Every scene is ours. No collision is possible, so one line is
+          // enough: the reader only needs to know the numbers are not in
+          // their script.
+          return 'Your script does not number its scenes, so these are ours — '
+               + '<strong>#1</strong> is the first scene, <strong>#2</strong> the second, and so on.';
+        }
+        return '<strong>This script numbers some scenes and not others.</strong> '
+             + 'Numbers with a <strong>#</strong> are ours, counted in order; numbers without one are '
+             + 'your script’s own. They are different scenes — <strong>#11</strong> is our eleventh '
+             + 'scene, <strong>11</strong> is the scene your script calls 11. Numbering every scene in '
+             + 'the script removes the ambiguity.';
+      }
+
+      function slateNumberingNoteHtml(scenes) {
+        var note = slateNumberingNote(scenes);
+        if (!note) return '';
+        var mixed = /different scenes/.test(note);
+        return '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.5;'
+          + (mixed
+              ? 'border:1px solid var(--warn,#C97E3D);color:var(--warn,#C97E3D)'
+              : 'border:1px solid var(--line-1,#2E323A);color:var(--text-2,#B5AFA3)')
+          + '">' + note + '</div>';
+      }
+
       function renderWorkspaceResults(data, partial, streaming) {
         var box = document.getElementById('wsResults');
         if (!box) return;
@@ -2948,6 +3002,9 @@
               + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (c.scenes || []).join(', ') + '</span>'
               + '<span style="color:var(--gold,#D4A64A);font-family:monospace">' + (c.total || (c.scenes || []).length) + '</span></div>';
           }).join('') + '</div>';
+        // Under the report rather than above it: a reader meets the numbers
+        // first and the explanation when they need it.
+        html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
           + locs.map(function(l) {
@@ -2956,6 +3013,7 @@
                             + '<span style="color:var(--text-2,#B5AFA3)">Scenes: ' + (l.scenes || []).join(', ') + '</span>'
               + '<span style="color:var(--gold,#D4A64A);font-family:var(--font-data);min-width:24px;text-align:right">' + (l.total || (l.scenes || []).length) + '</span></div>';
           }).join('') + '</div>';
+        html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 4 — Production Elements</div>';
         html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
@@ -4770,6 +4828,18 @@
         };
       }
 
+      // The same explanation as the screen version, in the plain sentences a
+      // PDF annotation can carry — no markup, and no em dashes, which some
+      // of the fonts we register for non-Latin scripts render as a box.
+      function slatePdfNumberingNote(pdf, scenes) {
+        var note = slateNumberingNote(scenes);
+        if (!note) return;
+        var plain = note.replace(/<[^>]+>/g, '').replace(/—/g, '-').replace(/’/g, "'");
+        pdf.gap(2);
+        pdf.annotation(plain);
+        pdf.gap(4);
+      }
+
       // ── DOCUMENT: SCRIPT BREAKDOWN ──
       async function slateExportBreakdown() {
         if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
@@ -4847,6 +4917,10 @@
                     (c.scenes || []).join(', '), c.total || (c.scenes || []).length];
           })
         );
+        // The PDF is the copy that reaches set, so the key to the numbering
+        // belongs here more than anywhere. Printed only when a # label
+        // actually exists — a cleanly numbered script gets no footnote.
+        slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 3 — Locations');
                 pdf.table(
@@ -4857,6 +4931,7 @@
             return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
           })
         );
+        slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 4 — Production Elements');
         pdf.labelledList('All Cast', pe.all_cast, 15);
