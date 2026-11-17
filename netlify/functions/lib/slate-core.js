@@ -276,9 +276,88 @@ function slateAddCredits(supabase, userId, howMany, extra) {
   return slateAdjustCredits(supabase, userId, Math.abs(howMany || 0), extra);
 }
 
+// ── One name per language, wherever it is written ──
+//
+// Three places record which language a screenplay is in, and until now each
+// recorded it differently:
+//
+//   breakdown.js, first chunk   the chip the filmmaker picked      'en'
+//   breakdown.js, last chunk    what the model detected            'English'
+//   save.js                     the same, or the literal 'auto'    'auto'
+//
+// So the database holds 8 productions in 'en' and 5 in 'English', which are
+// the same language, and 'auto', which is not a language at all. Any count
+// of who uses what is wrong before it is run — and that count is the only
+// honest way to decide which of the eighteen languages on the pricing page
+// get verified next. Two days went into Korean and Japanese scene headings
+// without it.
+//
+// Canonical form is the plain English name, ASCII, because this is a data
+// key and not display text: the interface writes 'Yorùbá' and '한국어' for
+// people to read, and this writes 'Yoruba' and 'Korean' for queries to
+// group on. 'auto' and an unset value both become null — "we do not know"
+// is a fact, and recording a guess as though the filmmaker had said it is
+// worse than a gap.
+//
+// An unrecognised value is passed through rather than dropped: if the model
+// returns a language this list has never seen, that is exactly the row
+// worth noticing, and silently nulling it would hide it.
+const SLATE_LANGUAGE_NAMES = {
+  en: 'English',  yo: 'Yoruba',     fr: 'French',     ig: 'Igbo',
+  ha: 'Hausa',    sw: 'Swahili',    am: 'Amharic',    zu: 'Zulu',
+  es: 'Spanish',  pt: 'Portuguese', de: 'German',     ar: 'Arabic',
+  hi: 'Hindi',    zh: 'Chinese',    ja: 'Japanese',   ko: 'Korean',
+  ru: 'Russian',  tr: 'Turkish'
+};
+
+// What the interface, or a model answering in the script's own language,
+// may hand us for a language this list already knows.
+const SLATE_LANGUAGE_ALIASES = {
+  'yoruba': 'Yoruba', 'yorùbá': 'Yoruba',
+  'kiswahili': 'Swahili',
+  'isizulu': 'Zulu',
+  'français': 'French', 'francais': 'French',
+  'español': 'Spanish', 'espanol': 'Spanish', 'castellano': 'Spanish',
+  'português': 'Portuguese', 'portugues': 'Portuguese',
+  'deutsch': 'German',
+  'العربية': 'Arabic',
+  'हिन्दी': 'Hindi',
+  '中文': 'Chinese', 'mandarin': 'Chinese', 'simplified chinese': 'Chinese',
+  'traditional chinese': 'Chinese',
+  '日本語': 'Japanese',
+  '한국어': 'Korean',
+  'русский': 'Russian',
+  'türkçe': 'Turkish', 'turkce': 'Turkish',
+  'pidgin': 'Nigerian Pidgin', 'nigerian pidgin': 'Nigerian Pidgin'
+};
+
+function slateCanonLanguage(value) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const lower = raw.toLowerCase();
+  // 'auto' is the filmmaker not having chosen, which is not a language.
+  if (lower === 'auto' || lower === 'auto-detect' || lower === 'unknown') return null;
+
+  if (SLATE_LANGUAGE_NAMES[lower]) return SLATE_LANGUAGE_NAMES[lower];
+  if (SLATE_LANGUAGE_ALIASES[lower]) return SLATE_LANGUAGE_ALIASES[lower];
+
+  // A known name in any casing — 'english', 'ENGLISH' — becomes the one form.
+  const known = Object.keys(SLATE_LANGUAGE_NAMES)
+    .map(k => SLATE_LANGUAGE_NAMES[k])
+    .find(name => name.toLowerCase() === lower);
+  if (known) return known;
+
+  // Something new. Keep it, trimmed and capped, so it shows up in a count
+  // instead of vanishing.
+  return raw.slice(0, 40);
+}
+
 module.exports = {
   ADMIN_EMAILS, INTERNAL_EMAILS, isAdmin, internalUserIds,
   slateAuthenticate,
   slateAdjustCredits, slateChargeCredit, slateAddCredits,
-  slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField
+  slateKey, slateBetterLabel, bySceneNumber, bySceneNumberField,
+  slateCanonLanguage
 };

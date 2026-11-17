@@ -24,7 +24,7 @@ const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 // here, while lib/slate-core.js exists BECAUSE that list had been written
 // out four times — its header says so. An admin list that drifts charges
 // someone who should not be charged, or spares someone who should.
-const { ADMIN_EMAILS, slateChargeCredit, slateAuthenticate } = require('./lib/slate-core');
+const { ADMIN_EMAILS, slateChargeCredit, slateAuthenticate, slateCanonLanguage } = require('./lib/slate-core');
 
 // ── Inline rate limiter ──
 async function checkRateLimit(supabase, ip, functionName, maxRequests, userId = null) {
@@ -257,7 +257,7 @@ exports.handler = async function(event) {
           production_id,
           user_id: user.id,
           status: 'processing',
-          script_language: (language && language !== 'auto') ? language : null,
+          script_language: slateCanonLanguage(language),
           output_language: 'English',
           created_at: new Date().toISOString()
         }, { onConflict: 'production_id', ignoreDuplicates: true });
@@ -557,8 +557,8 @@ RULES:
       await slateMarkProduction(supabase, production_id, user ? user.id : null, {
         status: 'completed',
         title: breakdown.title || null,
-        script_language: breakdown.language_detected
-          || ((language && language !== 'auto') ? language : null),
+        script_language: slateCanonLanguage(breakdown.language_detected)
+          || slateCanonLanguage(language),
         output_language: 'English'
       });
     }

@@ -14,7 +14,7 @@
 // the production must exist and belong to the caller.
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
-const { slateAuthenticate } = require('./lib/slate-core');
+const { slateAuthenticate, slateCanonLanguage } = require('./lib/slate-core');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -105,7 +105,9 @@ exports.handler = async function (event) {
         production_id,
         user_id: user.id,
         title: payload.title || 'Untitled Script',
-        script_language: payload.language_detected || 'auto',
+        // Was `|| 'auto'`, which wrote the word "auto" into the database as
+        // though it were a language. A row we cannot name is null.
+        script_language: slateCanonLanguage(payload.language_detected),
         output_language: 'English',
         scenes,
         character_breakdown: payload.character_breakdown || [],
