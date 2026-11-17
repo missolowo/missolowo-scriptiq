@@ -370,6 +370,10 @@
   .auth-forgot { background: none; border: none; color: var(--text-3); font-family: inherit; font-size: var(--t-small); text-decoration: underline; cursor: pointer; margin-top: var(--s-3); padding: var(--s-2); }
   .auth-forgot:hover { color: var(--gold); }
   .auth-error { color: var(--error); font-size: var(--t-small); min-height: 0; }
+  /* Quieter than the button and quieter than an error, but legible: a
+     consent notice nobody can read is not a consent notice. Uses --text-3
+     like .auth-note rather than a lighter grey of its own. */
+  .auth-consent { color: var(--text-3); font-size: var(--t-slug); line-height: 1.5; margin-top: var(--s-3); text-align: center; }
   .upload-panel { background: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--r-card); padding: var(--s-8); max-width: 640px; margin: var(--s-8) auto 0; }
   .lang-label { font-family: var(--font-data); font-size: var(--t-slug); letter-spacing: var(--t-eyebrow-tracking); text-transform: uppercase; color: var(--text-2); margin-bottom: var(--s-3); }
   .lang-row { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-8); }
@@ -782,6 +786,12 @@
         </div>
         <div class="auth-error" id="signupError2"></div>
         <button type="submit" class="auth-submit" id="signupSubmitBtn">Create Free Account</button>
+        <!-- The notice this signup is recorded against. Its exact wording
+             is tied to SLATE_SIGNUP_NOTICE_VERSION in
+             netlify/functions/subscribe.js, which is stored with every
+             subscriber so we can say which words a filmmaker actually
+             read. Change a word here and bump the version there. -->
+        <p class="auth-consent" id="signupConsentNotice">By signing up, you'll get a welcome email and occasional updates from Missolowo Slate. You can unsubscribe at any time.</p>
       </form>
     </div>
   </div>
@@ -1161,6 +1171,32 @@
         return 'other';
       }
 
+      // ── Tell MailerLite somebody signed up ──
+      //
+      // Deliberately NOT awaited, and deliberately swallowing everything.
+      // The account already exists by the time this runs and the person is
+      // signed in; this is bookkeeping for the welcome email and must never
+      // be able to delay, interrupt or fail a signup. If the function is
+      // slow, down, or deleted outright, the workspace loads exactly as it
+      // does now and nobody sees a thing.
+      //
+      // The token is the only thing sent. The address and name are read on
+      // the server from the token itself, never from here — an endpoint
+      // that accepted an email address would let anyone subscribe anyone
+      // from Elizabeth's sending domain.
+      function slateTellMailerLite(accessToken) {
+        try {
+          fetch('/.netlify/functions/subscribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + accessToken
+            },
+            body: '{}'
+          }).catch(function () { /* nothing here is worth a signup */ });
+        } catch (e) { /* nor is this */ }
+      }
+
       window.handleSignupInline = function() {
         var name = document.getElementById('signupName2').value.trim();
         var email = document.getElementById('signupEmail2').value.trim();
@@ -1212,6 +1248,7 @@
             return;
           }
           if (window.siqTrack) window.siqTrack('signup_completed', { then: 'signed_in' });
+          slateTellMailerLite(token);
           fetchProfileAndFinish(token, userId, email, data.refresh_token
             || (data.session && data.session.refresh_token));
         })

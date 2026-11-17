@@ -146,6 +146,37 @@ const ok = (n, c, x) => c ? (pass++, console.log('  PASS  ' + n))
   ok('a failing gtag never throws into the product', survived,
      'a filmmaker losing a breakdown because analytics was down is the worst trade in this file');
 
+  // slateTellMailerLite is deliberately NOT tested here. It is a plain
+  // function declaration inside the auth block's IIFE, private to its only
+  // caller, so page.evaluate cannot reach it — and putting it on window
+  // purely so a test could call it would widen the product's surface to
+  // suit the test, which is the wrong way round. Its isolation is asserted
+  // at source level in subscribe-probe, and the server half of it is
+  // actually run, against a refusing, an unreachable and a hanging
+  // MailerLite, in subscribe-run.
+  //
+  // What IS checked here is the part only a browser can see: that the
+  // consent notice a signup is recorded against is really on the page and
+  // really readable.
+  console.log('\nThe consent notice on the signup form');
+  const notice = await page.evaluate(() => {
+    const el = document.getElementById('signupConsentNotice');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { text: el.textContent.trim(), display: cs.display,
+             visibility: cs.visibility, fontSize: cs.fontSize };
+  });
+  ok('the consent notice is on the signup form', !!notice, 'not found');
+  ok('  ...with the approved wording',
+     notice && notice.text === "By signing up, you'll get a welcome email and occasional updates from Missolowo Slate. You can unsubscribe at any time.",
+     notice && notice.text);
+  ok('  ...and it is actually visible',
+     notice && notice.display !== 'none' && notice.visibility !== 'hidden',
+     JSON.stringify(notice));
+  ok('  ...and legible, not 8px grey',
+     notice && parseFloat(notice.fontSize) >= 11,
+     notice && notice.fontSize);
+
   await browser.close();
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);

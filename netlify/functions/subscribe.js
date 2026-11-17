@@ -59,6 +59,30 @@ const MAILERLITE_GROUP_ID = process.env.MAILERLITE_SIGNUP_GROUP_ID;
 // ceiling for the case where it does not answer at all.
 const SLATE_MAILERLITE_TIMEOUT_MS = 5000;
 
+// WHICH NOTICE THEY AGREED TO.
+//
+// This string is recorded against every subscriber, and it refers to one
+// exact sentence under the signup button in app.html:
+//
+//   "By signing up, you'll get a welcome email and occasional updates
+//    from Missolowo Slate. You can unsubscribe at any time."
+//
+// If that sentence changes, BUMP THIS. The whole value of a consent record
+// is being able to say which words a person actually read; a version that
+// silently covers two different notices is worth nothing, and the question
+// only ever gets asked when it matters.
+const SLATE_SIGNUP_NOTICE_VERSION = 'v1-2026-11-17';
+
+// MailerLite requires 'yyyy-MM-dd HH:mm:ss' and rejects anything more than
+// an hour in the future. Not ISO-8601: toISOString() gives '2026-11-17T…Z'
+// and the 'T' alone makes it invalid. UTC, so the record does not shift
+// with whoever is reading it.
+function slateMailerLiteTime(value) {
+  const d = value ? new Date(value) : new Date();
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -119,17 +143,43 @@ exports.handler = async function (event) {
     // slateAuthenticate selects a narrow set of columns and full_name is
     // not among them, so it is read here rather than assumed.
     let fullName = '';
+    let createdAt = null;
     try {
       const res = await supabase.from('users')
-        .select('full_name').eq('id', user.id).single();
+        .select('full_name, created_at').eq('id', user.id).single();
       fullName = (res && res.data && res.data.full_name) || '';
+      createdAt = (res && res.data && res.data.created_at) || null;
     } catch (e) {
       fullName = '';
     }
     fullName = String(fullName).trim();
 
-    const body = { email: user.email, groups: [String(MAILERLITE_GROUP_ID)] };
-    if (fullName) body.fields = { name: fullName };
+    // ── The consent record ──
+    //
+    // subscribed_at is the moment the ACCOUNT was created, not the moment
+    // this function happened to run. They are seconds apart in the normal
+    // case, but if this is ever replayed to catch up a missed signup, the
+    // account's own timestamp is the honest answer to "when did they agree
+    // to this" and the clock time is not.
+    //
+    // ip_address is where they signed up from. MailerLite ignores a value
+    // that is not a valid IP, so a proxy header we cannot parse costs
+    // nothing. It goes no further than this field: it is a consent record,
+    // not analytics, and nothing else here reads it.
+    const body = {
+      email: user.email,
+      groups: [String(MAILERLITE_GROUP_ID)],
+      fields: { signup_notice_version: SLATE_SIGNUP_NOTICE_VERSION }
+    };
+
+    // The name exactly as stored, or no name field at all. NOT an empty
+    // string: an empty string still substitutes in MailerLite and the
+    // filmmaker reads "Hi ,". Omitting it lets the fallback greeting apply.
+    if (fullName) body.fields.name = fullName;
+
+    const subscribedAt = slateMailerLiteTime(createdAt);
+    if (subscribedAt) body.subscribed_at = subscribedAt;
+    if (ip) body.ip_address = ip;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SLATE_MAILERLITE_TIMEOUT_MS);
