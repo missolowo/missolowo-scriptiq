@@ -22,7 +22,9 @@ const PROBES = [
   'numbering-probe',   // what the # means, and whether we say so
   'cast-probe',        // who is one person, who is two, who is not a person
   'korean-probe',      // a heading with no INT/EXT word in it at all
-  'funnel-probe'       // where the 233 who did not get a breakdown went
+  'funnel-probe',      // where the 233 who did not get a breakdown went
+  'language-probe',    // one name per language, wherever it is written
+  'charge-probe'       // the credit is claimed before it is taken
 ];
 
 let total = 0, failed = 0, broken = [];

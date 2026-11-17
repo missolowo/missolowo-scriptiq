@@ -24,7 +24,7 @@ const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 // here, while lib/slate-core.js exists BECAUSE that list had been written
 // out four times — its header says so. An admin list that drifts charges
 // someone who should not be charged, or spares someone who should.
-const { ADMIN_EMAILS, slateChargeCredit, slateAuthenticate } = require('./lib/slate-core');
+const { ADMIN_EMAILS, slateChargeCredit, slateAuthenticate, slateCanonLanguage } = require('./lib/slate-core');
 
 // ── Inline rate limiter ──
 async function checkRateLimit(supabase, ip, functionName, maxRequests, userId = null) {
@@ -257,7 +257,7 @@ exports.handler = async function(event) {
           production_id,
           user_id: user.id,
           status: 'processing',
-          script_language: (language && language !== 'auto') ? language : null,
+          script_language: slateCanonLanguage(language),
           output_language: 'English',
           created_at: new Date().toISOString()
         }, { onConflict: 'production_id', ignoreDuplicates: true });
@@ -491,18 +491,59 @@ RULES:
     // chunk's AI succeeded, idempotent per production_id
     // ════════════════════════════════════════════════
     if (isLastChunk && user && !isAdmin) {
+      // ── Claim the charge BEFORE taking the credit ──
+      //
+      // This order is the fix for the worst bug this product has had. It
+      // used to charge the credit first and write charged_at second, two
+      // separate writes with no transaction around them. A run cut off
+      // between the two — which is precisely what the gateway timeout did —
+      // took the credit and left no record of having taken it. And because
+      // charged_at is also the idempotency key, the next attempt saw no
+      // record and charged again.
+      //
+      // By 17 November that had cost ten filmmakers twelve credits for
+      // breakdowns they never received. One paid three credits for one
+      // delivered breakdown. Four were left at zero, facing a payment page
+      // for a product that had just failed them.
+      //
+      // Claiming first inverts which way an interruption falls. The claim
+      // is a conditional update — charged_at is set only where it is still
+      // null — so it is atomic, and two concurrent runs cannot both win it.
+      // If the function then dies before the credit is taken, the filmmaker
+      // has a breakdown nobody charged for. That is the right direction to
+      // be wrong: the cost of the mistake lands on us rather than on them.
+      let claimed = false;
       let alreadyCharged = false;
 
-      // Idempotency guard — has this production already been charged?
       if (production_id) {
-        const { data: prod } = await supabase
-          .from('productions').select('charged_at')
-          .eq('production_id', production_id)
-          .single();
-        if (prod && prod.charged_at) alreadyCharged = true;
+        try {
+          const { data: won } = await supabase
+            .from('productions')
+            .update({ charged_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString() })
+            .eq('production_id', production_id)
+            .is('charged_at', null)
+            .select('production_id');
+          claimed = !!(won && won.length);
+          alreadyCharged = !claimed;
+        } catch (e) {
+          // The claim could not be made, so the credit must not be taken:
+          // an unclaimed charge is the bug this block exists to prevent.
+          console.error('[Slate] Could not claim the charge for production '
+            + production_id + ' — delivering without charging: ' + e.message);
+          claimed = false;
+          alreadyCharged = true;
+        }
+      } else {
+        // No production id to claim against, so there is nothing to make
+        // the charge idempotent. Charge anyway — a filmmaker who gets a
+        // breakdown should be charged for it — but this path cannot
+        // protect against a double charge on retry, which is why every
+        // caller sends a production_id.
+        claimed = true;
       }
 
-      if (!alreadyCharged) {
+      if (claimed) {
         // The balance read at the top of this request is minutes old by now
         // and must not be written back — see slateAdjustCredits. This reads
         // it again and only writes if nothing changed in between, so a
@@ -510,18 +551,17 @@ RULES:
         const charge = await slateChargeCredit(supabase, user.id);
 
         if (charge.ok) {
-          // charged_at is the idempotency record — it is what stops a retry
-          // charging a second credit, so it is written ONLY on a real
-          // charge. A failed charge deliberately leaves it unset.
-          await slateMarkProduction(supabase, production_id, user.id, {
-            charged_at: new Date().toISOString()
-          });
           breakdown.credits_remaining = charge.balance;
         } else {
+          // The claim is deliberately NOT released here. Releasing it would
+          // let a retry charge for the same breakdown, which is the fault
+          // we are fixing; leaving it means this breakdown goes uncharged.
+          // Of the two, an uncharged breakdown is the one that does not
+          // take something from a filmmaker who received nothing.
+          //
           // The documents are already generated and about to be returned.
           // Refusing them now, after the wait and the API spend, would be
-          // the worse outcome by far — so the job is delivered and the
-          // charge is simply not recorded.
+          // the worse outcome by far — so the job is delivered.
           //
           // "insufficient" is the real case: two tabs, one credit. Both
           // passed the fast guard before the AI ran, the first charge took
@@ -557,8 +597,8 @@ RULES:
       await slateMarkProduction(supabase, production_id, user ? user.id : null, {
         status: 'completed',
         title: breakdown.title || null,
-        script_language: breakdown.language_detected
-          || ((language && language !== 'auto') ? language : null),
+        script_language: slateCanonLanguage(breakdown.language_detected)
+          || slateCanonLanguage(language),
         output_language: 'English'
       });
     }
