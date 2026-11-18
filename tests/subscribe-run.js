@@ -118,8 +118,12 @@ function freshHandler() {
     ok('THE EMAIL IS THE TOKEN HOLDER, not the one in the request body',
        sentBody.body.email === 'test@example.com',
        sentBody.body.email + ' — the request asked for attacker@example.com');
+    // The stored profile here is "Ada Obi" and the request body asks for
+    // "Someone Else". Neither the address nor the name may come from the
+    // request; the name comes from the profile, as its first name.
     ok('  ...and the name is not the one in the request body either',
-       sentBody.body.fields.name === 'Ada Obi', sentBody.body.fields.name);
+       sentBody.body.fields.name === 'Ada', sentBody.body.fields.name
+       + ' — from the stored profile "Ada Obi", not the request\'s "Someone Else"');
     ok('the group is the one configured',
        sentBody.body.groups[0] === '204401524726564840',
        JSON.stringify(sentBody.body.groups));
@@ -188,6 +192,60 @@ function freshHandler() {
     await freshHandler()(EVENT);
     ok('still no name field', !('name' in sentBody.body.fields),
        JSON.stringify(sentBody.body.fields));
+  }
+
+  // ══════════════════════════════════════════════════
+  // THE GREETING, run rather than inspected.
+  //
+  // MailerLite prints this field straight after the word "Hi", so these
+  // are not string-handling curiosities — each one is a sentence a
+  // filmmaker reads. The first real signup stored their name as "muideen
+  // adewole ibrahim", which is what prompted the whole change.
+  //
+  // The handler is executed for each and the body it would have sent to
+  // MailerLite is read back, so what is asserted is the real JSON and not
+  // a regex opinion about the source.
+  console.log('\nThe greeting, through the real handler');
+  {
+    const greetingFor = async (storedName) => {
+      global.__profile = { full_name: storedName, created_at: ACCOUNT_CREATED };
+      global.fetch = (url, opts) => {
+        sentBody = { body: JSON.parse(opts.body) };
+        return Promise.resolve({ ok: true, status: 201 });
+      };
+      const res = await freshHandler()(EVENT);
+      if (res.statusCode !== 200) return '<<status ' + res.statusCode + '>>';
+      return ('name' in sentBody.body.fields) ? sentBody.body.fields.name : null;
+    };
+
+    const cases = [
+      ['muideen adewole ibrahim', 'Muideen', 'the signup that prompted this'],
+      ['muideen',                 'Muideen', 'a single-word name'],
+      ['  muideen   adewole  ',   'Muideen', 'leading, doubled and trailing spaces'],
+      ['MUIDEEN ADEWOLE',         'Muideen', 'written in capitals'],
+      ['Elizabeth Olalere',       'Elizabeth', 'already correct, left alone'],
+      ['ade-bayo tunde',          'Ade-Bayo', 'a hyphen'],
+      ["o'brien kelechi",         "O'Brien",  'a straight apostrophe'],
+      ['o’brien kelechi',         'O’Brien',  'the curly apostrophe Word substitutes'],
+      ['àdùké fáyẹmí',            'Àdùké',    'a Yorùbá name, diacritics intact'],
+      ['ADÉBÁYỌ̀ OGUNDIMU',        'Adébáyọ̀',  'Yorùbá in capitals, tone mark intact'],
+      ['김민준',                   '김민준',    'a script with no capitals, untouched'],
+      ['a',                       'A',        'a single character']
+    ];
+
+    for (const [stored, want, why] of cases) {
+      const got = await greetingFor(stored);
+      ok('"Hi ' + want + ',"  ← ' + JSON.stringify(stored) + '   (' + why + ')',
+         got === want, 'got ' + JSON.stringify(got));
+    }
+
+    // And the four bodies the Automation Specialist asked to see in full.
+    console.log('\n  The exact JSON body, for the four she asked for:');
+    for (const stored of ['muideen adewole ibrahim', '', 'àdùké fáyẹmí', '김민준']) {
+      await greetingFor(stored);
+      console.log('\n  stored full_name: ' + JSON.stringify(stored));
+      console.log('  ' + JSON.stringify(sentBody.body, null, 2).split('\n').join('\n  '));
+    }
   }
 
   console.log('\nA GET is refused');

@@ -83,6 +83,25 @@ function slateMailerLiteTime(value) {
   return d.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+// The first name to greet somebody by, from the full name they typed.
+// Returns '' when there is nothing usable, and the caller then sends no
+// name field at all rather than an empty one.
+//
+// Everything this has to survive is in the tests; the short version is
+// that people type their names in every shape there is, and the result of
+// this function is printed directly after the word "Hi".
+function slateFirstName(value) {
+  const first = String(value == null ? '' : value).trim().split(/\s+/)[0] || '';
+  if (!first) return '';
+  // Lower-case first so "MUIDEEN" and "muideen" land in the same place,
+  // then raise the first letter of the name and of each part after a
+  // hyphen or an apostrophe. On a script with no capitals this is a no-op
+  // rather than damage, which is why it is \p{L} and not [a-z].
+  return first.toLowerCase().replace(
+    /(^|[-'’])(\p{L})/gu,
+    (whole, separator, letter) => separator + letter.toUpperCase());
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -172,10 +191,37 @@ exports.handler = async function (event) {
       fields: { signup_notice_version: SLATE_SIGNUP_NOTICE_VERSION }
     };
 
-    // The name exactly as stored, or no name field at all. NOT an empty
-    // string: an empty string still substitutes in MailerLite and the
-    // filmmaker reads "Hi ,". Omitting it lets the fallback greeting apply.
-    if (fullName) body.fields.name = fullName;
+    // A FIRST NAME, or no name field at all.
+    //
+    // MailerLite greets with this field, so what goes in it is read as
+    // "Hi <this>,". The first real signup stored their name as "muideen
+    // adewole ibrahim" — lower case, three parts — which would have been
+    // sent out as "Hi muideen adewole ibrahim,". So: the first word only,
+    // capitalised.
+    //
+    // NOT an empty string when there is no name: an empty string still
+    // substitutes in MailerLite and the filmmaker reads "Hi ,". Omitting
+    // the field entirely lets MailerLite's fallback greeting apply.
+    //
+    // THE KNOWN COST, accepted by the Founder: where someone has written
+    // their surname first, the greeting uses their surname. Across the 57
+    // accounts held when this was decided, 47 names were two words, 5 were
+    // three or more, 3 were one word and 2 were blank, and nothing in the
+    // data says which way round any of them was written. The 5 longer names
+    // are where that risk sits.
+    //
+    // Capitalisation follows the segment, not just the string: a letter
+    // after a hyphen or an apostrophe is capitalised too, so "o'brien"
+    // becomes "O'Brien" and "ade-bayo" becomes "Ade-Bayo" rather than
+    // "O'brien" and "Ade-bayo". Misspelling someone's name is worse than
+    // the surname problem above. Both straight and curly apostrophes count,
+    // because Word chooses which one without asking the writer.
+    //
+    // \p{L} with the u flag rather than [a-z], so a Yorùbá name keeps every
+    // diacritic and a name in a script with no capitals passes through
+    // untouched instead of being mangled by a rule that means nothing in it.
+    const greeting = slateFirstName(fullName);
+    if (greeting) body.fields.name = greeting;
 
     const subscribedAt = slateMailerLiteTime(createdAt);
     if (subscribedAt) body.subscribed_at = subscribedAt;

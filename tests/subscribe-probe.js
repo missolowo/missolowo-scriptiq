@@ -93,14 +93,43 @@ console.log('\nA MailerLite failure cannot touch a signup');
 }
 
 // ══════════════════════════════════════════════════
-console.log('\nA blank name sends no name field at all');
+// A DECISION, NOT AN OVERSIGHT.
+//
+// This file used to assert the opposite: that the name went to MailerLite
+// exactly as stored, commented "the first word is wrong for roughly one in
+// five of these filmmakers." That figure could not be substantiated from
+// the data and is not repeated here.
+//
+// What the data said when this was decided, across the 57 accounts then
+// held: 47 names were two words, 5 were three or more, 3 were one word and
+// 2 were blank; 9 were written entirely in lower or upper case; none
+// contained a hyphen, an apostrophe or an accented character.
+//
+// So the first real signup would have been greeted "Hi muideen adewole
+// ibrahim,". The Founder's decision is "Hi" and the first name, accepting
+// that where someone writes their surname first the greeting uses their
+// surname. That exposure sits in the 5 longer names, and nothing in the
+// database says which way round any of them was written.
+console.log('\nThe greeting is a first name, or no name at all');
 {
-  ok('the name is only set when there is one',
-     /if \(fullName\) body\.fields\.name = fullName;/.test(SUB),
+  ok('the name field is only set when there is a name',
+     /if \(greeting\) body\.fields\.name = greeting;/.test(SUB),
      'an empty string still substitutes, and the filmmaker reads "Hi ,"');
-  ok('  ...and it is the name exactly as stored',
-     /body\.fields\.name = fullName/.test(SUB) && !/split_part|\.split\(' '\)\[0\]/.test(SUB),
-     'the first word is wrong for roughly one in five of these filmmakers');
+  ok('  ...and it is the FIRST name, not the whole one',
+     /const greeting = slateFirstName\(fullName\);/.test(SUB));
+  ok('the first name is derived in one place',
+     (SUB.match(/function slateFirstName/g) || []).length === 1
+     && (SUB.match(/slateFirstName\(/g) || []).length === 2,
+     'one definition, one caller — the shape that stops this drifting');
+  ok('it capitalises after a hyphen or an apostrophe too',
+     /\[-'’\]/.test(SUB),
+     "strict first-letter-only sends O'brien, and misspelling a name is worse "
+     + 'than the surname problem');
+  ok('  ...counting the curly apostrophe Word substitutes', /’/.test(SUB));
+  ok('it is Unicode-aware, not [a-z]',
+     /\\p\{L\}/.test(SUB) && /gu/.test(SUB),
+     'a Yorùbá name must keep its diacritics and a script with no capitals '
+     + 'must pass through untouched');
 }
 
 console.log('\nThe consent record says which words they read');
