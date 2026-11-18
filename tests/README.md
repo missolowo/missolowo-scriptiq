@@ -122,6 +122,48 @@ orders each row by horizontal position, and turns real gaps back into
 spaces. **The fixtures in that file deliberately arrive out of order**,
 because a fixture in tidy order passes against the broken reader too.
 
+**Most of what looks like the writer's mistake is ours. Check the page
+before accusing the script.** On 18 November a production manager sent two
+screenplays whose breakdowns were wrong. Going through them produced a long
+list of his faults — thirteen missing scene numbers, headings with no
+number, duplicates — and nearly every item on it dissolved on contact with
+the actual page. Scene 3 was there, written `SCENE 3`. Scene 21 was there,
+a bare number above its slug line. Scene 28 was there as `28EXT.`. Scene 44
+was there as `44A`, an A-scene, which is the standard convention for a scene
+inserted after a lock. Of iRANTI RECALL's eighteen apparent gaps, **all
+eighteen** were real numbered scenes we could not read. That script is
+numbered 1 to 114 with no gaps, no repeats and nothing out of order, and we
+were reporting 99 scenes and zero numbers.
+
+The rule this leaves: before any finding is shown to a filmmaker as a fault
+in their script, grep the script for it. A panel that blames a production
+manager for an A-scene teaches them to distrust everything else it says,
+and they are the one person who knows what an A-scene is.
+
+**Ask the page, do not extend the vocabulary.** Twelve of iRANTI RECALL's
+headings are `FLASHBACK`, `ECU`, `POV`, `BACK TO` and `INTERCUT` lines with
+no interior or exterior word in them. The tempting fix is to add those words
+to `SLATE_HEAD`. Do not: those words occur inside action lines ("we INTERCUT
+between the two rooms"), `headingRe` scans rather than anchors, and every new
+word is a new way to read a paragraph as a scene. That is the Turkish bug and
+then the Korean bug, twice over.
+
+What worked instead was a property of the page. A locked shooting script
+prints its scene number in **both** margins, so a line that opens with a
+number and closes with the *same* number across a gap of white space is a
+heading that prose cannot imitate. 113 matches in iRANTI RECALL; zero in the
+other four scripts, so it cannot hurt them. `slateMarginNumberedHeading`.
+The same instinct gives `slateNumberedSequenceHeading`: a montage is read
+because it is *numbered*, not because `MONTAGE` was added to the heading
+words.
+
+**Row conservation is the check for anything that adds scenes.** A change
+that finds more scene boundaries divides the same text more finely, so the
+rows accounted for must be identical before and after — exactly, not
+approximately. iRANTI RECALL went from 99 scenes to 115 with 6248 rows on
+both sides. If that total moves, a scene is eating its neighbour's pages or
+dropping its own, and the eighths every schedule is built from are wrong.
+
 **Two bugs can wear the same symptom.** The same week, a 215-page script
 reported 135 scenes when it has 94 — page numbers read as scene numbers,
 fixed in `pagefurniture-browser.js`. It would have been easy to assume the
