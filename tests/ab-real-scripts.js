@@ -46,13 +46,27 @@ function api(source, label) {
     if (s < 0) throw new Error('missing ' + n + ' in ' + label);
     return source.slice(s, source.indexOf(';', s) + 1);
   }
+  // Helpers that exist on one side of the comparison and not the other.
+  // The whole job of this file is to run an OLD ref against a NEW working
+  // copy, so a name the new code introduced is necessarily absent from the
+  // old one, and demanding it there would make the tool unusable for exactly
+  // the change it was built to check. Missing ones are skipped silently;
+  // anything genuinely required is in the lists below and still throws.
+  const maybeStmt = n => { try { return stmt(n); } catch (e) { return ''; } };
+  const maybeBlock = n => { try { return block(n); } catch (e) { return ''; } };
+
   const HEAD = ['var SLATE_HEAD =', 'var SLATE_NUM  =', 'var SLATE_SCENE_MARKER',
     'var SLATE_NUM_ONLY_SRC', 'var slateHeadingSrc', 'var SLATE_ROWS_PER_PAGE',
-    'var SLATE_CHARS_PER_ROW'].map(stmt).join('\n');
-  const SRC = HEAD + '\n' + ['function slateCleanSceneNumber', 'function slateSceneTypeFrom',
-    'function slateRowsIn', 'function slateEighthsFromRows', 'function slateNearMatch',
-    'function slateHealthCheck', 'function slateCountScenes', 'function slateSceneMarksIn']
-    .map(block).join('\n');
+    'var SLATE_CHARS_PER_ROW'].map(stmt).join('\n')
+    + '\n' + ['var SLATE_CONTD_RE'].map(maybeStmt).join('\n');
+  const SRC = HEAD + '\n'
+    + ['function slateCleanSceneNumber', 'function slateSceneTypeFrom',
+       'function slateRowsIn', 'function slateEighthsFromRows', 'function slateNearMatch',
+       'function slateHealthCheck', 'function slateCountScenes', 'function slateSceneMarksIn']
+      .map(block).join('\n')
+    + '\n' + ['function slateLoneSceneNumber', 'function slateNextNonBlank',
+              'function slateMarginNumberedHeading']
+      .map(maybeBlock).join('\n');
   return new Function('window', 'console', SRC +
     '; return { check: slateHealthCheck, count: slateCountScenes, marks: slateSceneMarksIn };')(
     {}, { warn() {}, error() {}, log() {} });

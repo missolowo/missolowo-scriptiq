@@ -68,6 +68,7 @@ const HEAD = [
   // one, and a change to it cannot reach one half and not the other.
   block('function slateCleanSceneNumber'),
   block('function slateLoneSceneNumber'),
+  block('function slateMarginNumberedHeading'),
   block('function slateNextNonBlank')
 ].join('\n');
 

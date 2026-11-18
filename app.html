@@ -1957,6 +1957,46 @@
         return { number: slateCleanSceneNumber(b[1]), note: null, bare: true };
       }
 
+      // ── A shooting script numbers its scenes in BOTH margins ──
+      //
+      //     14   UNKNOWN - FLASHBACK                                 14
+      //
+      // That is the standard form for a locked script, which is exactly the
+      // script a production manager brings to a breakdown. The number is
+      // printed twice so it survives being read from any side of the page,
+      // and the repetition is the whole reason this is safe: a line that
+      // opens with a number and ends with the SAME number, across a margin
+      // of white space, is a scene heading and cannot plausibly be prose.
+      //
+      // That matters because these headings have no interior or exterior
+      // word in them at all. iRANTI RECALL numbers 114 scenes and twelve of
+      // its headings are FLASHBACK, ECU, POV, BACK TO and INTERCUT lines
+      // with no INT or EXT anywhere, so we dropped all twelve — their
+      // locations and times missing from the breakdown and nothing
+      // scheduled. The alternative fix was to add those words to the heading
+      // vocabulary, which would have them matching inside action lines ("we
+      // INTERCUT between the two rooms") and is how the Turkish and Korean
+      // bugs were made. This asks the page instead of guessing at English.
+      //
+      // Measured across the five real screenplays: 113 matches in iRANTI
+      // RECALL, and ZERO in the other four. A script that is not numbered
+      // this way never reaches this code, so it cannot be hurt by it.
+      //
+      // Returns { number, text } or null.
+      function slateMarginNumberedHeading(line) {
+        var m = String(line == null ? '' : line).match(
+          // number, one or more spaces, the heading, a REAL margin gap, and
+          // the same number again. The trailing gap must be two spaces or
+          // more: that is the margin, and requiring it keeps the pattern off
+          // anything that merely happens to repeat a number.
+          /^[ \t]*([0-9]{1,4}[A-Za-z]?)[.):]?[ \t]+(\S.*?)[ \t]{2,}\1[.):]?[ \t]*$/);
+        if (!m) return null;
+        var text = m[2].trim();
+        // A heading is a line, not a paragraph, and not a row of digits.
+        if (!text || text.length > 100 || !/[A-Za-zА-Яа-я]/.test(text)) return null;
+        return { number: slateCleanSceneNumber(m[1]), text: text };
+      }
+
       // The next non-blank line at or after `from`, as the helper above
       // wants it. Every caller was walking blank lines by hand.
       function slateNextNonBlank(lines, from) {
@@ -2031,6 +2071,18 @@
             // nothing recognisable under it is not evidence of anything, and
             // slateLoneSceneNumber has already refused those.
             out.push({ number: m.number, type: note, at: i });
+            continue;
+          }
+          // A shooting script's margins. This is the record the merge uses
+          // to fill in a number the model returned as null, so a heading
+          // read here without its number costs the filmmaker the number on
+          // the finished breakdown, not merely in the panel.
+          var mh = slateMarginNumberedHeading(raw[i]);
+          if (mh) {
+            var mhp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
+            out.push({ number: mh.number,
+                       type: mhp ? slateSceneTypeFrom(mhp[1]) : slateSceneTypeFrom(mh.text),
+                       at: i });
             continue;
           }
           if (headStart.test(raw[i])) {
@@ -2117,6 +2169,17 @@
             }
             continue;
           }
+          // A shooting script's margins, checked BEFORE the heading test,
+          // because it answers both questions at once — that this line is a
+          // heading, and what its number is. The heading test can see
+          // neither on a FLASHBACK, ECU or POV line, and on an INTERCUT it
+          // sees the line but loses the number off the front of it.
+          //
+          // On a line both can read, such as "1  EXT. WOODS – SUNDOWN   1",
+          // the two agree on the number, so going through here first costs
+          // nothing and keeps one answer rather than two.
+          var mh = slateMarginNumberedHeading(raw[i]);
+          if (mh) { out.push(mh.number); numbered++; continue; }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
             var slateN = wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null;
@@ -6430,6 +6493,43 @@
           slateReadHeadings(headingReB, function (m) { return m[1] || null; });
         }
 
+        // ── And the shooting-script margins, ADDED to whatever was found ──
+        //
+        // Not another cascade branch. The cascade tries B only when A found
+        // nothing in the whole document, and on iRANTI RECALL branch A finds
+        // 103 headings quite happily — it just cannot see the twelve that
+        // carry no INT or EXT word, and it loses the number off the INTERCUT
+        // lines. So this runs alongside, and does two separate jobs:
+        //
+        //   a heading A missed entirely  ->  add it
+        //   a heading A found unnumbered ->  give it the number in the margin
+        //
+        // The second is the subtler of the two. A line like
+        //
+        //     7   INTERCUT – INT. DEBBY'S BEDROOM / INT. ADA'S BEDROOM   7
+        //
+        // matches on the INNER "INT." and so arrives with no number at all,
+        // and an unnumbered scene is worse than a missing one: it reads as
+        // the writer's omission rather than ours. The margins say otherwise.
+        (function slateReadMarginHeadings() {
+          var firstOnLine = {};
+          scenes.forEach(function (s) {
+            if (firstOnLine[s.line] === undefined) firstOnLine[s.line] = s;
+          });
+          var added = false;
+          lines.forEach(function (line, i) {
+            var mh = slateMarginNumberedHeading(line);
+            if (!mh) return;
+            var had = firstOnLine[i + 1];
+            if (had) { if (!had.number) had.number = mh.number; return; }
+            scenes.push({ line: i + 1, number: mh.number,
+                          rest: mh.text.slice(0, 80), raw: line.trim() });
+            added = true;
+          });
+          // Document order, or every check below that walks the script from
+          // beginning to end reads these as happening at the end of it.
+          if (added) scenes.sort(function (a, b) { return a.line - b.line; });
+        })();
 
         if (!scenes.length) {
           return {

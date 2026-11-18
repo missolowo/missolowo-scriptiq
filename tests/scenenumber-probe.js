@@ -59,14 +59,17 @@ const HEAD = [
   stmt('var slateHeadingSrc'),
   block('function slateCleanSceneNumber'),
   block('function slateLoneSceneNumber'),
+  block('function slateMarginNumberedHeading'),
   block('function slateNextNonBlank')
 ].join('\n');
 
 const api = new Function('console', HEAD
   + '; return { lone: slateLoneSceneNumber, next: slateNextNonBlank,'
-  + '           contd: SLATE_CONTD_RE };')({ warn() {}, error() {}, log() {} });
+  + '           margin: slateMarginNumberedHeading, contd: SLATE_CONTD_RE };')(
+  { warn() {}, error() {}, log() {} });
 
 const lone = (line, next) => api.lone(line, next === undefined ? '' : next);
+const margin = (line) => api.margin(line);
 
 // ══════════════════════════════════════════════════
 console.log('\nA number that announces itself needs no corroboration');
@@ -150,6 +153,63 @@ console.log('\nAnd the blank-line walk');
 }
 
 // ══════════════════════════════════════════════════
+// A locked shooting script prints its scene number in BOTH margins, which
+// is what lets us read a heading that contains no interior or exterior word
+// at all. Every line below is a real line from iRANTI RECALL, a 175-page
+// shooting script whose twelve FLASHBACK, ECU, POV and INTERCUT headings we
+// dropped entirely — their locations and times missing, nothing scheduled.
+//
+// The alternative was to add those words to the heading vocabulary, which
+// would have them matching inside action lines, and that is precisely how
+// the Turkish and Korean bugs were made. This asks the page instead.
+console.log('\nA shooting script numbers its scenes in both margins');
+{
+  const g = (l) => { const m = margin(l); return m ? m.number : null; };
+  ok('a FLASHBACK heading is read, and numbered',
+     g('14 UNKNOWN - FLASHBACK                        14') === '14');
+  ok('an ECU heading too',
+     g('68 ECU – HIS EYES.                        68') === '68');
+  ok('a POV heading too',
+     g("62 A BABY'S POV.                        62") === '62');
+  ok('a BACK TO heading too',
+     g('15 BACK TO DAVID’S OFFICE                        15') === '15');
+  ok('and a plain slug line is unaffected',
+     g('1 EXT. WOODS – SUNDOWN                        1') === '1');
+  ok('the heading text comes back without either margin number',
+     margin('14 UNKNOWN - FLASHBACK                        14').text
+       === 'UNKNOWN - FLASHBACK',
+     JSON.stringify(margin('14 UNKNOWN - FLASHBACK                        14')));
+
+  // The subtle one. This matches on the INNER "INT." and so reaches the
+  // rest of the code with NO number, which is worse than being missed: an
+  // unnumbered scene reads as the writer's omission rather than ours.
+  ok('an INTERCUT between two interiors keeps its own number',
+     g("7 INTERCUT – INT. DEBBY'S BEDROOM / INT. ADA'S BEDROOM       7") === '7',
+     'the inner INT. is not the scene number');
+
+  ok('an A-scene number works here too',
+     g('44A INT. WALE\'S WORKSHOP — EVENING                   44A') === '44A');
+}
+
+console.log('  ...and refuses everything that merely repeats a number');
+{
+  const no = (l, why) => ok('refused: ' + JSON.stringify(l.slice(0, 46)),
+                            margin(l) === null, why);
+  // The margin gap is the signal. Without it this is prose.
+  no('2 things and 2 only', 'one space is not a margin');
+  no('I was 7 when we left in 7', 'a sentence, not a heading');
+  // Different numbers at the ends mean it is not a margin pair at all.
+  ok('refused when the two numbers differ',
+     margin('14 UNKNOWN - FLASHBACK                        15') === null);
+  no('49 1234567                        49', 'digits are not a heading');
+  no('', 'an empty line');
+  no('EXT. WOODS – SUNDOWN', 'no numbers at all');
+  // A paragraph that happens to begin and end with the same number.
+  no('3 ' + 'x'.repeat(140) + '                        3',
+     'a heading is a line, not a paragraph');
+}
+
+// ══════════════════════════════════════════════════
 console.log('\nA scene continuing over a page break is NOT a duplicate');
 {
   const C = api.contd;
@@ -183,9 +243,9 @@ console.log('\nBoth halves ask the same question');
   const inPanel = APP.indexOf('function slateHealthCheck');
   const inMarks = APP.indexOf('function slateSceneMarksIn');
   const inCount = APP.indexOf('function slateCountScenes');
-  const usesIt = (from) => {
+  const usesIt = (from, name) => {
     const body = APP.slice(from, APP.indexOf('\n      }', from));
-    return body.indexOf('slateLoneSceneNumber') > 0;
+    return body.indexOf(name || 'slateLoneSceneNumber') > 0;
   };
   ok('the health panel asks through it', usesIt(inPanel));
   ok('the splitter\'s scene marks ask through it', usesIt(inMarks));
@@ -195,6 +255,18 @@ console.log('\nBoth halves ask the same question');
   const copies = (APP.match(/\[0-9\]\{1,3\}\[A-Za-z\]\?/g) || []).length;
   ok('the bare-number pattern is written exactly once',
      copies === 1, copies + ' copies — this is how the drift starts');
+
+  // And the same for the margin reader. This one decides whether fifteen of
+  // iRANTI RECALL's scenes exist at all, so one half of the file knowing
+  // about it and the other not is the worst outcome available: the panel
+  // would report 114 scenes while the breakdown ran 99, or the reverse.
+  ok('the health panel reads the margins', usesIt(inPanel, 'slateMarginNumberedHeading'));
+  ok('the splitter\'s scene marks read the margins',
+     usesIt(inMarks, 'slateMarginNumberedHeading'));
+  ok('the scene counter reads the margins', usesIt(inCount, 'slateMarginNumberedHeading'));
+  const mcopies = (APP.match(/\[ \\t\]\{2,\}\\1/g) || []).length;
+  ok('the margin pattern is written exactly once',
+     mcopies === 1, mcopies + ' copies');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
