@@ -58,4 +58,5 @@ console.log('  node tests/page-load.js        every page loads');
 console.log('  node tests/resume-browser.js   the resume offer at phone width');
 console.log('  node tests/funnel-browser.js   the funnel events actually fire');
 console.log('  node tests/homepage-browser.js how far down the homepage people get');
+console.log('  node tests/pagefurniture-browser.js  page numbers are not scene numbers');
 process.exit(failed ? 1 : 0);
