@@ -57,9 +57,18 @@ function stmt(needle) {
 const HEAD = [
   stmt('var SLATE_HEAD ='),
   stmt('var SLATE_NUM  ='),
+  stmt('var SLATE_CONTD_RE'),
   stmt('var SLATE_SCENE_MARKER'),
   stmt('var SLATE_NUM_ONLY_SRC'),
-  stmt('var slateHeadingSrc')
+  stmt('var slateHeadingSrc'),
+  // The shared answer to "is this line nothing but a scene number?", and
+  // the blank-line walk it wants. Both the panel and the counter now ask
+  // through these instead of keeping their own copy of the pattern, which
+  // is the whole point of them — so both halves of this file test the same
+  // one, and a change to it cannot reach one half and not the other.
+  block('function slateCleanSceneNumber'),
+  block('function slateLoneSceneNumber'),
+  block('function slateNextNonBlank')
 ].join('\n');
 
 const check = new Function('console',
@@ -67,7 +76,7 @@ const check = new Function('console',
   '; return slateHealthCheck;')({ warn() {}, error() {}, log() {} });
 
 const count = new Function('console',
-  HEAD + '\n' + block('function slateCleanSceneNumber') + '\n' + block('function slateCountScenes') +
+  HEAD + '\n' + block('function slateCountScenes') +
   '; return slateCountScenes;')({ warn() {}, error() {}, log() {} });
 
 // ══════════════════════════════════════════════════
