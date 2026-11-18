@@ -2039,6 +2039,76 @@
         return { number: slateCleanSceneNumber(m[1]), text: text };
       }
 
+      // ── A montage beat is a setup, and a setup is a scene ──
+      //
+      //     63. MONTAGE — VARIOUS LOCATIONS — MONTHS PASSING
+      //     — INT. ABEGUNDE HOUSE — DAY
+      //     — INT. LAGOS ART GALLERY — EVENING
+      //     — EXT. VILLAGE SQUARE — DAY
+      //
+      // These used not to count. The reasoning was that the writer put one
+      // number on the montage, so it is one scene. That reasoning is wrong
+      // for the only purpose this product serves: ten beats in ten places
+      // are ten setups, ten company moves and ten lighting calls, and a
+      // first AD scheduling from a breakdown that calls them one scene will
+      // lose a day finding out.
+      //
+      // It was also breaking the numbers. The model expands every beat into
+      // a scene; we counted one. The merge only uses the script's own
+      // numbers when its count agrees with the model's, so on a script with
+      // two montages the counts never agreed and the model's invented
+      // numbers were printed instead — "2.01", scene 20 twice, a range of
+      // scenes repeated with different content. THE HILLS BETWEEN US has 87
+      // marks and 20 beats; the model returned 107. That is the whole gap.
+      //
+      // A beat carries NO number of its own. It belongs to the numbered
+      // scene above it, and saying otherwise would invent a number the
+      // writer never wrote.
+      //
+      // Returns { text } or null.
+      // `inSequence` is the caller's answer to "are we underneath a montage
+      // heading right now?". It is what makes this safe. A dash-prefixed
+      // line out in the open is a dialogue dash, a list, a stray hyphen from
+      // a PDF — anything. A dash-prefixed line directly under
+      //
+      //     30A. MONTAGE — A LOVE TAKING ROOT
+      //
+      // is a beat, every time, in every screenplay format there is. The
+      // context does the work the text cannot.
+      //
+      // Beats come in two shapes and BOTH count. THE HILLS BETWEEN US
+      // writes its scene 63 montage as slug lines and its scene 30A montage
+      // as prose:
+      //
+      //     — INT. ABEGUNDE HOUSE — DAY
+      //     — Dawn: Akin and Omowon paddle a canoe across the lake…
+      //
+      // The second is still a setup: a lake, at dawn, with two actors and a
+      // canoe. Counting the first and not the second would be counting the
+      // formatting rather than the work.
+      //
+      // A continuation line carries no dash, so a beat that wraps is still
+      // one beat.
+      function slateMontageBeat(line, inSequence) {
+        if (!inSequence) return null;
+        var s = String(line == null ? '' : line);
+        var m = s.match(/^[ \t]*[—–\-][ \t]*(\S.*)$/);
+        if (!m) return null;
+        var text = m[1].trim();
+        // Not a rule, not a page of prose, and not a bare dash.
+        if (!text || text.length > 200 || !/[A-Za-zА-Яа-я]/.test(text)) return null;
+        return { text: text };
+      }
+
+      // Does this line END a montage? A numbered scene heading does, and so
+      // does a plain slug line: the sequence runs until the script returns
+      // to ordinary scenes.
+      function slateEndsSequence(line, headStartRe) {
+        var s = String(line == null ? '' : line);
+        if (slateMarginNumberedHeading(s) || slateNumberedSequenceHeading(s)) return true;
+        return headStartRe.test(s);
+      }
+
       // The next non-blank line at or after `from`, as the helper above
       // wants it. Every caller was walking blank lines by hand.
       function slateNextNonBlank(lines, from) {
@@ -2098,7 +2168,7 @@
         var withNum = new RegExp(
           '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
           + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
-        var out = [];
+        var out = [], inSeq = false;
         for (var i = 0; i < raw.length; i++) {
           var nb = slateNextNonBlank(raw, i + 1);
           var m = slateLoneSceneNumber(raw[i], nb.text);
@@ -2126,8 +2196,19 @@
             out.push({ number: mh.number,
                        type: mhp ? slateSceneTypeFrom(mhp[1]) : slateSceneTypeFrom(mh.text),
                        at: i });
+            inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
+          // A beat inside a montage. A setup of its own, with no number of
+          // its own — and counting it is what keeps this list the same
+          // length as the model's, so the numbers above survive the merge.
+          var beat = slateMontageBeat(raw[i], inSeq);
+          if (beat) {
+            out.push({ number: null, type: slateSceneTypeFrom(beat.text),
+                       beat: true, at: i });
+            continue;
+          }
+          if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
             // An annotation can sit on the HEADING line — "8. INT. ROOM -
@@ -2189,7 +2270,7 @@
         var withNum = new RegExp(
           '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
           + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
-        var out = [], numbered = 0, unnumbered = 0, unreadable = [];
+        var out = [], numbered = 0, unnumbered = 0, beats = 0, unreadable = [], inSeq = false;
         for (var i = 0; i < raw.length; i++) {
           var nb = slateNextNonBlank(raw, i + 1);
           var m = slateLoneSceneNumber(raw[i], nb.text);
@@ -2223,7 +2304,18 @@
           // nothing and keeps one answer rather than two.
           var mh = slateMarginNumberedHeading(raw[i])
                 || slateNumberedSequenceHeading(raw[i]);
-          if (mh) { out.push(mh.number); numbered++; continue; }
+          if (mh) {
+            out.push(mh.number); numbered++;
+            inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
+            continue;
+          }
+          // A montage beat. Counted as a scene, because it is a setup the
+          // crew has to shoot — but NOT counted as one missing its number.
+          // The writer numbered the montage; a beat is not supposed to carry
+          // one, and reporting twenty of them as unnumbered scenes would be
+          // a brand new false accusation on a correctly formatted script.
+          if (slateMontageBeat(raw[i], inSeq)) { out.push(null); beats++; continue; }
+          if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
             var slateN = wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null;
@@ -2237,6 +2329,11 @@
           }
         }
         return { numbers: out, numbered: numbered, unnumbered: unnumbered,
+                 // Beats are in `total` and in `numbers` — they are scenes,
+                 // and the merge counts on this list matching the model's.
+                 // They are NOT in `unnumbered`: a beat is not a scene the
+                 // writer forgot to number.
+                 beats: beats,
                  unreadable: unreadable, total: out.length };
       }
 
@@ -2891,26 +2988,13 @@
           var slateUseRec = !!(slateRec && slateRec.length === scenes.length);
           var slateSceneInChunk = -1;
 
-          // Did the splitter find ANY scene number anywhere in this script?
-          // If not, the screenplay is unnumbered and every number the model
-          // offers is one it made up.
-          var slateAllRec = window.slateChunkNumbers || [];
-          var slateScriptHasNumbers = slateAllRec.some(function (list) {
-            return (list || []).some(function (n) { return !!n; });
-          });
-
-          // Does this section's output look like the model restarted counting
-          // at 1? A later section numbered 1,2,3... is renumbering, not
-          // reading — and that is what put one tester's "scene 1" under nine
-          // different locations.
-          var slateLooksRenumbered = (function () {
-            if (slateChunkIdx === 0) return false;
-            if (!scenes.length) return false;
-            for (var i = 0; i < scenes.length; i++) {
-              if (String(scenes[i].scene_number || '').trim() !== String(i + 1)) return false;
-            }
-            return true;
-          })();
+          // Two guards used to live here: one asking whether the script
+          // had any numbers at all, another asking whether this section
+          // looked renumbered from 1 — each a reason to distrust the
+          // model's numbers in a particular case. Both are gone because the
+          // rule below no longer has cases: if we cannot say which scene is
+          // which, we do not print a number. There is nothing left for a
+          // special case to rescue.
            // Collapse duplicates that arrive WITHIN a single chunk — the AI
           // often returns the same place as "BAALE'S HOUSE" and "Baale's House".
           function slateDedupe(list, nameField) {
@@ -2987,10 +3071,25 @@
 
             if (slateUseRec) {
               label = slateRec[slateSceneInChunk] ? String(slateRec[slateSceneInChunk]) : null;
-            } else if (!slateScriptHasNumbers || slateLooksRenumbered) {
-              // Either the screenplay has no numbering at all, or this
-              // section was plainly renumbered from 1. No number is honest;
-              // a wrong one is not. The crew works from their own pages.
+            } else {
+              // We could not tell which scene is which in this section, so
+              // we do not know this scene's number. Say so.
+              //
+              // This used to fall through and print whatever number the
+              // model returned, on the reasoning that a numbered script
+              // deserves numbers. It does — but not invented ones. A
+              // production manager testing a 215-page feature got a
+              // breakdown containing a scene numbered "2.01", two different
+              // scenes both numbered 20, a run of six scenes repeated with
+              // different content, and a transition — "CUT TO:" — listed as
+              // a scene. Every one of those came through this branch.
+              //
+              // A missing number shows as the scene's position and reads as
+              // what it is: we could not match it. A wrong number reads as
+              // fact, gets onto a call sheet, and sends a crew to the wrong
+              // setup. The same principle is written four lines above this
+              // one for the renumbered case; it was simply never applied
+              // here, which is the entire bug.
               label = null;
             }
 
@@ -6564,7 +6663,19 @@
           lines.forEach(function (line, i) {
             var mh = slateMarginNumberedHeading(line)
                   || slateNumberedSequenceHeading(line);
-            if (!mh) return;
+            if (!mh) {
+              // A montage beat is a scene here too, so the panel's total
+              // matches the breakdown's. The two disagreeing by exactly the
+              // number of beats is what sent a filmmaker a document saying
+              // 107 while the panel beside it said 87.
+              var mb = slateMontageBeat(line);
+              if (mb && firstOnLine[i + 1] === undefined) {
+                scenes.push({ line: i + 1, number: null, beat: true,
+                              rest: mb.text.slice(0, 80), raw: line.trim() });
+                added = true;
+              }
+              return;
+            }
             var had = firstOnLine[i + 1];
             if (had) { if (!had.number) had.number = mh.number; return; }
             scenes.push({ line: i + 1, number: mh.number,

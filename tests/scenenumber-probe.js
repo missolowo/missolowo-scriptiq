@@ -62,13 +62,16 @@ const HEAD = [
   block('function slateMarginNumberedHeading'),
   stmt('var SLATE_SEQUENCE'),
   block('function slateNumberedSequenceHeading'),
+  block('function slateMontageBeat'),
+  block('function slateEndsSequence'),
   block('function slateNextNonBlank')
 ].join('\n');
 
 const api = new Function('console', HEAD
   + '; return { lone: slateLoneSceneNumber, next: slateNextNonBlank,'
   + '           margin: slateMarginNumberedHeading, contd: SLATE_CONTD_RE,'
-  + '           seq: slateNumberedSequenceHeading };')(
+  + '           seq: slateNumberedSequenceHeading, beat: slateMontageBeat,'
+  + '           ends: slateEndsSequence, HEADSRC: slateHeadingSrc };')(
   { warn() {}, error() {}, log() {} });
 
 const lone = (line, next) => api.lone(line, next === undefined ? '' : next);
@@ -252,6 +255,65 @@ console.log('  ...and a sentence that merely mentions one is not');
   no('  the montage continues', 'lower case, mid-sentence, no number');
   no('63.MONTAGE', 'no separator at all — too close to a word boundary to trust');
   no('', 'an empty line');
+}
+
+// ══════════════════════════════════════════════════
+// A montage beat is a setup, and a setup is a scene. Ten beats in ten
+// places are ten company moves and ten lighting calls, and a first AD
+// scheduling from a breakdown that calls them one scene loses a day
+// finding out.
+//
+// They also decide whether the SCENE NUMBERS survive. The model expands
+// every beat into a scene; the merge only trusts our numbers when our
+// count agrees with the model's. THE HILLS BETWEEN US has two montages
+// and seventeen beats between them, and while those went uncounted the
+// counts never agreed and the model's invented numbers were printed
+// instead — "2.01", scene 20 twice, a transition listed as a scene.
+console.log('\nA montage beat is a scene, but only inside a montage');
+{
+  const B = (l, inSeq) => api.beat(l, inSeq === undefined ? true : inSeq);
+
+  // Scene 63's montage is written as slug lines.
+  ok('a slug-line beat counts', !!B('— INT. ABEGUNDE HOUSE — DAY'));
+  ok('  ...with an en dash', !!B('– EXT. VILLAGE SQUARE — DAY'));
+  ok('  ...and with a plain hyphen', !!B('- INT. LAGOS ART GALLERY — EVENING'));
+
+  // Scene 30A's montage is written as prose. Still a setup: a lake, at
+  // dawn, two actors and a canoe.
+  ok('a prose beat counts too',
+     !!B('— Dawn: Akin and Omowon paddle a canoe across the lake'));
+  ok('  ...and keeps its text',
+     B('— They dance under the veranda as the rain returns').text
+       === 'They dance under the veranda as the rain returns');
+
+  // THE GUARD. Outside a montage a leading dash means nothing in
+  // particular, and treating it as a scene would invent setups on every
+  // script that uses a dash for anything.
+  ok('OUTSIDE a montage, a dash line is NOT a beat',
+     B('— INT. ABEGUNDE HOUSE — DAY', false) === null,
+     'the context is the whole safety of this rule');
+  ok('  ...nor is a dash of dialogue', B('— I never said that.', false) === null);
+
+  ok('a bare dash is not a beat', B('—') === null);
+  ok('a page of prose is not a beat', B('— ' + 'x'.repeat(260)) === null);
+  ok('an empty line is not a beat', B('') === null);
+  ok('a line with no dash is not a beat', B('INT. ABEGUNDE HOUSE — DAY') === null);
+}
+
+console.log('  ...and a montage ends when the script returns to scenes');
+{
+  const ends = (l) => {
+    // Built exactly as slateSceneMarksIn and slateCountScenes build it —
+    // slateHeadingSrc, not SLATE_HEAD, because a numbered heading has its
+    // number before the INT/EXT word and must still end the sequence.
+    const headStart = new RegExp('^[ \\t]*' + api.HEADSRC, 'i');
+    return api.ends(l, headStart);
+  };
+  ok('a numbered heading ends the montage', ends('64. EXT. WALE\'S COMPOUND — NIGHT'));
+  ok('a plain slug line ends it too', ends('INT. OMOWON\'S BEDROOM — DAY'));
+  ok('another montage heading ends the first', ends('63. MONTAGE — VARIOUS LOCATIONS'));
+  ok('a beat does NOT end it', !ends('— INT. ABEGUNDE HOUSE — DAY'));
+  ok('action does not end it', !ends('Akin stands in the doorway holding something.'));
 }
 
 // ══════════════════════════════════════════════════
