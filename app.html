@@ -1997,6 +1997,48 @@
         return { number: slateCleanSceneNumber(m[1]), text: text };
       }
 
+      // ── A montage is a scene, and so is an intercut ──
+      //
+      //     30A. MONTAGE — A LOVE TAKING ROOT
+      //     63.  MONTAGE — VARIOUS LOCATIONS — MONTHS PASSING
+      //     49   INTERCUT – ADA'S LIVING ROOM / DAVID AND DEBBY'S DINING ROOM
+      //
+      // These are headings with no interior or exterior word, and a writer
+      // who numbers one has told us plainly that it is a scene. We read
+      // none of them: THE HILLS BETWEEN US lost both its montages, and
+      // losing the second hid something else — the writer had already used
+      // 63 for "EXT. WALE'S COMPOUND — DAY", so a ninth reused number went
+      // unreported because we could not see the second claim on it.
+      //
+      // The number and the keyword together are what make this safe. A line
+      // must OPEN with a number and then go straight into the sequence word
+      // for this to fire, which is a heading and not a sentence. Adding
+      // MONTAGE and INTERCUT to SLATE_HEAD instead would have them matching
+      // anywhere a line mentions one, including inside action, and that is
+      // how the Turkish and Korean bugs were made.
+      //
+      // Measured across the five real screenplays: six matches, all of them
+      // genuine headings, and no false positive anywhere.
+      //
+      // A montage's beats — the dash-prefixed lines underneath — are
+      // deliberately NOT scenes, and already are not counted as any: they
+      // open with a dash, so no reader here matches them. They belong to the
+      // numbered scene above them, which is what the writer meant.
+      //
+      // Returns { number, text } or null.
+      var SLATE_SEQUENCE = 'MONTAGE|SERIES OF SHOTS|SERIES OF|INTERCUT';
+      function slateNumberedSequenceHeading(line) {
+        var m = String(line == null ? '' : line).match(new RegExp(
+          '^[ \\t]*([0-9]{1,4}[A-Za-z]?)[.):]?[ \\t]+'
+          + '((?:' + SLATE_SEQUENCE + ')\\b.*)$', 'i'));
+        if (!m) return null;
+        // Strip a trailing margin number, so a shooting script's copy of it
+        // does not end up inside the location.
+        var text = m[2].replace(new RegExp('[ \\t]{2,}' + m[1] + '[.):]?[ \\t]*$'), '').trim();
+        if (!text || text.length > 120) return null;
+        return { number: slateCleanSceneNumber(m[1]), text: text };
+      }
+
       // The next non-blank line at or after `from`, as the helper above
       // wants it. Every caller was walking blank lines by hand.
       function slateNextNonBlank(lines, from) {
@@ -2077,7 +2119,8 @@
           // to fill in a number the model returned as null, so a heading
           // read here without its number costs the filmmaker the number on
           // the finished breakdown, not merely in the panel.
-          var mh = slateMarginNumberedHeading(raw[i]);
+          var mh = slateMarginNumberedHeading(raw[i])
+                || slateNumberedSequenceHeading(raw[i]);
           if (mh) {
             var mhp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
             out.push({ number: mh.number,
@@ -2178,7 +2221,8 @@
           // On a line both can read, such as "1  EXT. WOODS – SUNDOWN   1",
           // the two agree on the number, so going through here first costs
           // nothing and keeps one answer rather than two.
-          var mh = slateMarginNumberedHeading(raw[i]);
+          var mh = slateMarginNumberedHeading(raw[i])
+                || slateNumberedSequenceHeading(raw[i]);
           if (mh) { out.push(mh.number); numbered++; continue; }
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
@@ -6518,7 +6562,8 @@
           });
           var added = false;
           lines.forEach(function (line, i) {
-            var mh = slateMarginNumberedHeading(line);
+            var mh = slateMarginNumberedHeading(line)
+                  || slateNumberedSequenceHeading(line);
             if (!mh) return;
             var had = firstOnLine[i + 1];
             if (had) { if (!had.number) had.number = mh.number; return; }

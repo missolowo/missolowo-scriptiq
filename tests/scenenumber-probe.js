@@ -60,12 +60,15 @@ const HEAD = [
   block('function slateCleanSceneNumber'),
   block('function slateLoneSceneNumber'),
   block('function slateMarginNumberedHeading'),
+  stmt('var SLATE_SEQUENCE'),
+  block('function slateNumberedSequenceHeading'),
   block('function slateNextNonBlank')
 ].join('\n');
 
 const api = new Function('console', HEAD
   + '; return { lone: slateLoneSceneNumber, next: slateNextNonBlank,'
-  + '           margin: slateMarginNumberedHeading, contd: SLATE_CONTD_RE };')(
+  + '           margin: slateMarginNumberedHeading, contd: SLATE_CONTD_RE,'
+  + '           seq: slateNumberedSequenceHeading };')(
   { warn() {}, error() {}, log() {} });
 
 const lone = (line, next) => api.lone(line, next === undefined ? '' : next);
@@ -210,6 +213,48 @@ console.log('  ...and refuses everything that merely repeats a number');
 }
 
 // ══════════════════════════════════════════════════
+// A montage and an intercut are scenes, and a writer who numbers one has
+// said so. These have no interior or exterior word either, and we read
+// none of them: THE HILLS BETWEEN US lost both its montages, and losing
+// the second hid a ninth reused scene number, because the writer had
+// already used 63 for "EXT. WALE'S COMPOUND — DAY" and we could not see
+// the second claim on it.
+console.log('\nA numbered montage or intercut is a scene');
+{
+  const g = (l) => { const m = api.seq(l); return m ? m.number : null; };
+  ok('30A. MONTAGE is scene 30A', g('30A. MONTAGE — A LOVE TAKING ROOT') === '30A');
+  ok('63. MONTAGE is scene 63',
+     g('63. MONTAGE — VARIOUS LOCATIONS — MONTHS PASSING') === '63');
+  ok('a SERIES OF SHOTS counts', g('15. SERIES OF SHOTS — THE VILLAGE WAKES') === '15');
+  ok('an INTERCUT with no full stop after the number counts',
+     g("49      INTERCUT – ADA'S LIVING ROOM / DAVID AND DEBBY'S DINING ROOM") === '49',
+     'this is the one iRANTI heading the margin rule cannot see');
+  ok('  ...and a margin number is not left inside the location',
+     api.seq('71 INTERCUT BETWEEN DEBBY AND DOCTOR FASH. UNKNOWN PLACE:    71').text
+       === 'INTERCUT BETWEEN DEBBY AND DOCTOR FASH. UNKNOWN PLACE:',
+     JSON.stringify(api.seq('71 INTERCUT BETWEEN DEBBY AND DOCTOR FASH. UNKNOWN PLACE:    71')));
+
+  // A montage's BEATS are not scenes. They open with a dash, so no reader
+  // matches them, and they belong to the numbered scene above — which is
+  // what the writer meant by indenting them under it.
+  ok('a montage beat is not a scene', api.seq('— INT. ABEGUNDE HOUSE — DAY') === null);
+  ok('  ...nor is a prose beat',
+     api.seq('— Dawn: Akin and Omowon paddle a canoe across the lake') === null);
+}
+
+console.log('  ...and a sentence that merely mentions one is not');
+{
+  const no = (l, why) => ok('refused: ' + JSON.stringify(l.slice(0, 48)),
+                            api.seq(l) === null, why);
+  no('An unnumbered MONTAGE — VARIOUS', 'no number, so nothing says it is a scene');
+  no('INTERCUT WITH:', 'a transition, not a heading');
+  no('He shot 3 MONTAGE sequences that winter.', 'the number must open the line');
+  no('  the montage continues', 'lower case, mid-sentence, no number');
+  no('63.MONTAGE', 'no separator at all — too close to a word boundary to trust');
+  no('', 'an empty line');
+}
+
+// ══════════════════════════════════════════════════
 console.log('\nA scene continuing over a page break is NOT a duplicate');
 {
   const C = api.contd;
@@ -267,6 +312,15 @@ console.log('\nBoth halves ask the same question');
   const mcopies = (APP.match(/\[ \\t\]\{2,\}\\1/g) || []).length;
   ok('the margin pattern is written exactly once',
      mcopies === 1, mcopies + ' copies');
+
+  // Same for the sequence reader, for the same reason.
+  ok('the health panel reads montages', usesIt(inPanel, 'slateNumberedSequenceHeading'));
+  ok('the splitter\'s scene marks read montages',
+     usesIt(inMarks, 'slateNumberedSequenceHeading'));
+  ok('the scene counter reads montages', usesIt(inCount, 'slateNumberedSequenceHeading'));
+  const scopies = (APP.match(/MONTAGE\|SERIES OF SHOTS/g) || []).length;
+  ok('the sequence vocabulary is written exactly once',
+     scopies === 1, scopies + ' copies');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

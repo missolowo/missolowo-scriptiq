@@ -58,14 +58,15 @@ function api(source, label) {
   const HEAD = ['var SLATE_HEAD =', 'var SLATE_NUM  =', 'var SLATE_SCENE_MARKER',
     'var SLATE_NUM_ONLY_SRC', 'var slateHeadingSrc', 'var SLATE_ROWS_PER_PAGE',
     'var SLATE_CHARS_PER_ROW'].map(stmt).join('\n')
-    + '\n' + ['var SLATE_CONTD_RE'].map(maybeStmt).join('\n');
+    + '\n' + ['var SLATE_CONTD_RE', 'var SLATE_SEQUENCE'].map(maybeStmt).join('\n');
   const SRC = HEAD + '\n'
     + ['function slateCleanSceneNumber', 'function slateSceneTypeFrom',
        'function slateRowsIn', 'function slateEighthsFromRows', 'function slateNearMatch',
        'function slateHealthCheck', 'function slateCountScenes', 'function slateSceneMarksIn']
       .map(block).join('\n')
     + '\n' + ['function slateLoneSceneNumber', 'function slateNextNonBlank',
-              'function slateMarginNumberedHeading']
+              'function slateMarginNumberedHeading',
+              'function slateNumberedSequenceHeading']
       .map(maybeBlock).join('\n');
   return new Function('window', 'console', SRC +
     '; return { check: slateHealthCheck, count: slateCountScenes, marks: slateSceneMarksIn };')(
