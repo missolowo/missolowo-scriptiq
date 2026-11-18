@@ -102,6 +102,34 @@ Nollywood scripts put it on a line of its own. No assertion was wrong. The
 suite had never seen the shape. Fixtures cover what someone thought of;
 real scripts cover what nobody did.
 
+**A PDF page is a layout, not a stream of words.** `layout-browser.js`. The
+PDF reader used to walk pdf.js's text items in the order the file happened
+to store them, break a line whenever the vertical position moved, and never
+look at the horizontal position at all. On 18 November a filmmaker's
+175-page shooting script came back with 99 scenes, not one scene number, and
+ninety-five corrupted times of day — `SUNDOWN1`, `CONTINUOUS2`. His script
+was clean. A shooting script sets its scene number in both margins:
+
+```
+    1   EXT. WOODS – SUNDOWN                                      1
+```
+
+and that PDF stored the slug line before the two margin numbers, so we
+produced `EXT. WOODS – SUNDOWN1 1`. The number was no longer at the start of
+the line, so nothing downstream could read it, and the other one was glued
+to the time of day. The reader now groups items into rows by baseline,
+orders each row by horizontal position, and turns real gaps back into
+spaces. **The fixtures in that file deliberately arrive out of order**,
+because a fixture in tidy order passes against the broken reader too.
+
+**Two bugs can wear the same symptom.** The same week, a 215-page script
+reported 135 scenes when it has 94 — page numbers read as scene numbers,
+fixed in `pagefurniture-browser.js`. It would have been easy to assume the
+second script had the same illness; it had an unrelated one that the first
+fix did nothing for, and the first fix changed that second script by exactly
+nothing. Run every PDF change against both, and expect the numbers on one to
+move while the other does not budge.
+
 **Scene-heading detection is a PAIR, and the pair is the bug.** The health
 panel and the splitter read headings through different regexes. Twice now
 one has been taught a new format and the other has not — Turkish, then

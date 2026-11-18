@@ -1398,18 +1398,76 @@
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          let lastY = -1;
-          let pageText = "";
-          for (const item of textContent.items) {
-            if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 5) {
-              pageText += "\n";
-            }
-            pageText += item.str;
-            lastY = item.transform[5];
-          }
-          fullText += pageText + "\n" + SLATE_PAGE_MARK + "\n";
+          fullText += slatePageItemsToText(textContent.items)
+            + "\n" + SLATE_PAGE_MARK + "\n";
         }
         return slateStripPageFurniture(fullText);
+      }
+
+      // ── Lay the page out before reading it ──
+      //
+      // This used to walk textContent.items in the order the PDF happened to
+      // store them, start a new line whenever the vertical position moved,
+      // and otherwise just concatenate. It ignored the horizontal position
+      // completely, which is most of what a screenplay page means.
+      //
+      // On iRANTI RECALL, a properly formatted shooting script, that turned
+      //
+      //     1   EXT. WOODS – SUNDOWN                              1
+      //
+      // into "EXT. WOODS – SUNDOWN1 1". The scene number from the left
+      // margin was emitted after the slug line and glued onto the time of
+      // day. Every scene in the script lost its number — the panel read 99
+      // scenes and zero numbers — and every time of day came out corrupted.
+      // A shooting script puts its scene number in both margins, so this
+      // affected the whole format, not one file.
+      //
+      // So: group items into rows by their vertical position, order each row
+      // left to right, and turn horizontal gaps back into spaces. The gap is
+      // measured in characters, using the item's own width rather than an
+      // assumed font size, because a screenplay mixes 10 and 12 point.
+      function slatePageItemsToText(items) {
+        var rows = [];
+        for (var n = 0; n < items.length; n++) {
+          var it = items[n];
+          if (!it.str) continue;
+          var x = it.transform[4], y = it.transform[5];
+          var row = null;
+          for (var r = 0; r < rows.length; r++) {
+            // Half a line of slack. Tight enough to keep a superscript or a
+            // slightly raised margin number on its own row only when it
+            // really is on one, loose enough not to split a line whose
+            // baseline wobbles.
+            if (Math.abs(rows[r].y - y) <= 3) { row = rows[r]; break; }
+          }
+          if (!row) { row = { y: y, items: [] }; rows.push(row); }
+          row.items.push({ x: x, str: it.str, w: it.width || 0 });
+        }
+
+        rows.sort(function (a, b) { return b.y - a.y; });   // top of page first
+
+        var lines = rows.map(function (row) {
+          row.items.sort(function (a, b) { return a.x - b.x; });  // then left to right
+          var line = '', end = null;
+          for (var k = 0; k < row.items.length; k++) {
+            var cur = row.items[k];
+            if (end !== null) {
+              var charW = (cur.w && cur.str.length) ? (cur.w / cur.str.length) : 6;
+              var gap = Math.round((cur.x - end) / (charW || 6));
+              // One character of gap is ordinary letter spacing inside a
+              // word that the PDF split into two items; two or more is a
+              // real space the layout intended. Capped so a margin number
+              // does not drag a line out to 200 characters.
+              if (gap >= 2) line += new Array(Math.min(gap, 24) + 1).join(' ');
+              else if (gap === 1) line += ' ';
+            }
+            line += cur.str;
+            end = cur.x + (cur.w || 0);
+          }
+          return line.replace(/\s+$/, '');
+        });
+
+        return lines.join('\n');
       }
 
       // The marker is ours, inserted above, and never leaves this function:
