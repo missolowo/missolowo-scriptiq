@@ -29,6 +29,12 @@ function block(startNeedle) {
   }
   return APP.slice(s, end);
 }
+// A whole `var NAME = ...;` declaration, however many lines it spans.
+function stmt(needle) {
+  const s = APP.indexOf(needle);
+  if (s < 0) { console.error('NOT FOUND: ' + needle); process.exit(1); }
+  return APP.slice(s, APP.indexOf(';', s) + 1);
+}
 function line(needle) {
   const s = APP.indexOf(needle);
   if (s < 0) { console.error('NOT FOUND: ' + needle); process.exit(1); }
@@ -52,6 +58,11 @@ const SRC = [
   block('function slateLocationKey'),
   block('function slateBetterLabel'),
   block('function slateTitleCase'),
+  // The heading matcher the merge now uses when the counts disagree.
+  stmt('var SLATE_MATCH_SKIP'),
+  block('function slateSceneMatchTokens'),
+  block('function slateSceneMatchScore'),
+  block('function slateAlignModelScenes'),
   block('function mergeBreakdownChunks')
 ].join('\n');
 

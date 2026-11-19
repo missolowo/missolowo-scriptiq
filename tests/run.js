@@ -22,9 +22,13 @@ const PROBES = [
   'numbering-probe',   // what the # means, and whether we say so
   'cast-probe',        // who is one person, who is two, who is not a person
   'korean-probe',      // a heading with no INT/EXT word in it at all
+  'scenenumber-probe', // a number alone on a line: whose is it, if anyone's
+  'align-probe',       // the model's scenes matched to the script's own headings
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
-  'charge-probe'       // the credit is claimed before it is taken
+  'charge-probe',      // the credit is claimed before it is taken
+  'subscribe-probe',   // the signup-to-MailerLite hook, and its isolation
+  'subscribe-run'      // that hook, actually run against a failing provider
 ];
 
 let total = 0, failed = 0, broken = [];
@@ -56,4 +60,6 @@ console.log('  node tests/page-load.js        every page loads');
 console.log('  node tests/resume-browser.js   the resume offer at phone width');
 console.log('  node tests/funnel-browser.js   the funnel events actually fire');
 console.log('  node tests/homepage-browser.js how far down the homepage people get');
+console.log('  node tests/pagefurniture-browser.js  page numbers are not scene numbers');
+console.log('  node tests/layout-browser.js   a PDF page is a layout, not a stream');
 process.exit(failed ? 1 : 0);
