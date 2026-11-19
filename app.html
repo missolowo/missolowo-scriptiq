@@ -6827,13 +6827,47 @@
         // reported every scene as unnumbered. LORI NKAN MI showed "47 scenes
         // numbered in the script" and "6 scenes without a number" in the same
         // panel. Both came from the same box and could not both be true.
-        var unnumberedCount = 0;
-        try { unnumberedCount = slateCountScenes(text).unnumbered; }
-        catch (e) { unnumberedCount = scenes.filter(function (s) { return !s.number; }).length; }
+        var unnumberedCount = 0, numberedCount = 0;
+        try {
+          var slateUnCounts = slateCountScenes(text);
+          unnumberedCount = slateUnCounts.unnumbered;
+          numberedCount = slateUnCounts.numbered;
+        } catch (e) {
+          unnumberedCount = scenes.filter(function (s) { return !s.number; }).length;
+          numberedCount = scenes.length - unnumberedCount;
+        }
         if (unnumberedCount) {
-          findings.push({ level: unnumberedCount > scenes.length * 0.3 ? 'high' : 'low',
-            title: unnumberedCount + ' scene' + (unnumberedCount > 1 ? 's' : '') + ' without a number',
-            detail: 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.' });
+          // ── Whose omission is this? ──
+          //
+          // On 19 November a producer was told his script had scenes
+          // missing their numbers. His script numbers them. We had failed
+          // to read 67 of them, and then reported our own blind spot to him
+          // as a fault in his work — with the note below telling him it was
+          // "only a problem if it is unintended", as though he had chosen
+          // it. That is the worst thing this panel can do: the people it is
+          // built for are the ones who know what a scene number is for, and
+          // being blamed for one teaches them to distrust everything else
+          // in the box.
+          //
+          // A writer either numbers their script or does not; a genuinely
+          // mixed one is rare. So when the script is plainly a numbered one,
+          // an unnumbered heading is at least as likely to be ours as
+          // theirs, and the wording must stop asserting otherwise. It does
+          // not claim the opposite either — we cannot tell from here which
+          // it is, and the honest thing is to say what to check.
+          var slateIsNumberedScript = numberedCount >= 5
+            && numberedCount >= (numberedCount + unnumberedCount) * 0.2;
+          findings.push({
+            level: unnumberedCount > scenes.length * 0.3 ? 'high' : 'low',
+            title: slateIsNumberedScript
+              ? unnumberedCount + ' heading' + (unnumberedCount > 1 ? 's' : '')
+                + ' we could not match to a scene number'
+              : unnumberedCount + ' scene' + (unnumberedCount > 1 ? 's' : '') + ' without a number',
+            detail: slateIsNumberedScript
+              ? 'Your script numbers its scenes, so these may be numbers we could not read '
+                + 'rather than numbers you left out. Worth checking against your pages.'
+              : 'Montages and inserts are often unnumbered — this is only a problem if it is unintended.'
+          });
         }
  
         // Inconsistent location naming

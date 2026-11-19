@@ -333,5 +333,60 @@ console.log('\nThe vocabulary is where both halves can see it');
      'numOnly, branch A and branch B each reference it');
 }
 
+// ══════════════════════════════════════════════════
+// WHOSE OMISSION IS AN UNNUMBERED HEADING?
+//
+// On 19 November a producer tested a numbered 71-scene script. We read 50
+// of his numbers and missed 67, then reported those 67 to him as scenes
+// missing a number — with a note saying it was "only a problem if it is
+// unintended", as though he had chosen it. He wrote back saying the tool
+// told him his script was missing scene numbers. It was not. We were.
+//
+// A writer either numbers their script or does not; a genuinely mixed one
+// is rare. So on a plainly numbered script the panel must stop asserting
+// that an unnumbered heading was the writer's choice. It does not assert
+// the opposite either — from here we cannot tell which it is — it says
+// what to check.
+console.log('\nAn unnumbered heading on a NUMBERED script is not called the writer\'s omission');
+{
+  const numbered = [];
+  for (let i = 1; i <= 20; i++) {
+    numbered.push(i + '. INT. ROOM ' + i + ' - DAY', '', 'Something happens.', '');
+  }
+  // Four headings whose numbers we cannot read, in a script that plainly
+  // numbers its scenes.
+  numbered.push('INT. KITCHEN - NIGHT', '', 'Ada waits.', '');
+  numbered.push('EXT. YARD - DAY', '', 'Rain.', '');
+  numbered.push('INT. HALLWAY - NIGHT', '', 'A door closes.', '');
+  numbered.push('EXT. ROAD - DAWN', '', 'A car passes.', '');
+  const r = check(numbered.join('\n'));
+  const f = (r.findings || []).find(x => /number/i.test(x.title) && !/duplicate/i.test(x.title));
+  ok('the finding exists', !!f, JSON.stringify((r.findings || []).map(x => x.title)));
+  ok('it does NOT call them scenes without a number',
+     f && !/scenes? without a number/.test(f.title), f && f.title);
+  ok('  ...it says we could not match them',
+     f && /could not match/.test(f.title), f && f.title);
+  ok('  ...and the note does not tell the writer it was their choice',
+     f && !/only a problem if it is unintended/.test(f.detail), f && f.detail);
+  ok('  ...it points at our reading instead',
+     f && /could not read/.test(f.detail), f && f.detail);
+}
+
+console.log('\nBut an UNNUMBERED script still gets the original, correct note');
+{
+  // No scene numbers anywhere. Here an unnumbered heading really is the
+  // writer's choice, and saying so is right.
+  const bare = [];
+  for (let i = 1; i <= 12; i++) {
+    bare.push('INT. ROOM ' + i + ' - DAY', '', 'Something happens.', '');
+  }
+  const r = check(bare.join('\n'));
+  const f = (r.findings || []).find(x => /without a number|could not match/.test(x.title));
+  ok('the finding is the original wording',
+     !f || /scenes? without a number/.test(f.title), f && f.title);
+  ok('  ...and keeps the montage note',
+     !f || /unintended/.test(f.detail), f && f.detail);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
