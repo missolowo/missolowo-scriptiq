@@ -78,7 +78,9 @@ const HEAD = [
 ].join('\n');
 
 const check = new Function('console',
-  HEAD + '\n' + block('function slateNearMatch') + '\n' + block('function slateHealthCheck') +
+  HEAD + '\n' + block('function slateNearMatch')
+  + '\n' + block('function slateScriptIsNumbered')
+  + '\n' + block('function slateHealthCheck') +
   '; return slateHealthCheck;')({ warn() {}, error() {}, log() {} });
 
 const count = new Function('console',

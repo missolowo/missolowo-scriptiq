@@ -3346,19 +3346,29 @@
         // "Scenes: 3, 2, 1" came from. Now every chunk is in, so this is
         // the first moment the numbers can actually be right.
         // Derived in code, not asked of the model: counting is arithmetic.
-          function labelFor(s) {
-          // Cleaned here as well as at the splitter. The recorded numbers win
-          // and those are already clean, but when the script has numbers and
-          // the recorded list is not used, the MODEL's scene_number is what
-          // prints — and the model copies the heading, trailing dot included.
-          // Belt and braces: this is the single point every label passes
-          // through on its way to a page.
-          var n = slateCleanSceneNumber(s.scene_number);
-          if (n === null || n === '' || n === 'null' || n === 'undefined') {
-            return '#' + s.scene_index;
+          // This is the single point every scene label passes through on
+          // its way to a page, so what it decides, the whole breakdown says.
+          //
+          // On a script that numbers nothing, "#4" is useful: there is no
+          // other number space for it to collide with, and a scene needs
+          // something to be called.
+          //
+          // On a script that numbers its own scenes it is harmful. A
+          // producer read a breakdown of his own numbered script and found
+          // "#36" sitting between "24H" and "26" — a number that is nowhere
+          // on his pages, which he then had to go and look for:
+          //
+          //   "It's telling me my script is missing scene numbers so it gave
+          //    it its own scene numbers. ... And have it verify before it
+          //    gives its own numbers to avoid double work."
+          //
+          // He is right. Where his script has the authority, a scene we
+          // could not place says so and stays out of his number space.
+          function labelFor(s, numberedScript) {
+            var n = slateSceneNumberOrNull(s.scene_number);
+            if (n !== null) return n;
+            return numberedScript ? SLATE_NO_NUMBER : ('#' + s.scene_index);
           }
-          return n;
-        }
 
         // ── One place, one name ──
         // Done here because this is the first moment every chunk is in and
@@ -3411,7 +3421,18 @@
         // all say the same thing. They used to disagree: the scene list
         // printed "—" for an unnumbered scene while the other two printed
         // "#13", and a filmmaker reasonably asked why.
-        merged.scenes.forEach(function (s) { s.scene_label = labelFor(s); });
+        // Count before labelling: what a label should say depends on the
+        // kind of script this is, and that can only be known once every
+        // chunk is in and all the matching is done.
+        var slateNumbered = 0;
+        merged.scenes.forEach(function (s) {
+          if (slateSceneNumberOrNull(s.scene_number) !== null) slateNumbered++;
+        });
+        var slateNumberedScript = slateScriptIsNumbered(
+          slateNumbered, merged.scenes.length - slateNumbered);
+        merged.scenes.forEach(function (s) {
+          s.scene_label = labelFor(s, slateNumberedScript);
+        });
 
         // ── CONTINUOUS inherits the time of day ──
         // "CONTINUOUS" means the same moment as the scene before it. The
@@ -3767,13 +3788,66 @@
       //
       // Returns null when there is nothing to explain, so a cleanly numbered
       // script gets no clutter.
+
+      // What a scene shows when we could not match it to a number of the
+      // script's own. ONE definition: the scene list, the character report,
+      // the location report and every export read scene_label, and they
+      // once disagreed — the list printed a dash where the reports printed
+      // "#13", and a filmmaker reasonably asked which scene that was.
+      var SLATE_NO_NUMBER = '\u2014';
+
+      // Does this scene carry a number at all? Asked in two places, so it
+      // lives in one. The model copies the heading, trailing dot included,
+      // which is why it is cleaned before it is judged.
+      function slateSceneNumberOrNull(value) {
+        var n = slateCleanSceneNumber(value);
+        if (n === null || n === '' || n === 'null' || n === 'undefined') return null;
+        return n;
+      }
+
+      // Is this a script that numbers its own scenes?
+      //
+      // A writer either numbers their script or does not; a genuinely mixed
+      // one is rare. Five is enough to be a habit rather than an accident,
+      // and a fifth of the scenes is enough that the unnumbered ones are
+      // more likely our failure to read than the writer's omission.
+      //
+      // Both the health panel and the scene labels turn on this answer, and
+      // they must give the same one. The panel calling a script numbered
+      // while the labels treat it as unnumbered would print "#36" beneath a
+      // finding that says the numbers are ours to find.
+      function slateScriptIsNumbered(numbered, unnumbered) {
+        return numbered >= 5 && numbered >= (numbered + unnumbered) * 0.2;
+      }
+
       function slateNumberingNote(scenes) {
-        var list = (scenes || []), ours = 0, theirs = 0;
+        var list = (scenes || []), ours = 0, theirs = 0, unplaced = 0;
         list.forEach(function (s) {
           var label = String((s && s.scene_label) || '');
           if (!label) return;
-          if (label.charAt(0) === '#') ours++; else theirs++;
+          if (label === SLATE_NO_NUMBER) unplaced++;
+          else if (label.charAt(0) === '#') ours++;
+          else theirs++;
         });
+
+        // A dash is not an omission in the script, and must never be read
+        // as one. It means we could not match that scene to a number — our
+        // failure, stated plainly, in the one place the reader is looking
+        // when they wonder what the dash is.
+        //
+        // This case and the '#' cases below cannot both arise: a script is
+        // judged numbered or not once, and the labels follow that one
+        // answer.
+        if (unplaced) {
+          return '<strong>' + unplaced + ' scene' + (unplaced > 1 ? 's' : '')
+               + '</strong> could not be matched to a number in your script and '
+               + (unplaced > 1 ? 'are' : 'is') + ' shown as <strong>'
+               + SLATE_NO_NUMBER + '</strong>. '
+               + (unplaced > 1 ? 'They are' : 'It is') + ' not missing from your '
+               + 'script — we could not read a number for '
+               + (unplaced > 1 ? 'them' : 'it') + ', so we have left your numbering '
+               + 'alone rather than adding one of our own.';
+        }
         if (!ours) return null;
         if (!theirs) {
           // Every scene is ours. No collision is possible, so one line is
@@ -7063,8 +7137,8 @@
           // theirs, and the wording must stop asserting otherwise. It does
           // not claim the opposite either — we cannot tell from here which
           // it is, and the honest thing is to say what to check.
-          var slateIsNumberedScript = numberedCount >= 5
-            && numberedCount >= (numberedCount + unnumberedCount) * 0.2;
+          var slateIsNumberedScript =
+            slateScriptIsNumbered(numberedCount, unnumberedCount);
           findings.push({
             level: unnumberedCount > scenes.length * 0.3 ? 'high' : 'low',
             title: slateIsNumberedScript

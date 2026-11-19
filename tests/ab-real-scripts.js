@@ -58,7 +58,8 @@ function api(source, label) {
   const HEAD = ['var SLATE_HEAD =', 'var SLATE_NUM  =', 'var SLATE_SCENE_MARKER',
     'var SLATE_NUM_ONLY_SRC', 'var slateHeadingSrc', 'var SLATE_ROWS_PER_PAGE',
     'var SLATE_CHARS_PER_ROW'].map(stmt).join('\n')
-    + '\n' + ['var SLATE_CONTD_RE', 'var SLATE_SEQUENCE'].map(maybeStmt).join('\n');
+    + '\n' + ['var SLATE_CONTD_RE', 'var SLATE_SEQUENCE',
+               'var SLATE_NO_NUMBER'].map(maybeStmt).join('\n');
   const SRC = HEAD + '\n'
     + ['function slateCleanSceneNumber', 'function slateSceneTypeFrom',
        'function slateRowsIn', 'function slateEighthsFromRows', 'function slateNearMatch',
@@ -67,7 +68,8 @@ function api(source, label) {
     + '\n' + ['function slateLoneSceneNumber', 'function slateNextNonBlank',
               'function slateMarginNumberedHeading',
               'function slateNumberedSequenceHeading',
-              'function slateHeadTextAt', 'function slateMontageBeat', 'function slateEndsSequence']
+              'function slateHeadTextAt', 'function slateMontageBeat', 'function slateEndsSequence',
+              'function slateScriptIsNumbered', 'function slateSceneNumberOrNull']
       .map(maybeBlock).join('\n');
   return new Function('window', 'console', SRC +
     '; return { check: slateHealthCheck, count: slateCountScenes, marks: slateSceneMarksIn };')(

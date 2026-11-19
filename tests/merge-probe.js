@@ -55,9 +55,21 @@ const SRC = [
   block('function slateMergeElements'),
   block('function slateIsPlaceholderLocation'),
   block('function slateCleanField'),
+  // Needed by slateLocationKey, and missing here until 19 November: every
+  // location in this file was a single word, so the branch that trims
+  // trailing structural words ("MAMA BOLA HOUSE" -> "mamabola") was never
+  // once executed by this harness. It threw the moment a two-word location
+  // appeared.
+  stmt('var SLATE_LOC_STRUCTURAL'),
   block('function slateLocationKey'),
   block('function slateBetterLabel'),
   block('function slateTitleCase'),
+  // What a scene shows when it carries no number of the script's own, and
+  // the two helpers that decide it. Extracted, not restated: a breakdown
+  // whose labels disagree with its own footnote is the bug this prevents.
+  stmt('var SLATE_NO_NUMBER'),
+  block('function slateSceneNumberOrNull'),
+  block('function slateScriptIsNumbered'),
   // The heading matcher the merge now uses when the counts disagree.
   stmt('var SLATE_MATCH_SKIP'),
   block('function slateSceneMatchTokens'),
@@ -197,6 +209,59 @@ console.log('\nA section that returns nothing extra still merges');
      out.production_elements.special_requirements.length === 0);
   ok('scene_index is assigned, which every document joins on',
      out.scenes[0].scene_index === 1, JSON.stringify(out.scenes[0].scene_index));
+}
+
+// ══════════════════════════════════════════════════
+// Through the REAL merge, because labelFor's answer depends on a count
+// taken across every chunk, and a per-chunk count would be wrong in
+// exactly the way that is hard to see: each section would judge the kind
+// of script for itself, and a section that happened to hold the
+// unnumbered stretch would print dashes while the rest printed numbers.
+console.log('\nWhat a scene is called, on a script that numbers its own');
+{
+  // The numbers come from what we read off the PAGE, never from the model,
+  // so they are supplied the way the splitter supplies them. Six numbered
+  // headings and two we could not read a number for, in each of two
+  // sections \u2014 twelve and four across the script.
+  const heads = n => Array.from({ length: 8 }, (ignored, k) =>
+    'INT. MARKET ' + (n * 8 + k) + ' - DAY');
+  win.slateChunkNumbers = [
+    ['1', '2', '3', '4', '5', '6', null, null],
+    ['7', '8', '9', '10', '11', '12', null, null]
+  ];
+  win.slateChunkHeads = [heads(0), heads(1)];
+
+  const section = n => ({
+    scenes: Array.from({ length: 8 }, (ignored, k) =>
+      scene(n * 8 + k + 1, 'Market ' + (n * 8 + k), ['ADA']))
+  });
+  const out = merge([section(0), section(1)]);
+  const labels = out.scenes.map(s => s.scene_label);
+  win.slateChunkNumbers = null; win.slateChunkHeads = null;
+
+  ok('the writer\u2019s own numbers print untouched',
+     labels.filter(l => /^\d+$/.test(l)).length === 12, JSON.stringify(labels));
+  ok('EVERY unplaced scene shows a dash \u2014 none of them a number of ours',
+     labels.filter(l => l === '\u2014').length === 4
+     && !labels.some(l => String(l).charAt(0) === '#'),
+     JSON.stringify(labels) + '  <- a "#" here is the producer\u2019s complaint');
+  ok('  ...including the ones in the SECOND section',
+     labels.slice(8).filter(l => l === '\u2014').length === 2,
+     JSON.stringify(labels.slice(8))
+     + '  <- a per-chunk count would judge each section on its own');
+  ok('  ...and the model\u2019s own numbers never override the page',
+     labels[0] === '1' && labels[8] === '7',
+     JSON.stringify(labels.slice(0, 9)));
+}
+
+console.log('\nAnd on a script that numbers nothing at all');
+{
+  const out = merge([{ scenes: [
+    scene(1, 'Market', ['ADA']), scene(2, 'Church', ['TADE']), scene(3, 'River', ['ADA'])
+  ]}]);
+  const labels = out.scenes.map(s => s.scene_label);
+  ok('our position prints, because nothing can collide with it',
+     JSON.stringify(labels) === '["#1","#2","#3"]', JSON.stringify(labels));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

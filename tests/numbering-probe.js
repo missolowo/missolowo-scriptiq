@@ -36,7 +36,17 @@ function block(startNeedle) {
   return APP.slice(s, end);
 }
 
-const SRC = block('function slateNumberingNote') + '\n' + block('function slateNumberingNoteHtml');
+function stmt(needle) {
+  const s = APP.indexOf(needle);
+  if (s < 0) { console.error('NOT FOUND: ' + needle); process.exit(1); }
+  return APP.slice(s, APP.indexOf(';', s) + 1);
+}
+
+// SLATE_NO_NUMBER is extracted rather than written out here, so that the
+// character the note explains and the character the labels print can never
+// become two different characters.
+const SRC = stmt('var SLATE_NO_NUMBER') + '\n'
+  + block('function slateNumberingNote') + '\n' + block('function slateNumberingNoteHtml');
 const api = new Function(SRC + '; return { note: slateNumberingNote, html: slateNumberingNoteHtml };')();
 const plain = t => (t || '').replace(/<[^>]+>/g, '');
 
@@ -137,14 +147,111 @@ console.log('\nThe PDF version survives the fonts we register');
      /if \(!note\) return;/.test(pdfFn));
 }
 
+// ══════════════════════════════════════════════
+// The dash is now the LABEL of every scene we could not place, not just a
+// word in a footnote — it prints in the scene column of every PDF, in
+// every script we support. A font without the glyph draws a box there.
+console.log('\nEvery embedded font can actually draw the dash');
+{
+  const fonts = fs.readdirSync(ROOT).filter(f => /\.ttf$/.test(f));
+  ok('the fonts are where the PDF builder expects them', fonts.length > 0,
+     'no .ttf files found in the repository root');
+
+  // Minimal cmap walk: formats 4 and 12 are all jsPDF's Noto files use.
+  const hasGlyph = (file, cp) => {
+    const d = fs.readFileSync(__p.join(ROOT, file));
+    let cmap = null;
+    for (let i = 0; i < d.readUInt16BE(4); i++) {
+      const rec = 12 + 16 * i;
+      if (d.slice(rec, rec + 4).toString('latin1') === 'cmap') cmap = d.readUInt32BE(rec + 8);
+    }
+    if (cmap === null) return false;
+    for (let i = 0; i < d.readUInt16BE(cmap + 2); i++) {
+      const sub = cmap + d.readUInt32BE(cmap + 4 + 8 * i + 4);
+      const fmt = d.readUInt16BE(sub);
+      if (fmt === 4) {
+        const segX2 = d.readUInt16BE(sub + 6);
+        for (let j = 0; j < segX2 / 2; j++) {
+          const end = d.readUInt16BE(sub + 14 + 2 * j);
+          const start = d.readUInt16BE(sub + 16 + segX2 + 2 * j);
+          if (start <= cp && cp <= end) return true;
+        }
+      } else if (fmt === 12) {
+        const n = d.readUInt32BE(sub + 12);
+        for (let g = 0; g < n; g++) {
+          const gp = sub + 16 + 12 * g;
+          if (d.readUInt32BE(gp) <= cp && cp <= d.readUInt32BE(gp + 4)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  for (const f of fonts) {
+    ok('  ' + f + ' has the em dash', hasGlyph(f, 0x2014),
+       'a Yoruba, Korean or Hindi breakdown would print a box in the scene column');
+  }
+}
+
 console.log('\nWe still do not renumber anyone’s script');
 {
-  const labelFor = block('function labelFor');
-  ok('the script’s own number is still what prints when it has one',
-     /return n;/.test(labelFor));
-  ok('  ...and our position is only the fallback',
-     /return '#' \+ s\.scene_index;/.test(labelFor),
+  // RUN it, rather than grep it. This block used to assert that the source
+  // contained the characters "return '#' + s.scene_index;" — which says
+  // nothing about what a filmmaker reads, and went red the moment the line
+  // was rewritten while still behaving correctly.
+  const run = new Function(
+    stmt('var SLATE_NO_NUMBER') + '\n'
+    + block('function slateCleanSceneNumber') + '\n'
+    + block('function slateSceneNumberOrNull') + '\n'
+    + block('function labelFor')
+    + '; return labelFor;')();
+
+  const numbered = { scene_number: '24A', scene_index: 36 };
+  const blank = { scene_number: null, scene_index: 36 };
+
+  ok('the script’s own number prints, on either kind of script',
+     run(numbered, true) === '24A' && run(numbered, false) === '24A',
      'an AD holding the script must be able to find the scene');
+  ok('  ...trailing punctuation the model copied off the heading is cleaned',
+     run({ scene_number: '12.', scene_index: 1 }, true) === '12',
+     run({ scene_number: '12.', scene_index: 1 }, true));
+
+  // The producer's complaint, as an assertion. His script numbers its own
+  // scenes; "#36" between "24H" and "26" is a number nowhere on his pages.
+  ok('ON A NUMBERED SCRIPT an unplaced scene shows a dash, never a number of ours',
+     run(blank, true) === '\u2014',
+     JSON.stringify(run(blank, true))
+     + '  <- anything number-shaped here is the bug he reported');
+
+  // And the other half: where there is no number space to collide with,
+  // "#36" is useful and stays.
+  ok('on a script that numbers nothing, our position is still the fallback',
+     run(blank, false) === '#36', run(blank, false));
+
+  ok('a scene numbered "0" is a number, not an absence',
+     run({ scene_number: '0', scene_index: 9 }, true) === '0',
+     run({ scene_number: '0', scene_index: 9 }, true));
+  ok('the strings "null" and "undefined" are absences, not numbers',
+     run({ scene_number: 'null', scene_index: 9 }, true) === '\u2014'
+     && run({ scene_number: 'undefined', scene_index: 9 }, true) === '\u2014');
+}
+
+console.log('\nThe panel and the labels answer to one definition');
+{
+  const isNumbered = new Function(
+    block('function slateScriptIsNumbered') + '; return slateScriptIsNumbered;')();
+
+  ok('a script with 74 numbered and 30 not is a numbered script',
+     isNumbered(74, 30) === true);
+  ok('a script with nothing numbered is not',
+     isNumbered(0, 104) === false);
+  ok('four numbers in a whole feature is an accident, not a habit',
+     isNumbered(4, 100) === false);
+  ok('  ...but five is a habit, if they are a fifth of the scenes',
+     isNumbered(5, 15) === true);
+  ok('five numbers across two hundred scenes is still not a numbered script',
+     isNumbered(5, 195) === false,
+     'otherwise two hundred dashes print where #1..#200 would have helped');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
