@@ -254,6 +254,58 @@ console.log('\nWhat a scene is called, on a script that numbers its own');
      JSON.stringify(labels.slice(0, 9)));
 }
 
+// ══════════════════════════════════════════════════
+// THE SECTION BOUNDARY.
+//
+// We send the model at most four scenes per request, so a feature is
+// twenty-odd separate calls. Those sections are an artefact of how we
+// call the model and nothing to do with the script — but the matching
+// used to run INSIDE one, against four headings at a time.
+//
+// A scene whose true heading sits in the section next door is then
+// unmatchable however good the matcher is. On THE HILLS BETWEEN US that
+// cost 29 of the writer's numbers: 42 recovered section by section
+// against 71 across the whole script, same matcher, same data, same day.
+//
+// Every assertion we had tested the matcher. None tested the window it
+// ran in, so all 764 stayed green while a filmmaker got 42.
+console.log('\nMatching reaches across section boundaries');
+{
+  // Sixteen headings, numbered 1-16, in four sections of four.
+  const heads = [], nums = [];
+  for (let k = 1; k <= 16; k++) {
+    heads.push('INT. LOCATION ' + k + ' - DAY');
+    nums.push(String(k));
+  }
+  const chunk4 = list => [list.slice(0, 4), list.slice(4, 8),
+                          list.slice(8, 12), list.slice(12, 16)];
+  win.slateChunkHeads = chunk4(heads);
+  win.slateChunkNumbers = chunk4(nums);
+
+  // The model read the opening as three scenes rather than four. Every
+  // section after it is therefore offset by one against our headings: its
+  // second response covers our headings 4-7, not 5-8, and so on. This is
+  // the ordinary case, not a pathological one.
+  const all = [];
+  for (let k = 1; k <= 16; k++) {
+    all.push(scene(k, 'Location ' + k, ['ADA']));
+  }
+  const out = merge([
+    { scenes: all.slice(0, 3) }, { scenes: all.slice(3, 7) },
+    { scenes: all.slice(7, 11) }, { scenes: all.slice(11, 16) }
+  ]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+
+  const labels = out.scenes.map(s => s.scene_label);
+  ok('EVERY scene finds its own number, across all four sections',
+     JSON.stringify(labels) === JSON.stringify(nums),
+     JSON.stringify(labels)
+     + '  <- matched section by section, the later ones come back as dashes');
+  ok('  ...and the last section in particular',
+     JSON.stringify(labels.slice(12)) === '["13","14","15","16"]',
+     JSON.stringify(labels.slice(12)));
+}
+
 console.log('\nAnd on a script that numbers nothing at all');
 {
   const out = merge([{ scenes: [

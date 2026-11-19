@@ -3158,34 +3158,61 @@
           }
         };
                let sceneOffset = 0;
-        var slateChunkIdx = -1;
-        for (const chunk of chunks) {
-          slateChunkIdx++;
-          const scenes = chunk.scenes || [];
-          // DERIVE, DON'T ASK — the numbers this section was built from.
-          // Used only to fill a null the model returned, and only when the
-          // scene counts agree; a mismatch means we are not sure which scene
-          // is which, and a wrong number is worse than a missing one.
-          var slateRec = (window.slateChunkNumbers || [])[slateChunkIdx];
-          var slateHeads = (window.slateChunkHeads || [])[slateChunkIdx] || [];
-          var slateSceneInChunk = -1;
 
-          // Which heading did each of the model's scenes come from?
-          //
-          // When our count of headings equals the model's count of scenes,
-          // position IS the answer and always has been — that path is
-          // untouched. When they disagree, we used to give up and print no
-          // number for the whole section. Now we match on the headings
-          // themselves, so a disagreement costs the scenes we genuinely
-          // cannot place and nothing else.
-          //
-          // A producer with a numbered 71-scene script got 50 numbers out
-          // of 117 scenes under the old rule, and told us the tool had
-          // invented its own numbering. He was describing this.
-          var slateCountsAgree = !!(slateRec && slateRec.length === scenes.length);
-          var slateMatch = slateCountsAgree
-            ? scenes.map(function (ignored, i) { return i; })
-            : slateAlignModelScenes(scenes, slateHeads);
+        // ── Match the whole script at once, not one section at a time ──
+        //
+        // The sections exist because of how we CALL the model: at most four
+        // scenes per request, so a feature is twenty-six separate calls.
+        // They are an artefact of that, and nothing about the script.
+        //
+        // Matching inside one section means matching inside a four-heading
+        // window, and a scene whose true heading sits in the section next
+        // door cannot be found however good the matcher is. Measured on THE
+        // HILLS BETWEEN US, 104 headings against the 107 scenes the model
+        // really returned: matched section by section, 42 of the writer's
+        // numbers come back. Matched across the whole script, 72. Same
+        // matcher, same data, same day — only the window changed.
+        //
+        // So flatten everything the splitter recorded, line the two full
+        // lists up once, and let each scene read its own answer out of the
+        // result. The recorded lists are parallel by construction — one
+        // entry per heading, in script order — so one flattening serves the
+        // number, the type, the page and the eighths alike.
+        var slateFlat = function (name) {
+          var lists = window[name] || [], out = [];
+          for (var i = 0; i < lists.length; i++) {
+            out = out.concat(lists[i] || []);
+          }
+          return out;
+        };
+        var slateAllHeads = slateFlat('slateChunkHeads');
+        var slateAllNums = slateFlat('slateChunkNumbers');
+        var slateAllTypes = slateFlat('slateChunkTypes');
+        var slateAllEighths = slateFlat('slateChunkEighths');
+        var slateAllPages = slateFlat('slateChunkPages');
+        var slateHaveRecord = !!(window.slateChunkNumbers && slateAllNums.length);
+
+        var slateAllScenes = [];
+        chunks.forEach(function (c) {
+          slateAllScenes = slateAllScenes.concat((c && c.scenes) || []);
+        });
+
+        // When EVERY section's count agreed, position was already the
+        // answer and has been all along — that path is left exactly as it
+        // was, so a script we were reading correctly cannot change.
+        var slateEveryChunkAgrees = slateHaveRecord
+          && (window.slateChunkNumbers || []).every(function (rec, i) {
+               return rec && rec.length === (((chunks[i] || {}).scenes) || []).length;
+             });
+        var slateMatch = !slateHaveRecord ? []
+          : slateEveryChunkAgrees
+            ? slateAllScenes.map(function (ignored, i) { return i; })
+            : slateAlignModelScenes(slateAllScenes, slateAllHeads);
+
+        var slateSceneOverall = -1;
+        for (const chunk of chunks) {
+          const scenes = chunk.scenes || [];
+
 
           // Two guards used to live here: one asking whether the script
           // had any numbers at all, another asking whether this section
@@ -3228,7 +3255,7 @@
           // producing NaN rows and collapsing 2.10 into 2.1.
           // Preserve exactly what the script says; null where it says nothing.
           for (const scene of scenes) {
-            slateSceneInChunk++;
+            slateSceneOverall++;
             var label = scene.scene_number;
             label = (label === undefined || label === null) ? '' : String(label).trim();
             if (!label || label === 'null' || label === 'undefined' || label === 'NaN'
@@ -3257,28 +3284,26 @@
             // scene is either placed and carries all four, or is not and
             // carries none. Mixing them would put one scene's page length
             // against another scene's number.
-            var slateHeadIdx = slateMatch[slateSceneInChunk];
-            var slatePlaced = (slateHeadIdx !== undefined && slateHeadIdx >= 0 && slateRec);
+            var slateHeadIdx = slateMatch[slateSceneOverall];
+            var slatePlaced = (slateHeadIdx !== undefined && slateHeadIdx >= 0
+                               && slateHaveRecord);
 
             if (slatePlaced) {
-              var recTypes = (window.slateChunkTypes || [])[slateChunkIdx];
-              var recType = recTypes && recTypes[slateHeadIdx];
+              var recType = slateAllTypes[slateHeadIdx];
               if (recType === 'RETURN') scene.slate_returns_to_present = true;
               else if (recType) scene.scene_type = recType;
               // The page length we measured off the script, carried onto the
               // scene. Gated the same way the number is: if we cannot tell
               // which scene this is, a wrong length is worse than falling
               // back to the estimate.
-              var recEighths = (window.slateChunkEighths || [])[slateChunkIdx];
-              var slateE = recEighths && recEighths[slateHeadIdx];
+              var slateE = slateAllEighths[slateHeadIdx];
               if (slateE) scene.slate_eighths = slateE;
-              var recPages = (window.slateChunkPages || [])[slateChunkIdx];
-              var slateP = recPages && recPages[slateHeadIdx];
+              var slateP = slateAllPages[slateHeadIdx];
               if (slateP) scene.slate_page = slateP;
             }
 
             if (slatePlaced) {
-              label = slateRec[slateHeadIdx] ? String(slateRec[slateHeadIdx]) : null;
+              label = slateAllNums[slateHeadIdx] ? String(slateAllNums[slateHeadIdx]) : null;
             } else {
               // We could not tell which scene is which in this section, so
               // we do not know this scene's number. Say so.
