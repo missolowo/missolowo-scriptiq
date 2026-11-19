@@ -73,6 +73,7 @@ const HEAD = [
   block('function slateNumberedSequenceHeading'),
   block('function slateMontageBeat'),
   block('function slateEndsSequence'),
+  block('function slateHeadTextAt'),
   block('function slateNextNonBlank')
 ].join('\n');
 

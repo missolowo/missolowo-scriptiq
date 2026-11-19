@@ -23,6 +23,7 @@ const PROBES = [
   'cast-probe',        // who is one person, who is two, who is not a person
   'korean-probe',      // a heading with no INT/EXT word in it at all
   'scenenumber-probe', // a number alone on a line: whose is it, if anyone's
+  'align-probe',       // the model's scenes matched to the script's own headings
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken

@@ -62,6 +62,7 @@ const HEAD = [
   block('function slateMarginNumberedHeading'),
   stmt('var SLATE_SEQUENCE'),
   block('function slateNumberedSequenceHeading'),
+  block('function slateHeadTextAt'),
   block('function slateMontageBeat'),
   block('function slateEndsSequence'),
   block('function slateNextNonBlank')

@@ -67,7 +67,7 @@ function api(source, label) {
     + '\n' + ['function slateLoneSceneNumber', 'function slateNextNonBlank',
               'function slateMarginNumberedHeading',
               'function slateNumberedSequenceHeading',
-              'function slateMontageBeat', 'function slateEndsSequence']
+              'function slateHeadTextAt', 'function slateMontageBeat', 'function slateEndsSequence']
       .map(maybeBlock).join('\n');
   return new Function('window', 'console', SRC +
     '; return { check: slateHealthCheck, count: slateCountScenes, marks: slateSceneMarksIn };')(

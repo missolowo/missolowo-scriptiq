@@ -2109,6 +2109,179 @@
         return headStartRe.test(s);
       }
 
+      // ── Matching the model's scenes to the script's headings ──
+      //
+      // The merge used to line these up by COUNTING: if we found the same
+      // number of headings in a section as the model returned scenes for
+      // it, the script's own numbers were used; otherwise the whole
+      // section lost them. Against a language model that count will never
+      // reliably agree. On 19 November a producer ran a numbered 71-scene
+      // script and got 50 numbers out of 117 scenes — the rest showed a
+      // position marker, and he reported, fairly, that the tool had
+      // invented its own numbering.
+      //
+      // So match on what the two actually have in common: the heading. We
+      // know a scene is "EXT. THE CALABASH — LATE AFTERNOON" and the model
+      // calls it location "The Calabash", EXT, LATE AFTERNOON. That is
+      // enough, and it degrades properly — a scene we cannot match costs
+      // its own number and nothing else, where a miscount used to cost a
+      // whole section's.
+      var SLATE_MATCH_SKIP = ['INT', 'EXT', 'INTERIOR', 'EXTERIOR', 'IE',
+                              'THE', 'A', 'AN', 'AND', 'OF', 'AT', 'IN', 'ON'];
+      function slateSceneMatchTokens(text) {
+        return String(text == null ? '' : text).toUpperCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .split(' ')
+          .filter(function (t) {
+            return t.length > 1 && SLATE_MATCH_SKIP.indexOf(t) < 0;
+          });
+      }
+
+      // How well does one heading answer for one of the model's scenes?
+      // 0 to roughly 1.15. The score is the share of the model's location
+      // words present in the heading, because the location is what the two
+      // genuinely share — the model rewrites a slug line but it does not
+      // invent the place.
+      // wantTokens and haveTokens are an optional fast path for the
+      // aligner, which compares every scene against every heading and would
+      // otherwise tokenise the same heading once per scene — forty thousand
+      // wasted passes on a feature. Same scoring either way: one
+      // implementation, not two.
+      function slateSceneMatchScore(scene, headText, wantTokens, haveTokens) {
+        if (!headText) return 0;
+        var want = wantTokens || slateSceneMatchTokens(
+          (scene && (scene.location || scene.set || '')) || '');
+        if (!want.length) return 0;
+        var have = haveTokens || slateSceneMatchTokens(headText);
+        if (!have.length) return 0;
+        var hit = 0;
+        for (var i = 0; i < want.length; i++) {
+          if (have.indexOf(want[i]) >= 0) hit++;
+        }
+        var score = hit / want.length;
+        // Interior or exterior agreeing is worth a little, as a tiebreak
+        // between two scenes in the same place. It is never enough on its
+        // own, which is why it is added after the share and not into it.
+        var ie = String((scene && scene.int_ext) || '').toUpperCase();
+        if (ie && score > 0) {
+          // The number may be folded onto the heading, and in a shooting
+          // script it may be an A-scene: "44A INT. KITCHEN - DAY". Allowing
+          // the digits but not the letter made every A-scene lose this
+          // tiebreak, which is the one thing separating INT. MAMA BOLA
+          // HOUSE from EXT. MAMA BOLA HOUSE.
+          var headIsInt = /^[ \t]*(?:\d+[A-Za-z]?)?[.):\s]*INT/i.test(headText);
+          var headIsExt = /^[ \t]*(?:\d+[A-Za-z]?)?[.):\s]*EXT/i.test(headText);
+          if ((ie.indexOf('INT') === 0 && headIsInt)
+              || (ie.indexOf('EXT') === 0 && headIsExt)) score += 0.15;
+        }
+        return score;
+      }
+
+      // Walk the model's scenes and the script's headings together, in
+      // order, and say which heading each scene came from. Returns an array
+      // as long as `scenes`, each entry a heading index or -1.
+      //
+      // Order is most of the safety here. Both lists describe the same film
+      // from beginning to end, so a match is only looked for in the next
+      // few unclaimed headings. A perfect-looking match forty scenes later
+      // is a coincidence — a script reuses its locations constantly — and
+      // searching the whole list would find those coincidences everywhere.
+      // This is a sequence alignment, and it has to be done as one.
+      //
+      // The first attempt walked forward greedily with a short lookahead.
+      // It matched the opening seventeen scenes of a real screenplay
+      // perfectly and then collapsed: once a run of scenes failed to match,
+      // the cursor stopped while the model's list kept going, the true
+      // matches drifted out of the window, and everything after was lost.
+      // 45 of 107. A greedy walk cannot recover from a gap, and gaps are
+      // exactly what this has to survive — the model splits scenes we read
+      // as one and merges scenes we read as two, all through the film.
+      //
+      // So: Needleman-Wunsch. Every way of lining the two lists up, scored,
+      // with the best one chosen as a whole rather than one step at a time.
+      // Skipping on either side is free, matching earns its score, and only
+      // matches above the threshold are allowed at all — so a long gap
+      // costs nothing and the alignment simply resumes on the far side of
+      // it. 107 scenes against 104 headings is eleven thousand cells; it
+      // costs nothing worth measuring.
+      function slateAlignModelScenes(scenes, heads) {
+        var n = (scenes || []).length, m = (heads || []).length;
+        var out = new Array(n).fill(-1);
+        if (!n || !m) return out;
+        var SLATE_ACCEPT = 0.6;
+
+        // Score every allowed pairing once. Anything below the threshold is
+        // not a pairing at all, which keeps a weak coincidence from being
+        // chosen just because the alignment had nothing better to do.
+        var wantTok = [], haveTok = [];
+        for (var i = 0; i < n; i++) {
+          wantTok.push(slateSceneMatchTokens(
+            (scenes[i] && (scenes[i].location || scenes[i].set || '')) || ''));
+        }
+        for (var j = 0; j < m; j++) haveTok.push(slateSceneMatchTokens(heads[j]));
+
+        var score = new Float64Array(n * m);
+        for (i = 0; i < n; i++) {
+          for (j = 0; j < m; j++) {
+            var sc = slateSceneMatchScore(scenes[i], heads[j], wantTok[i], haveTok[j]);
+            score[i * m + j] = sc >= SLATE_ACCEPT ? sc : -1;
+          }
+        }
+
+        // best[i][j] — the best total score for the first i scenes against
+        // the first j headings. One extra row and column for "nothing yet".
+        var W = m + 1;
+        var best = new Float64Array((n + 1) * W);
+        var from = new Uint8Array((n + 1) * W);   // 1 = matched, 2 = skipped a scene, 3 = skipped a heading
+        for (i = 1; i <= n; i++) {
+          for (j = 1; j <= m; j++) {
+            var here = i * W + j;
+            var skipScene = best[(i - 1) * W + j];
+            var skipHead = best[i * W + (j - 1)];
+            var pair = score[(i - 1) * m + (j - 1)];
+            var matched = pair >= 0 ? best[(i - 1) * W + (j - 1)] + pair : -Infinity;
+            // Strictly greater, on both sides, so that a tie is broken
+            // towards matching EARLY. When the model splits one of our
+            // scenes into two, the heading belongs to the first half, not
+            // the second; when two of our headings collapse into one of
+            // its scenes, it belongs to the first heading. Both alignments
+            // score the same, so nothing but this chooses between them.
+            if (matched > skipScene && matched > skipHead) {
+              best[here] = matched; from[here] = 1;
+            } else if (skipScene >= skipHead) {
+              best[here] = skipScene; from[here] = 2;
+            } else {
+              best[here] = skipHead; from[here] = 3;
+            }
+          }
+        }
+
+        // Walk back from the corner and record what was matched to what.
+        i = n; j = m;
+        while (i > 0 && j > 0) {
+          var step = from[i * W + j];
+          if (step === 1) { out[i - 1] = j - 1; i--; j--; }
+          else if (step === 2) { i--; }
+          else { j--; }
+        }
+        return out;
+      }
+
+      // The heading text a mark sits on, for matching it later against what
+      // the model returned for the same scene.
+      //
+      // A scene number folded onto its heading spans two source lines, so
+      // both are taken and joined. The number itself is left in: it costs
+      // nothing to match against and its absence is never the signal.
+      function slateHeadTextAt(lines, from, to) {
+        var text = String(lines[from] == null ? '' : lines[from]).trim();
+        if (to > from) {
+          var second = String(lines[to] == null ? '' : lines[to]).trim();
+          if (second) text = (text + ' ' + second).trim();
+        }
+        return text.replace(/\s+/g, ' ').slice(0, 160);
+      }
+
       // The next non-blank line at or after `from`, as the helper above
       // wants it. Every caller was walking blank lines by hand.
       function slateNextNonBlank(lines, from) {
@@ -2175,14 +2348,16 @@
           if (m) {
             var note = slateSceneTypeFrom(m.note);
             if (nb.index < raw.length && headStart.test(nb.text)) {
-              out.push({ number: m.number, type: note, at: i }); i = nb.index; continue;
+              out.push({ number: m.number, type: note, at: i,
+                         head: slateHeadTextAt(raw, i, nb.index) }); i = nb.index; continue;
             }
             // No heading beneath it. A writer who numbers a scene and goes
             // straight into the action has still written a scene — but only
             // if they wrote the number as a scene number. A bare number with
             // nothing recognisable under it is not evidence of anything, and
             // slateLoneSceneNumber has already refused those.
-            out.push({ number: m.number, type: note, at: i });
+            out.push({ number: m.number, type: note, at: i,
+                       head: slateHeadTextAt(raw, i, i) });
             continue;
           }
           // A shooting script's margins. This is the record the merge uses
@@ -2195,7 +2370,7 @@
             var mhp = raw[i].match(/\(([^)]*)\)[ \t]*$/);
             out.push({ number: mh.number,
                        type: mhp ? slateSceneTypeFrom(mhp[1]) : slateSceneTypeFrom(mh.text),
-                       at: i });
+                       at: i, head: mh.text });
             inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
@@ -2205,7 +2380,7 @@
           var beat = slateMontageBeat(raw[i], inSeq);
           if (beat) {
             out.push({ number: null, type: slateSceneTypeFrom(beat.text),
-                       beat: true, at: i });
+                       beat: true, at: i, head: beat.text });
             continue;
           }
           if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
@@ -2224,7 +2399,8 @@
             // reaches the report: slateRecordNumbers reads it into
             // window.slateChunkNumbers, which is what labelFor prints.
             out.push({ number: wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null,
-                       type: hp ? slateSceneTypeFrom(hp[1]) : null, at: i });
+                       type: hp ? slateSceneTypeFrom(hp[1]) : null, at: i,
+                       head: slateHeadTextAt(raw, i, i) });
           }
         }
         // Each scene runs from its own heading to the next one. Measured here
@@ -2355,6 +2531,11 @@
           window.slateChunkTypes = marks.map(function (list) {
             return list.map(function (m) { return m.type; });
           });
+          // The heading each mark sits on, so the merge can match the
+          // model's scenes to the script's own rather than counting them.
+          window.slateChunkHeads = marks.map(function (list) {
+            return list.map(function (m) { return m.head || ''; });
+          });
           // Measured off the script at the only point it is still in hand.
           window.slateChunkEighths = marks.map(function (list) {
             return list.map(function (m) { return m.eighths; });
@@ -2375,6 +2556,7 @@
         } catch (e) {
           window.slateChunkNumbers = null; window.slateChunkTypes = null;
           window.slateChunkEighths = null; window.slateChunkPages = null;
+          window.slateChunkHeads = null;
         }
         return chunks;
       }
@@ -2985,8 +3167,25 @@
           // scene counts agree; a mismatch means we are not sure which scene
           // is which, and a wrong number is worse than a missing one.
           var slateRec = (window.slateChunkNumbers || [])[slateChunkIdx];
-          var slateUseRec = !!(slateRec && slateRec.length === scenes.length);
+          var slateHeads = (window.slateChunkHeads || [])[slateChunkIdx] || [];
           var slateSceneInChunk = -1;
+
+          // Which heading did each of the model's scenes come from?
+          //
+          // When our count of headings equals the model's count of scenes,
+          // position IS the answer and always has been — that path is
+          // untouched. When they disagree, we used to give up and print no
+          // number for the whole section. Now we match on the headings
+          // themselves, so a disagreement costs the scenes we genuinely
+          // cannot place and nothing else.
+          //
+          // A producer with a numbered 71-scene script got 50 numbers out
+          // of 117 scenes under the old rule, and told us the tool had
+          // invented its own numbering. He was describing this.
+          var slateCountsAgree = !!(slateRec && slateRec.length === scenes.length);
+          var slateMatch = slateCountsAgree
+            ? scenes.map(function (ignored, i) { return i; })
+            : slateAlignModelScenes(scenes, slateHeads);
 
           // Two guards used to live here: one asking whether the script
           // had any numbers at all, another asking whether this section
@@ -3052,25 +3251,34 @@
             // inferred, for the same reason the number does: we read it, it
             // guessed. Only ever sets a type, never clears one the model
             // found in the heading.
-            if (slateUseRec) {
+            // The heading this scene was matched to, or -1 for one we
+            // could not place. Everything we read off the script hangs on
+            // it — the number, the type, the page and the eighths — so a
+            // scene is either placed and carries all four, or is not and
+            // carries none. Mixing them would put one scene's page length
+            // against another scene's number.
+            var slateHeadIdx = slateMatch[slateSceneInChunk];
+            var slatePlaced = (slateHeadIdx !== undefined && slateHeadIdx >= 0 && slateRec);
+
+            if (slatePlaced) {
               var recTypes = (window.slateChunkTypes || [])[slateChunkIdx];
-              var recType = recTypes && recTypes[slateSceneInChunk];
+              var recType = recTypes && recTypes[slateHeadIdx];
               if (recType === 'RETURN') scene.slate_returns_to_present = true;
               else if (recType) scene.scene_type = recType;
               // The page length we measured off the script, carried onto the
-              // scene. Gated behind slateUseRec for the same reason the number
-              // is: if we cannot tell which scene is which, a wrong length is
-              // worse than falling back to the estimate.
+              // scene. Gated the same way the number is: if we cannot tell
+              // which scene this is, a wrong length is worse than falling
+              // back to the estimate.
               var recEighths = (window.slateChunkEighths || [])[slateChunkIdx];
-              var slateE = recEighths && recEighths[slateSceneInChunk];
+              var slateE = recEighths && recEighths[slateHeadIdx];
               if (slateE) scene.slate_eighths = slateE;
               var recPages = (window.slateChunkPages || [])[slateChunkIdx];
-              var slateP = recPages && recPages[slateSceneInChunk];
+              var slateP = recPages && recPages[slateHeadIdx];
               if (slateP) scene.slate_page = slateP;
             }
 
-            if (slateUseRec) {
-              label = slateRec[slateSceneInChunk] ? String(slateRec[slateSceneInChunk]) : null;
+            if (slatePlaced) {
+              label = slateRec[slateHeadIdx] ? String(slateRec[slateHeadIdx]) : null;
             } else {
               // We could not tell which scene is which in this section, so
               // we do not know this scene's number. Say so.
