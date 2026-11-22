@@ -7037,12 +7037,70 @@
         // split correctly, numbered, or scheduled. Silently skipping it is
         // the one thing a health check must not do.
            var misread = [];
+        // The opening word of a line, past a scene number folded onto it.
+        // One definition, because both scans below ask the same question of
+        // it and they answered it differently — the first with a regex on
+        // the heading word, the second not at all.
+        function slateOpeningWord(line) {
+          var m = /^[ \t]*(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?([^\s.,\/:;()—–-]+)/
+            .exec(String(line == null ? '' : line));
+          return m ? m[1] : '';
+        }
+
+        // Is this line WRITTEN as a slug line, whatever it says?
+        //
+        // Screenplays capitalise scene headings, in every format and every
+        // language that has capitals at all. A line whose opening word
+        // carries a lower-case letter is prose: dialogue, action, a
+        // character's thought. Scripts in Korean, Japanese and Chinese have
+        // no case, so nothing there is rejected on this test; Yorùbá and
+        // Russian capitals keep their diacritics and pass.
+        function slateWrittenAsHeading(line) {
+          var word = slateOpeningWord(line);
+          return !!word && !/\p{Ll}/u.test(word);
+        }
+
         lines.forEach(function (line) {
           var t = String(line || '').trim();
           if (!t || t.length > 90) return;
           // Looks like a heading (opens with a scene number or an INT/EXT-ish
           // word) but our reader found nothing on this line.
-           if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+          //
+          // Both guards matter. A production manager's health panel accused
+          // his script of two broken headings:
+          //
+          //   "out there. I think I just forgot that I could"   — dialogue
+          //   "Outside, the evening insects begin their..."     — action
+          //
+          // The list holds OUT and the test ran case-insensitively, so the
+          // first matched on "out" and then passed the gate below because
+          // "there." reads as a separator before a place; the second matched
+          // the front of "Outside" and passed because the sentence contains
+          // the word "evening". Neither is a heading, and it cost him twenty
+          // points of health score.
+          //
+          // The fix cannot be a word boundary after the token, because a
+          // MISSPELLED heading extends it — "INTRIOR" is the whole reason
+          // this scan exists — and \b would stop matching exactly the lines
+          // it is here to find. Case is the discriminator: a slug line is
+          // written in capitals, a line of prose is not.
+           if (!slateWrittenAsHeading(t)) return;
+           // DELIBERATELY NARROW: the opening word must begin with a real
+           // heading word. A misspelling that starts elsewhere — "2.
+           // ITERIOR. MARKET — DAY", with the number folded on, which the
+           // number-anchored scan below cannot reach either — goes
+           // unwarned, and that is the better trade.
+           //
+           // Widening it to any capitalised I/E word of three to ten
+           // letters was tried on 22 November and measured against five
+           // real screenplays. It took HILLS from two false findings to
+           // six, telling the writer that "EPISODE ONE — THE RETURN" and
+           // "ELIZABETH — LATE 20S" were misspellings of INTERIOR, and it
+           // put a first accusation onto LORI NKAN MI, which had none and
+           // was green. A missing warning costs a filmmaker nothing. A
+           // wrong one costs them their trust in every other line of the
+           // panel.
+           if (!/^(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(slateOpeningWord(t))) return;
           // Starting with those letters is not enough — INTERVIEWER is a
           // character cue, not a heading. A real slug line also carries a
           // time of day, or several slash-separated parts, or a separator
@@ -7081,10 +7139,23 @@
             // Heading-shaped means: it names a time of day, or it is
             // slash-separated like INTERIOR/DAYLIGHT/KITCHEN, or it opens
             // with an INT/EXT-ish word even a misspelled one.
+            // Slash-separated structure first, and on its own terms:
+            // "Daylight/interior/Owolabi living room." is a real broken
+            // heading in IRIRI, written in title case with the time in
+            // front, and no prose is laid out like that. Case cannot be
+            // required of it.
+            //
+            // The other two tests DO need capitals, because both run
+            // case-insensitively and so matched ordinary action under a
+            // scene number: "Everything was quiet that evening" names a
+            // time of day and opens with E, and a production manager was
+            // told two lines of his dialogue and action were broken
+            // headings.
             var slateLooksLikeHeading =
-                 /\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(cand)
-              || (cand.match(/\//g) || []).length >= 2
-              || /^[IE][A-Za-z]{2,9}\b/i.test(cand);
+                 (cand.match(/\//g) || []).length >= 2
+              || (slateWrittenAsHeading(cand)
+                  && (/\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(cand)
+                      || /^[IE][A-Z]{2,9}\b/.test(cand)));
             if (!slateLooksLikeHeading) continue;
             // The scan above may already hold this heading with its scene
             // number folded on ("SCENE43 INTRIOR/..."). Same broken heading,
