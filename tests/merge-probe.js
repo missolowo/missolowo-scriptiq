@@ -306,6 +306,50 @@ console.log('\nMatching reaches across section boundaries');
      JSON.stringify(labels.slice(12)));
 }
 
+// ══════════════════════════════════════════════════
+// HOW THE READING WENT, IN NUMBERS.
+//
+// On 22 November a producer's breakdown came back with 117 scenes for a
+// script whose numbers run to 71, and the two possible causes need
+// opposite fixes: either WE found 117 headings on his pages, or the MODEL
+// returned 37 scenes his script does not have. Nothing stored could tell
+// them apart, and we keep no screenplays, so there was no way to find
+// out — and asking a filmmaker for their script is the one thing we
+// promise never to do.
+console.log('\nThe reading records its own counts');
+{
+  win.slateChunkHeads = [['INT. KITCHEN - DAY', 'EXT. MARKET - DAY', 'INT. CHURCH - NIGHT']];
+  win.slateChunkNumbers = [['1', '2', null]];
+  // Four scenes against three headings: the model split one.
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']), scene(2, 'Market', ['ADA']),
+    scene(3, 'Market', ['ADA']), scene(4, 'Church', ['TADE'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  const d = (out.production_elements || {}).slate_reading;
+
+  ok('the counts are recorded', !!d, JSON.stringify(out.production_elements || {}).slice(0, 120));
+  ok('  ...our headings', d && d.headings_read === 3, d && d.headings_read);
+  ok('  ...the numbers we read off them', d && d.numbers_read === 2, d && d.numbers_read);
+  ok('  ...what the model returned', d && d.model_scenes === 4, d && d.model_scenes);
+  ok('  ...and how many we could place', d && d.scenes_placed === 3, d && d.scenes_placed);
+  ok('  ...and that the counts did NOT agree',
+     d && d.every_section_agreed === false, d && d.every_section_agreed);
+
+  // The whole point: these two numbers, side by side, say whose
+  // inflation it is. Equal means we read every scene the model returned.
+  ok('headings_read vs model_scenes is what answers the question',
+     d && d.model_scenes > d.headings_read,
+     'the model returned more than the script has — that is a prompt fault, not a reader fault');
+
+  // Counts only. A screenplay must not be reconstructable from this.
+  const text = JSON.stringify(d);
+  ok('NO screenplay content is recorded',
+     !/Kitchen|Market|Church|ADA|TADE|INT\.|EXT\./i.test(text), text);
+  ok('  ...and every value is a number or a boolean',
+     Object.values(d).every(v => typeof v === 'number' || typeof v === 'boolean'), text);
+}
+
 console.log('\nAnd on a script that numbers nothing at all');
 {
   const out = merge([{ scenes: [

@@ -3768,6 +3768,32 @@
         merged.production_elements.all_special_effects = slateCollectElement('special_effects');
         merged.production_elements.all_makeup_hair     = slateCollectElement('makeup_hair');
 
+        // ── How the reading went, in numbers ──
+        //
+        // Counts only. No line of anyone's screenplay, no location, no
+        // name: we do not keep scripts and this does not start.
+        //
+        // It exists because of a question we could not answer on 22
+        // November. A producer's breakdown came back with 117 scenes for a
+        // script whose numbers run to 71, and the two possible causes need
+        // opposite fixes — either WE found 117 headings on his pages, or
+        // the MODEL returned 37 scenes his script does not have. Nothing
+        // stored could tell them apart, and since we keep no screenplays
+        // there was no way to find out after the fact. Asking him to send
+        // his script is the one thing we promise never to do.
+        //
+        // headings_read against model_scenes answers it in one line, for
+        // any script, without us ever seeing a word of it. Nothing renders
+        // these: every document reads production_elements by name.
+        merged.production_elements.slate_reading = {
+          headings_read: slateAllHeads.length,
+          numbers_read: slateAllNums.filter(function (n) { return !!n; }).length,
+          model_scenes: slateAllScenes.length,
+          scenes_placed: slateMatch.filter(function (i) { return i >= 0; }).length,
+          every_section_agreed: !!slateEveryChunkAgrees,
+          sections: chunks.length
+        };
+
         return merged;
       }
 
