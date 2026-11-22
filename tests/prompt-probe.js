@@ -157,5 +157,81 @@ ok('the rate limit allows a feature screenplay in one sitting',
 ok('  ...and the scene cap is still enforced in the splitter',
    /SLATE_MAX_SCENES_PER_CHUNK/.test(APP.replace(/SLATE_MAX_SCENES_PER_CHUNK = 4/, '')));
 
+// ══════════════════════════════════════════════════
+// A TRANSITION IS NOT A SCENE.
+//
+// "CUT TO:" came back from the model as a scene with no location and no
+// time. The scene-boundary rules were strict about mood changes and long
+// scenes and said nothing at all about transitions, which sit alone on a
+// line and look structural. Same for an episode title: HILLS is a
+// four-episode series, and "EPISODE TWO — THE RAIN" sits between slug
+// lines exactly where a heading would.
+// The whole prompt, not a window into it.
+//
+// SCHEMA and RULES above cover the JSON shape and a short trailing line.
+// They do NOT cover the instruction body, which sits BEFORE the schema in
+// the file — "RULES:" turns out to be 55 characters from the end of the
+// template literal, so every actual rule the model is given was outside
+// anything this probe read. The scene-boundary rules, the location rules,
+// the background rules and the department rules were all unasserted.
+const PROMPT = (() => {
+  const end = BD.indexOf('`;', BD.indexOf('RULES:'));
+  const open = BD.lastIndexOf('`', BD.indexOf('SCENE BOUNDARIES'));
+  return (open >= 0 && end > open) ? BD.slice(open, end) : '';
+})();
+
+console.log('\nThe probe can see the instructions at all');
+ok('the prompt body is in view', PROMPT.length > 4000,
+   PROMPT.length + ' characters — a window that misses the rules asserts nothing');
+ok('  ...and it holds the scene-boundary rules',
+   /SCENE BOUNDARIES/.test(PROMPT) && /BACKGROUND ACTORS/.test(PROMPT));
+
+console.log('\nTransitions and act breaks are named as non-scenes');
+{
+  ok('the prompt says a transition is not a scene',
+     /TRANSITION IS NOT A SCENE/.test(PROMPT), 'nothing tells the model this');
+  ['CUT TO:', 'DISSOLVE TO:', 'FADE OUT.', 'MATCH CUT TO:', 'BACK TO:']
+    .forEach(function (t) {
+      ok('  ...and names "' + t + '"', PROMPT.indexOf(t) >= 0);
+    });
+  ok('an episode title is named too, because a series script has them',
+     /EPISODE TWO/.test(PROMPT) && /is not a scene either/.test(PROMPT));
+}
+
+// ══════════════════════════════════════════════════
+// BACKGROUND IS DECIDED BY DIALOGUE, NOT BY NAMING.
+//
+// A producer told us his breakdown "missed the listed BG people". His
+// script returned background on 4 of 117 scenes, and his cast list held
+// DRIVER, RECEPTIONIST #1 and RECEPTIONIST #2 — functional roles with no
+// character name. HILLS had eight of them: VILLAGER, MARKET WOMAN,
+// POLICE OFFICER, ELDERLY MAN, YOUNG MAN, BOY, GIRL, DOCTOR.
+//
+// The rule said "named characters with dialogue are cast, not
+// background" and was silent on the opposite case, while every example
+// of background was a plural crowd. A single unnamed person had nowhere
+// to go but cast — where they are auditioned instead of booked, and
+// where they make the background count read as zero.
+console.log('\nBackground is decided by dialogue, not by naming');
+{
+  ok('the test is stated as dialogue',
+     /THE TEST IS DIALOGUE, NOT NAMING/.test(PROMPT), 'the old rule keyed on naming');
+  ok('a speaking bit part is still cast, however labelled',
+     /RECEPTIONIST #1[^\n]*is cast/.test(PROMPT),
+     'without this the fix loses speaking roles from the cast list, which is worse');
+  ok('one person counts, not only a crowd',
+     /ONE PERSON COUNTS/.test(PROMPT));
+  ok('  ...and the singular examples are there',
+     /A WAITER/.test(PROMPT) && /THE DRIVER/.test(PROMPT) && /A NURSE/.test(PROMPT),
+     'every example used to be plural, which is what biased the model to crowds');
+  ok('an unnamed non-speaking role is told to go in background and NOT cast',
+     /goes in "background" and NOT in "cast"/.test(PROMPT));
+  ok('and invention is still forbidden',
+     /Never populate a scene the writer left empty/.test(PROMPT),
+     'a prompt that asks for more background must not license inventing it');
+  ok('  ...and estimating a count still is',
+     /NEVER estimate a number/.test(PROMPT));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
