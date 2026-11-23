@@ -200,6 +200,106 @@ console.log('\nThe probe can see the instructions at all');
      /A MONTAGE or SERIES OF SHOTS is ONE scene/.test(PROMPT));
   ok('  ...and the beats are explicitly not scenes',
      /do NOT return a scene for each dashed beat line/.test(PROMPT));
+
+  // ── The nine department categories, 23 November ──
+  //
+  // Five of them existed. Set dressing, visual effects, sound and music
+  // did not exist anywhere in the product: not in the prompt, not in the
+  // merge, not on a document. A breakdown sheet without them is a props
+  // and cast list, and worse than incomplete — a sheet with no set
+  // dressing line tells the art department there is nothing to dress,
+  // which is information, and wrong.
+  //
+  // Two of them had signup roles. "VFX Artist" and "Sound Recordist"
+  // could create an account and be handed a document with nothing in it
+  // for them.
+  const CATEGORIES = ['stunts', 'vehicles', 'animals', 'special_effects',
+                      'makeup_hair', 'set_dressing', 'visual_effects',
+                      'sound', 'music'];
+  CATEGORIES.forEach(function (c) {
+    ok('  ' + c + ' is asked for', new RegExp('^- ' + c + ':', 'm').test(PROMPT),
+       'a category not in the prompt is a department with no document');
+  });
+  ok('the count in the prose matches the categories listed',
+     /These nine book crew/.test(PROMPT),
+     '"these five" after adding four is the kind of drift that makes a '
+     + 'prompt stop meaning what it says');
+
+  // The boundary that decides whether these four are useful or noise.
+  // Without it the model files rain under visual_effects and a VFX
+  // supervisor bids on weather.
+  ok('practical effects are kept out of visual_effects',
+     /belong in special_effects, never here/.test(PROMPT),
+     'rain and smoke are done in front of the camera and are not VFX');
+  ok('  ...stated as a test the model can apply',
+     /If a crew could do it in front of the camera, it is not a visual effect/
+       .test(PROMPT));
+  // The distinction an art department actually argues about.
+  ok('a prop is distinguished from set dressing by who handles it',
+     /a thing they handle is a prop, a thing that dresses the room is set dressing/
+       .test(PROMPT));
+  // Sound and music both have a failure mode of being true of every scene.
+  ok('ordinary dialogue recording is not a sound entry',
+     /true of every scene and is not an entry/.test(PROMPT));
+  ok('a music cue keeps the title the script gives it',
+     /a song is identified by its own title and cannot be translated/.test(PROMPT),
+     'translating a song title names a different song, and clearance is '
+     + 'bought against a title');
+
+  // Still restricting, for all nine. This is the sentence that keeps an
+  // ordinary dialogue scene from acquiring four invented departments.
+  ok('all nine stay empty unless the script says so',
+     /Leave every one of these empty unless the script says so on the page/
+       .test(PROMPT));
+  ok('  ...and empty is still called the correct answer',
+     /An empty list is the correct answer for most scenes/.test(PROMPT));
+}
+
+console.log('\nEvery category asked for is also derived and rendered');
+{
+  // The merge lists its roll-ups by name rather than looping, and says
+  // why: "a category added to the scene schema without being added here
+  // fails loudly in review instead of silently vanishing from the
+  // documents." This is that review, automated.
+  ['props', 'costume', 'equipment', 'stunts', 'vehicles', 'animals',
+   'special_effects', 'makeup_hair', 'set_dressing', 'visual_effects',
+   'sound', 'music'].forEach(function (c) {
+    ok('  all_' + c + ' is rolled up',
+       new RegExp("all_" + c + "\\s*=\\s*slateCollectElement\\('" + c + "'\\)").test(APP),
+       'the model is paid to write this field and no document shows it');
+  });
+
+  // And each reaches the documents. Four renderers print a scene; a
+  // category on three of them is one a crew learns not to trust.
+  [['Set Dressing', 's.set_dressing'],
+   ['VFX', 's.visual_effects'],
+   ['Sound', 's.sound'],
+   ['Music', 's.music']].forEach(function (pair) {
+    const hits = (APP.match(
+      new RegExp("labelledList\\('" + pair[0] + "', " + pair[1].replace('.', '\\.') + "\\)", 'g')
+    ) || []).length;
+    ok('  ' + pair[0] + ' prints on both the breakdown and the call sheet',
+       hits === 2, hits + ' of 2 renderers');
+  });
+  ['all_set_dressing', 'all_visual_effects', 'all_sound', 'all_music'].forEach(function (c) {
+    ok('  ' + c + ' reaches the elements report',
+       (APP.match(new RegExp('pe\\.' + c, 'g')) || []).length >= 2,
+       'the roll-up exists and the report does not list it');
+  });
+
+  // Report 4 on screen showed Cast, Props and Costume and stopped — the
+  // five department categories were collected, rolled up, printed on the
+  // PDF and absent from the screen, which is where a filmmaker judges the
+  // breakdown before exporting anything.
+  ok('the departments show on screen, not only on the PDF',
+     /\['Makeup & Hair', pe\.all_makeup_hair\],\s*\n\s*\['Set Dressing'/.test(APP)
+     || (APP.match(/\['Set Dressing', pe\.all_set_dressing\]/g) || []).length === 2,
+     'a filmmaker decides whether the breakdown is any good on screen');
+
+  // Every chip is script-derived data, and chip() is where they are made.
+  ok('a chip escapes what it is given',
+     /function chip\(txt\) \{[^}]*slateEscapeHtml\(txt\)/.test(APP),
+     'a location called "Mama\'s <b>Shop" rendered as markup');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

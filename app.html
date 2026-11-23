@@ -3354,7 +3354,12 @@
           production_elements: {
             all_cast: [], all_props: [], all_costume: [],
             all_equipment: [], all_stunts: [], all_vehicles: [], all_animals: [],
-            all_special_effects: [], all_makeup_hair: [], special_requirements: []
+            all_special_effects: [], all_makeup_hair: [],
+            // The four categories a breakdown sheet carries that we did not
+            // ask for until 23 November. Set dressing was landing in props,
+            // and the other three were landing nowhere at all.
+            all_set_dressing: [], all_visual_effects: [], all_sound: [], all_music: [],
+            special_requirements: []
           }
         };
                let sceneOffset = 0;
@@ -3679,6 +3684,12 @@
               description: '',
               cast: [], props: [], costume: [], equipment: [], stunts: [],
               vehicles: [], animals: [], special_effects: [], makeup_hair: [],
+              // Empty for a restored scene, and honestly so: this scene was
+              // built from its heading because the model never returned it,
+              // so nobody has read its action. An empty list here means "not
+              // read", which is why the restoration note tells the filmmaker
+              // to check these scenes themselves.
+              set_dressing: [], visual_effects: [], sound: [], music: [],
               background: '',
               // What the document says about itself. Read from the page;
               // the elements are not here because they never arrived.
@@ -4161,6 +4172,19 @@
         // slateMergeElements rather than a Set, for the reason the old code
         // gave: a Set only merges byte-identical strings, which is how ALL
         // PROPS carried the same item twice.
+        // How many scenes carry anything at all in a given category.
+        // Deliberately not a count of items: a scene listing nine dressing
+        // entries and a scene listing one are both one scene the model
+        // actually read.
+        function slateCountScenesWith(field) {
+          var n = 0;
+          merged.scenes.forEach(function (s) {
+            var v = s[field];
+            if (Array.isArray(v) ? v.length : (v ? String(v).trim() : '')) n++;
+          });
+          return n;
+        }
+
         function slateCollectElement(field) {
           var out = [];
           merged.scenes.forEach(function (s) {
@@ -4187,6 +4211,10 @@
         merged.production_elements.all_animals         = slateCollectElement('animals');
         merged.production_elements.all_special_effects = slateCollectElement('special_effects');
         merged.production_elements.all_makeup_hair     = slateCollectElement('makeup_hair');
+        merged.production_elements.all_set_dressing    = slateCollectElement('set_dressing');
+        merged.production_elements.all_visual_effects  = slateCollectElement('visual_effects');
+        merged.production_elements.all_sound           = slateCollectElement('sound');
+        merged.production_elements.all_music           = slateCollectElement('music');
 
         // ── How the reading went, in numbers ──
         //
@@ -4216,7 +4244,42 @@
           model_scenes: slateAllScenes.length,
           scenes_placed: slateMatch.filter(function (i) { return i >= 0; }).length,
           every_section_agreed: !!slateEveryChunkAgrees,
-          sections: chunks.length
+          sections: chunks.length,
+          // ── How often the model filled the four new categories ──
+          //
+          // Added with the categories themselves, on 23 November, because
+          // the one risk they carry cannot be measured without the model.
+          // The A/B harness compares two readings of a script; it says
+          // nothing about how the model answers a changed prompt, and a
+          // prompt change is what caused both regressions this evening.
+          //
+          // So the first real run reports on itself. These are the numbers
+          // that distinguish the two ways this can go wrong, and they are
+          // opposite:
+          //
+          //   near the scene count  -> the model is padding, inventing a
+          //                            sofa for every room, and the lists
+          //                            are noise a department will stop
+          //                            reading
+          //   zero on a script that -> the model is not reading them at
+          //   plainly has them         all and the categories are decoration
+          //
+          // Counts of SCENES carrying each, not of items, because a scene
+          // with nine dressing entries and a scene with one are both one
+          // scene that was read. Counts only, like everything else here —
+          // no screenplay text, nothing renders them.
+          scenes_with_set_dressing: slateCountScenesWith('set_dressing'),
+          scenes_with_visual_effects: slateCountScenesWith('visual_effects'),
+          scenes_with_sound: slateCountScenesWith('sound'),
+          scenes_with_music: slateCountScenesWith('music'),
+          // The five that were already there, for comparison on the same
+          // run. Without them the four above have nothing to be judged
+          // against: "set dressing on 40 scenes" means one thing beside
+          // "props on 44" and another beside "props on 6".
+          scenes_with_props: slateCountScenesWith('props'),
+          scenes_with_stunts: slateCountScenesWith('stunts'),
+          scenes_with_special_effects: slateCountScenesWith('special_effects'),
+          scenes_total: merged.scenes.length
         };
 
         return merged;
@@ -4552,7 +4615,13 @@
         var chars = data.character_breakdown || [];
         var locs = data.outline_schedule || [];
         var pe = data.production_elements || {};
-        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
+        // Escaped here, at the one place every chip is made, rather than at
+        // the fourteen call sites that make them. Every value passing
+        // through is script-derived — a prop, a costume item, a character
+        // name — which means it is data, and a location called
+        // "Mama's <b>Shop" rendered as markup today. Nothing passes HTML to
+        // this deliberately, so escaping changes no correct output.
+        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + slateEscapeHtml(txt) + '</span>'; }
         var html = '';
         if (partial) {
           // "Retry" used to mean the whole screenplay again, from section
@@ -4663,6 +4732,34 @@
         html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Costume</div><div>' + (pe.all_costume || []).map(chip).join('') + '</div>';
+        // ── The departments, on screen as well as on the PDF ──
+        //
+        // Report 4 showed Cast, Props and Costume and stopped. The five
+        // department categories were collected, rolled up, printed on the
+        // PDF — and absent from the screen, which is where a filmmaker
+        // decides whether the breakdown is any good before exporting
+        // anything. The four added tonight would have landed in the same
+        // hole, so all nine go in together.
+        //
+        // Shown only when the script called for them, the same rule the PDF
+        // follows: most films have no animals and no effects, and a row of
+        // empty headings suggests we looked and found nothing rather than
+        // that there was nothing to find.
+        [['Equipment', pe.all_equipment],
+         ['Stunts', pe.all_stunts],
+         ['Vehicles', pe.all_vehicles],
+         ['Animals', pe.all_animals],
+         ['Special Effects', pe.all_special_effects],
+         ['Makeup & Hair', pe.all_makeup_hair],
+         ['Set Dressing', pe.all_set_dressing],
+         ['Visual Effects', pe.all_visual_effects],
+         ['Sound', pe.all_sound],
+         ['Music', pe.all_music]].forEach(function (pair) {
+          if (!pair[1] || !pair[1].length) return;
+          html += '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">'
+            + slateEscapeHtml(pair[0]) + '</div><div>'
+            + pair[1].map(chip).join('') + '</div>';
+        });
       if (streaming && !streaming.complete) {
           html += '<div style="margin-top:32px;padding:14px 16px;border:1px dashed var(--line-1,#2E323A);border-radius:8px;color:var(--text-2,#B5AFA3);font-size:13px">Still reading your screenplay — section ' + streaming.done + ' of ' + streaming.total + '. Scenes appear here as they are analysed.</div>';
         } else {
@@ -6748,6 +6845,14 @@
           pdf.labelledList('Animals', s.animals);
           pdf.labelledList('SFX', s.special_effects);
           pdf.labelledList('Makeup/Hair', s.makeup_hair);
+          // The four that were missing. Set dressing is listed separately
+          // from props on purpose: a sofa and a wristwatch are two different
+          // departments with two different budgets, and folding them
+          // together is what the art department had been handed until now.
+          pdf.labelledList('Set Dressing', s.set_dressing);
+          pdf.labelledList('VFX', s.visual_effects);
+          pdf.labelledList('Sound', s.sound);
+          pdf.labelledList('Music', s.music);
           pdf.gap(3);
           pdf.rule();
         });
@@ -6804,7 +6909,11 @@
          ['Vehicles', pe.all_vehicles],
          ['Animals', pe.all_animals],
          ['Special Effects', pe.all_special_effects],
-         ['Makeup & Hair', pe.all_makeup_hair]].forEach(function (pair) {
+         ['Makeup & Hair', pe.all_makeup_hair],
+         ['Set Dressing', pe.all_set_dressing],
+         ['Visual Effects', pe.all_visual_effects],
+         ['Sound', pe.all_sound],
+         ['Music', pe.all_music]].forEach(function (pair) {
           if (!pair[1] || !pair[1].length) return;
           pdf.gap(4);
           pdf.labelledList(pair[0], pair[1], 15);
@@ -7363,6 +7472,14 @@
           pdf.labelledList('Animals', s.animals);
           pdf.labelledList('SFX', s.special_effects);
           pdf.labelledList('Makeup/Hair', s.makeup_hair);
+          // On the call sheet for the same reason the other five are: a
+          // department that finds out on the morning has lost the morning.
+          // Playback nobody prepared stops a dance scene dead, and a VFX
+          // plate nobody flagged is reshot or fixed at ten times the cost.
+          pdf.labelledList('Set Dressing', s.set_dressing);
+          pdf.labelledList('VFX', s.visual_effects);
+          pdf.labelledList('Sound', s.sound);
+          pdf.labelledList('Music', s.music);
           pdf.gap(2);
           pdf.rule();
         });

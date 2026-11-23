@@ -143,6 +143,7 @@ console.log('\nThe roll-ups are collected from the scenes');
   ok('vehicles are collected', pe.all_vehicles.includes('Danfo bus'), JSON.stringify(pe.all_vehicles));
   ok('animals are collected', pe.all_animals.includes('Goat'), JSON.stringify(pe.all_animals));
   ok('stunts are collected', pe.all_stunts.includes('Fall down steps'), JSON.stringify(pe.all_stunts));
+
   ok('makeup and hair are collected',
      pe.all_makeup_hair.includes('Scar prosthetic'), JSON.stringify(pe.all_makeup_hair));
   ok('an empty category stays an empty list, not undefined',
@@ -151,6 +152,132 @@ console.log('\nThe roll-ups are collected from the scenes');
   ok('elements are collected ACROSS sections, not just the first',
      pe.all_props.includes('Basket of yams') && pe.all_props.includes('Candle'),
      'section 2 contributed nothing if this fails');
+
+  // ── The four categories added 23 November ──
+  //
+  // Set dressing, visual effects, sound and music did not exist anywhere
+  // in the product. The roll-ups are listed by name in the merge rather
+  // than looped, precisely so that a category added to the scene schema
+  // and NOT added there fails here instead of silently vanishing from
+  // every document.
+  const four = merge([{ title: 'THE WEAVER’S DAUGHTER', scenes: [
+    scene(1, 'Workshop', ['ADUKE'], {
+      set_dressing: ['Floor loom', 'Folded aso-oke'],
+      sound: ['Playback for the weaving rhythm'] }),
+    scene(2, 'Lagos Office', ['TOLANI'], {
+      set_dressing: ['Folded aso-oke'],
+      visual_effects: ['Composited view through the window'],
+      music: ['Ko Si Baba Bi Baba'] })
+  ]}]).production_elements;
+
+  ok('set dressing is collected',
+     four.all_set_dressing.includes('Floor loom'), JSON.stringify(four.all_set_dressing));
+  ok('  ...and dressing used on two scenes is listed once',
+     four.all_set_dressing.filter(v => /aso-oke/i.test(v)).length === 1,
+     JSON.stringify(four.all_set_dressing));
+  ok('visual effects are collected',
+     four.all_visual_effects.includes('Composited view through the window'),
+     JSON.stringify(four.all_visual_effects));
+  ok('sound is collected',
+     four.all_sound.includes('Playback for the weaving rhythm'),
+     JSON.stringify(four.all_sound));
+  ok('music is collected',
+     four.all_music.includes('Ko Si Baba Bi Baba'), JSON.stringify(four.all_music));
+  ok('  ...and a song title is not translated into English',
+     four.all_music.join(' ') === 'Ko Si Baba Bi Baba',
+     JSON.stringify(four.all_music)
+     + ' — clearance is bought against a title, so a translated title names '
+     + 'a different song');
+
+  // Set dressing must NOT be folded into props. A sofa and a wristwatch
+  // are two departments with two budgets, and until tonight the art
+  // department was handed them in one column.
+  ok('set dressing stays out of props',
+     !four.all_props.some(v => /loom|aso-oke/i.test(v)),
+     JSON.stringify(four.all_props));
+}
+
+// ══════════════════════════════════════════════════
+// EVERY PRODUCTION SAVED BEFORE TONIGHT.
+console.log('\nA breakdown with none of the four fields still merges');
+{
+  // The four fields did not exist until 23 November, so every saved
+  // production and every in-flight run has scenes without them. The merge
+  // must produce empty lists rather than undefined, because the renderers
+  // call .length on them.
+  const bare = { scene_number: '1', int_ext: 'INT', time_of_day: 'DAY',
+                 location: 'Workshop', set: 'Workshop', description: 'She weaves.',
+                 cast: ['ADUKE'], props: ['Loom'] };
+  let out = null, threw = '';
+  try { out = merge([{ title: 'Old Production', scenes: [bare] }]); }
+  catch (e) { threw = e.message; }
+
+  ok('it does not throw', !threw, threw);
+  ok('  ...and the scene survives', out && (out.scenes || []).length === 1);
+
+  const pe = (out && out.production_elements) || {};
+  ['all_set_dressing', 'all_visual_effects', 'all_sound', 'all_music'].forEach(function (k) {
+    ok('  ' + k + ' is an empty array, not undefined',
+       Array.isArray(pe[k]) && pe[k].length === 0,
+       JSON.stringify(pe[k]) + ' — every renderer calls .length on this');
+  });
+  ok('  ...and the five older categories are unaffected',
+     Array.isArray(pe.all_stunts) && Array.isArray(pe.all_makeup_hair));
+}
+
+// ══════════════════════════════════════════════════
+// THE ONE RISK THAT CANNOT BE MEASURED WITHOUT THE MODEL.
+console.log('\nThe run reports how often the model filled each category');
+{
+  // The A/B harness compares two READINGS of a script. It says nothing
+  // about how the model answers a changed prompt, and a changed prompt is
+  // what caused both of 23 November's regressions. So the run counts its
+  // own answers, and the first real run after this ships is the
+  // measurement.
+  //
+  // Two opposite failures, and these numbers tell them apart: a count near
+  // the scene total means the model is padding — a sofa invented for every
+  // room — and zero on a script that plainly has dressing means it is not
+  // reading the category at all.
+  const out = merge([{ title: 'Instrumented', scenes: [
+    scene(1, 'Workshop', ['ADUKE'], { set_dressing: ['Floor loom'], props: ['Shuttle'] }),
+    scene(2, 'Market', ['TOLANI'], { set_dressing: ['Stalls'], music: ['Market radio'] }),
+    scene(3, 'Office', ['TOLANI'], {})
+  ]}]);
+  const r = out.production_elements.slate_reading;
+
+  ok('the four new categories are counted',
+     r.scenes_with_set_dressing === 2 && r.scenes_with_music === 1
+     && r.scenes_with_visual_effects === 0 && r.scenes_with_sound === 0,
+     JSON.stringify({ sd: r.scenes_with_set_dressing, vfx: r.scenes_with_visual_effects,
+                      snd: r.scenes_with_sound, mus: r.scenes_with_music }));
+  ok('  ...and the older ones too, so the new have something to be judged against',
+     r.scenes_with_props === 1 && r.scenes_with_stunts === 0,
+     JSON.stringify({ props: r.scenes_with_props, stunts: r.scenes_with_stunts })
+     + ' — "dressing on 40 scenes" means one thing beside "props on 44" and '
+     + 'another beside "props on 6"');
+  ok('  ...against the scene total',
+     r.scenes_total === 3, r.scenes_total + '');
+
+  // Scenes, not items. A scene listing nine dressing entries and a scene
+  // listing one are both one scene the model actually read.
+  const many = merge([{ scenes: [
+    scene(1, 'Workshop', ['ADUKE'], { set_dressing: ['a', 'b', 'c', 'd', 'e'] })
+  ]}]).production_elements.slate_reading;
+  ok('a scene with five entries counts once',
+     many.scenes_with_set_dressing === 1, many.scenes_with_set_dressing + '');
+  ok('  ...and an empty list counts as not read',
+     merge([{ scenes: [scene(1, 'Workshop', ['ADUKE'], { set_dressing: [] })] }])
+       .production_elements.slate_reading.scenes_with_set_dressing === 0);
+
+  // Counts only. This is the promise the instrumentation was added under:
+  // no line of anyone's screenplay leaves the browser.
+  Object.keys(r).forEach(function (k) {
+    ok('  ' + k + ' is a number or a boolean, never text',
+       typeof r[k] === 'number' || typeof r[k] === 'boolean',
+       JSON.stringify(r[k]) + ' — we keep no screenplays and this must not '
+       + 'become the exception');
+  });
 }
 
 // ══════════════════════════════════════════════════

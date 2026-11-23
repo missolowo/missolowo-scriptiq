@@ -240,7 +240,15 @@ exports.handler = async function(event, context) {
         vehicles: s.vehicles || [],
         animals: s.animals || [],
         special_effects: s.special_effects || [],
-        makeup_hair: s.makeup_hair || []
+        makeup_hair: s.makeup_hair || [],
+        // The four added on 23 November. Defaulted to empty for the same
+        // reason the five above are: a breakdown made before these existed
+        // has no such field, and a call sheet for an old production must
+        // still build rather than throw.
+        set_dressing: s.set_dressing || [],
+        visual_effects: s.visual_effects || [],
+        sound: s.sound || [],
+        music: s.music || []
       };
     });
     // Character identity, and the readable spelling to display. Both are
