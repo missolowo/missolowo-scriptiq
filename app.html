@@ -7108,30 +7108,62 @@
         // has already dropped those. A script the model gave no story days
         // prints no report at all rather than an empty heading, which would
         // claim we looked and found nothing.
-        var slatePdfCont = slateContinuityGroups(scenes, slateDayOfScene(slateSchedule));
+        var slateContDays = slateDayOfScene(slateSchedule);
+        var slatePdfCont = slateContinuityGroups(scenes, slateContDays);
         if (slatePdfCont.length) {
           pdf.sectionHeader('Report 5 — Continuity by Story Day');
           pdf.annotation('Scenes on the same day of the story have to match on screen, '
             + 'however far apart they are shot. Nothing here is a fault — it is what has '
             + 'to agree. Costume and makeup are shown as the script described them.', 15, 175);
           pdf.gap(4);
+
+          // ── A table, not a labelled list ──
+          //
+          // The first version used pdf.labelledList, and the PDF came back
+          // with the group heading printed THROUGH the scenes: labelledList
+          // draws its label at x and the values at x+26, so a label longer
+          // than 26mm overruns into the column it is labelling. "Story day 1
+          // · 4 scenes · 2 described · shot across days 1, 9" is four times
+          // that. Unreadable, and invisible to every assertion — the screen
+          // version of the same data was fine.
+          //
+          // table() wraps per column and breaks pages, which is what a sheet
+          // of rows needs. The shoot day gets a column of its own: a story
+          // day reading 1, 1, 9, 9 down that column IS the split, shown
+          // rather than announced.
+          var slateContRows = [];
           slatePdfCont.forEach(function (g) {
-            pdf.check(16 + g.scenes.length * 6);
-            pdf.labelledList('Story day ' + g.story_day
-              + '  ·  ' + g.scenes.length + ' scenes  ·  ' + g.described + ' described'
-              + (g.split ? '  ·  shot across days ' + g.shoot_days.join(', ')
-                 : (g.shoot_days.length ? '  ·  day ' + g.shoot_days[0] : '')),
-              g.scenes.map(function (s) {
-                var bits = (s.costume || []).concat(s.makeup_hair || []);
-                return (s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)))
-                  + '   ' + (bits.length ? bits.join(' · ') : 'not described in the script');
-              }), 15);
-            if (!g.described) {
-              pdf.annotation('No costume or makeup is described on any of these scenes, so '
-                + 'nothing is recorded to match. Worth a look before the day.', 15, 175);
-            }
-            pdf.gap(4);
+            g.scenes.forEach(function (s, i) {
+              var bits = (s.costume || []).concat(s.makeup_hair || []);
+              var d = slateContDays ? slateContDays[Number(s.scene_index)] : undefined;
+              slateContRows.push([
+                // Named once per group, on its first row, so the eye groups
+                // the rows without a heading that can collide with them.
+                i === 0 ? (g.story_day + '  (' + g.described + '/' + g.scenes.length + ')') : '',
+                s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)),
+                bits.length ? bits.join('  ·  ') : 'not described in the script',
+                (d === undefined || d === null) ? '' : String(d)
+              ]);
+            });
           });
+          pdf.table(
+            [{ label: 'Story Day', width: 32, bold: true },
+             { label: 'Scene', width: 18, gold: true },
+             { label: 'Costume & Makeup, as the script describes it', width: 95 },
+             { label: 'Shoot Day', width: 35, align: 'right' }],
+            slateContRows);
+
+          // The groups with nothing to match, said once after the table
+          // rather than as a note between every pair of rows.
+          var slateContBare = slatePdfCont.filter(function (g) { return !g.described; })
+            .map(function (g) { return g.story_day; });
+          if (slateContBare.length) {
+            pdf.gap(3);
+            pdf.annotation('The script describes no costume or makeup on any scene of story day'
+              + (slateContBare.length > 1 ? 's ' : ' ') + slateContBare.join(', ')
+              + ', so nothing is recorded to match there. Worth a look before those days.',
+              15, 175);
+          }
         }
 
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
@@ -7511,6 +7543,37 @@
         }
 
         pdf.sectionHeader('Locations');
+
+        // ── The address, printed, before anything else on this page ──
+        //
+        // Found on 23 November by rendering the PDF and reading it. The
+        // locations block below falls through pd.locations, then
+        // cs.locations, then the address — and cs.locations is the day's
+        // location NAMES from the schedule, which almost always exist. So a
+        // filmmaker who typed "7 Awolowo Road, Ikoyi" into the call sheet
+        // form got a printed sheet reading "Location 1: Lagos Office" and
+        // no address anywhere on it.
+        //
+        // The comment below says this block exists to stop "a unit sent to
+        // an address that was never printed on the sheet". It was doing the
+        // opposite.
+        //
+        // Worse because of the guard added the same evening: export now
+        // refuses when no address can be resolved, so a sheet that EXPORTS
+        // is one Slate has confirmed has an address — and it was still
+        // printing without it. A guard that passes while the document stays
+        // addressless is false assurance, which is worse than no guard.
+        //
+        // slateCallsheetAddress, the same resolver the export guard uses, so
+        // the thing checked and the thing printed cannot drift apart.
+        var csAddress = slateCallsheetAddress(cs);
+        if (csAddress) {
+          pdf.check(16);
+          var csAddrY = pdf.getY();
+          var csAddrLines = labelValue('Address', csAddress, 15, 175);
+          pdf.setY(csAddrY + 12 + (csAddrLines - 1) * 4);
+        }
+
         // The day's location arrives from the schedule as ONE string with the
         // places joined by " · ". Wrapping that in a single-element array put
         // all four of a day's locations inside "Location 1". Split it back

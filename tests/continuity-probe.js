@@ -219,11 +219,20 @@ console.log('\nIt reaches both documents, and costs nothing');
      /Report 5 — Continuity by Story Day<\/div>/.test(APP));
   ok('the breakdown PDF renders it',
      /pdf\.sectionHeader\('Report 5 — Continuity by Story Day'\)/.test(APP));
-  ok('both read the same grouping function',
-     (APP.match(/slateContinuityGroups\(scenes, slateDayOfScene\(slateSchedule\)\)/g) || [])
-       .length === 2,
-     'two renderers grouping separately is the duplicate source of truth '
-     + 'that every bug of 23 November came from');
+  // The property, not the spelling. The PDF holds the day map in a variable
+  // because its table needs the per-scene day as well, so an assertion that
+  // demanded two byte-identical call sites failed on a correct change.
+  // What must be true is that BOTH renderers group through the one function
+  // and derive their shoot days from the one schedule reader — two
+  // renderers grouping separately is the duplicate source of truth that
+  // every bug of 23 November came from.
+  ok('both renderers group through the one function',
+     (APP.match(/slateContinuityGroups\(/g) || []).length === 3,
+     (APP.match(/slateContinuityGroups\(/g) || []).length
+       + ' call sites (expected 3: the definition and two renderers)');
+  ok('  ...and both take their shoot days from the one schedule reader',
+     (APP.match(/slateDayOfScene\(slateSchedule\)/g) || []).length === 2,
+     (APP.match(/slateDayOfScene\(slateSchedule\)/g) || []).length + ' of 2');
 
   // Free. Every value was already read and paid for, so this must not
   // charge a credit or call the model.
@@ -241,6 +250,29 @@ console.log('\nIt reaches both documents, and costs nothing');
   ok('it waits until the whole script is read',
      /if \(!streaming \|\| streaming\.complete\) \{\s*\n\s*var slateCont/.test(APP),
      'a half-read script makes every story day look split');
+
+  // ── The PDF draws it as a TABLE, and that is not a style choice ──
+  //
+  // The first version used pdf.labelledList and the PDF came back with the
+  // group heading printed THROUGH the scenes it was labelling: labelledList
+  // draws its label at x and the values at x+26, so any label longer than
+  // 26mm overruns the column. "Story day 1 · 4 scenes · 2 described · shot
+  // across days 1, 9" is four times that.
+  //
+  // Found by rendering the PDF and looking at it. Every assertion here
+  // passed while it was broken, and the SCREEN version of the same data was
+  // perfectly fine — which is exactly why a layout cannot be signed off
+  // from assertions alone.
+  ok('the PDF draws the report as a table, not a labelled list',
+     /pdf\.table\(\s*\n?\s*\[\{ label: 'Story Day'/.test(APP),
+     'a long label in a labelledList prints through the column it labels');
+  ok('  ...with the shoot day in its own column',
+     /label: 'Shoot Day'/.test(APP),
+     'a story day reading 1, 1, 9, 9 down that column IS the split, shown '
+     + 'rather than announced');
+  ok('  ...and the groups with nothing described said once, after it',
+     /slateContBare/.test(APP),
+     'a note between every pair of rows is how a table becomes unreadable');
 
   // Nothing here is a fault, and saying so is what stops it being read as
   // an error list.
