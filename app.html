@@ -3312,6 +3312,97 @@
         return raw;
       }
 
+      // ── Scenes grouped by the day of the STORY they happen on ──
+      //
+      // The one thing a breakdown can tell a script supervisor that a
+      // reading of the script in order cannot: which scenes have to match
+      // each other. Scenes 12 and 48 may shoot three weeks apart and still
+      // be the same story morning, so the costume, the hair and the state
+      // of an injury have to agree across them.
+      //
+      // Deterministic and free. No model call, no credit: every value here
+      // was already read and paid for, and this is a grouping over it. The
+      // model pass that looks for actual contradictions is a separate
+      // thing, built on top of these groups, and this renders without it.
+      //
+      // A scene with no story day is left OUT rather than collected into a
+      // group of its own. "Scenes we cannot place in story time" is a
+      // different report for a different reader, and putting them here
+      // would bury the groups that matter under the ones that do not.
+      //
+      // dayOfScene is optional: the shoot day each scene landed on, which
+      // only exists once a schedule does. Without it the grouping still
+      // works — it simply cannot say that a story day is split.
+      function slateContinuityGroups(scenes, dayOfScene) {
+        var map = {}, order = [];
+        (scenes || []).forEach(function (s) {
+          var sd = slateStoryDay(s && s.story_day);
+          if (!sd) return;
+          if (!map[sd]) { map[sd] = { story_day: sd, scenes: [] }; order.push(sd); }
+          map[sd].scenes.push(s);
+        });
+
+        return order.map(function (sd) {
+          var g = map[sd];
+          // Script order inside a group. A script supervisor reads these as
+          // the story runs, not as the schedule happens to have packed them.
+          var inOrder = g.scenes.slice().sort(function (a, b) {
+            return (Number(a.scene_index) || 0) - (Number(b.scene_index) || 0);
+          });
+          var days = [], seenDay = {};
+          inOrder.forEach(function (s) {
+            var d = dayOfScene ? dayOfScene[Number(s.scene_index)] : undefined;
+            if (d === undefined || d === null || seenDay[d]) return;
+            seenDay[d] = true;
+            days.push(d);
+          });
+          days.sort(function (a, b) { return a - b; });
+          return {
+            story_day: sd,
+            scenes: inOrder,
+            shoot_days: days,
+            // The expensive case, named rather than left to be noticed. One
+            // story morning shot across three weeks is where continuity is
+            // actually lost, and it is invisible in a schedule ordered by
+            // location.
+            split: days.length > 1,
+            // How many of these scenes the script actually describes. A
+            // group where nothing is described has nothing to match and is
+            // not worth a reader's time; a group where one scene is
+            // described and five are not is a question for the writer.
+            described: inOrder.filter(function (s) {
+              return (s.costume || []).length || (s.makeup_hair || []).length;
+            }).length
+          };
+        }).filter(function (g) {
+          // One scene on its own has nothing to agree with.
+          return g.scenes.length > 1;
+        }).sort(function (a, b) {
+          // Numeric story days in story order; anything the writer named in
+          // words after them, alphabetically. "2" before "10", which a
+          // string sort gets wrong, and "Wedding day" last.
+          var an = /^\d+$/.test(a.story_day) ? Number(a.story_day) : Infinity;
+          var bn = /^\d+$/.test(b.story_day) ? Number(b.story_day) : Infinity;
+          if (an !== bn) return an - bn;
+          return String(a.story_day).localeCompare(String(b.story_day));
+        });
+      }
+
+      // The shoot day each scene landed on, from a schedule. Returns null
+      // when there is no schedule yet, which the grouping above treats as
+      // "shoot days unknown" rather than "all on one day".
+      function slateDayOfScene(schedule) {
+        if (!schedule || !Array.isArray(schedule.schedule)) return null;
+        var out = {};
+        schedule.schedule.forEach(function (d) {
+          (d.scenes || []).forEach(function (s) {
+            var i = Number(s.scene_index);
+            if (i) out[i] = Number(d.day);
+          });
+        });
+        return out;
+      }
+
       function slateTitleCase(name) {
         var str = String(name || '');
         if (!str) return str;
@@ -4783,6 +4874,70 @@
             + slateEscapeHtml(pair[0]) + '</div><div>'
             + pair[1].map(chip).join('') + '</div>';
         });
+      // ── Report 5 — Continuity by Story Day ──
+        //
+        // Only once the whole script is read. Mid-stream, a story day looks
+        // split simply because the scenes that complete it have not arrived
+        // yet, and a report that cries wolf while the user watches it is
+        // worse than one that appears a moment later.
+        if (!streaming || streaming.complete) {
+          var slateCont = slateContinuityGroups(scenes, slateDayOfScene(slateSchedule));
+          if (slateCont.length) {
+            html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 5 — Continuity by Story Day</div>';
+            html += '<div style="color:var(--text-2,#B5AFA3);font-size:12px;margin-bottom:12px">'
+              + 'Scenes that happen on the same day of the story have to match on screen, '
+              + 'however far apart they are shot. Nothing here is a fault — it is what '
+              + 'has to agree.</div>';
+            html += slateCont.map(function (g) {
+              var split = g.split
+                ? '<span style="color:var(--warn,#C97E3D);font-family:var(--font-data);font-size:11px;margin-left:10px">'
+                  + 'shot across days ' + g.shoot_days.join(', ') + '</span>'
+                : (g.shoot_days.length
+                    ? '<span style="color:var(--text-3,#7D786E);font-family:var(--font-data);font-size:11px;margin-left:10px">day '
+                      + g.shoot_days[0] + '</span>'
+                    : '');
+              return '<div style="padding:12px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);'
+                + 'border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+                // The separator is not decoration. "Story day 1" beside
+                // "4 scenes" reads as "Story day 14" at a glance, and on a
+                // document whose whole purpose is the number, that is not a
+                // risk worth taking.
+                //
+                // The described count sits here because it is what tells a
+                // script supervisor whether this group is worth their time:
+                // four scenes with two described is a comparison to make,
+                // four with none is a question for the writer.
+                + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:13px;font-weight:600">'
+                + 'Story day ' + slateEscapeHtml(g.story_day)
+                + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">'
+                + '· ' + g.scenes.length + ' scenes · ' + g.described
+                + ' described</span>' + split + '</div>'
+                + g.scenes.map(function (s) {
+                    // Costume and makeup as the script described them, side
+                    // by side. The comparison is the whole point, so an
+                    // undescribed scene says so rather than showing blank —
+                    // a reader cannot tell a blank from "nothing changes".
+                    var bits = [];
+                    (s.costume || []).forEach(function (v) { bits.push(slateEscapeHtml(v)); });
+                    (s.makeup_hair || []).forEach(function (v) { bits.push(slateEscapeHtml(v)); });
+                    return '<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line-1,#2E323A);font-size:12px">'
+                      + '<span style="font-family:monospace;color:var(--gold,#D4A64A);min-width:38px">'
+                      + slateEscapeHtml(s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)))
+                      + '</span>'
+                      + '<span style="color:var(--text-2,#B5AFA3);flex:1">'
+                      + (bits.length ? bits.join('  ·  ')
+                          : '<span style="color:var(--text-3,#7D786E)">not described in the script</span>')
+                      + '</span></div>';
+                  }).join('')
+                + (g.described === 0
+                    ? '<div style="margin-top:8px;font-size:11px;color:var(--text-3,#7D786E)">'
+                      + 'The script describes no costume or makeup on any of these scenes, so '
+                      + 'there is nothing recorded to match. Worth a look before the day.</div>'
+                    : '')
+                + '</div>';
+            }).join('');
+          }
+        }
       if (streaming && !streaming.complete) {
           html += '<div style="margin-top:32px;padding:14px 16px;border:1px dashed var(--line-1,#2E323A);border-radius:8px;color:var(--text-2,#B5AFA3);font-size:13px">Still reading your screenplay — section ' + streaming.done + ' of ' + streaming.total + '. Scenes appear here as they are analysed.</div>';
         } else {
@@ -6941,6 +7096,43 @@
           pdf.gap(4);
           pdf.labelledList(pair[0], pair[1], 15);
         });
+
+        // ── Report 5 — Continuity by Story Day ──
+        //
+        // The page a script supervisor takes to set. Everything on it was
+        // already read and paid for; this is a grouping over it, so it
+        // costs nothing to produce and no credit to the filmmaker.
+        //
+        // Printed only when there is something to compare — a story day
+        // with one scene has nothing to agree with, and slateContinuityGroups
+        // has already dropped those. A script the model gave no story days
+        // prints no report at all rather than an empty heading, which would
+        // claim we looked and found nothing.
+        var slatePdfCont = slateContinuityGroups(scenes, slateDayOfScene(slateSchedule));
+        if (slatePdfCont.length) {
+          pdf.sectionHeader('Report 5 — Continuity by Story Day');
+          pdf.annotation('Scenes on the same day of the story have to match on screen, '
+            + 'however far apart they are shot. Nothing here is a fault — it is what has '
+            + 'to agree. Costume and makeup are shown as the script described them.', 15, 175);
+          pdf.gap(4);
+          slatePdfCont.forEach(function (g) {
+            pdf.check(16 + g.scenes.length * 6);
+            pdf.labelledList('Story day ' + g.story_day
+              + '  ·  ' + g.scenes.length + ' scenes  ·  ' + g.described + ' described'
+              + (g.split ? '  ·  shot across days ' + g.shoot_days.join(', ')
+                 : (g.shoot_days.length ? '  ·  day ' + g.shoot_days[0] : '')),
+              g.scenes.map(function (s) {
+                var bits = (s.costume || []).concat(s.makeup_hair || []);
+                return (s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)))
+                  + '   ' + (bits.length ? bits.join(' · ') : 'not described in the script');
+              }), 15);
+            if (!g.described) {
+              pdf.annotation('No costume or makeup is described on any of these scenes, so '
+                + 'nothing is recorded to match. Worth a look before the day.', 15, 175);
+            }
+            pdf.gap(4);
+          });
+        }
 
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
         pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
