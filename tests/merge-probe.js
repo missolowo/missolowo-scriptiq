@@ -71,6 +71,10 @@ const SRC = [
   // The sequence vocabulary, needed by the merge's check that the page
   // agrees before a MONTAGE tag survives.
   stmt('var SLATE_SEQUENCE'),
+  // Needed by the missing-scene check: a (CONT'D) heading is a page
+  // break, not a scene, and warning about one would teach filmmakers to
+  // ignore the warning.
+  stmt('var SLATE_CONTD_RE'),
   block('function slateSceneNumberOrNull'),
   block('function slateScriptIsNumbered'),
   // The heading matcher the merge now uses when the counts disagree.
@@ -78,12 +82,19 @@ const SRC = [
   block('function slateSceneMatchTokens'),
   block('function slateSceneMatchScore'),
   block('function slateAlignModelScenes'),
-  block('function mergeBreakdownChunks')
+  block('function mergeBreakdownChunks'),
+  // The note that tells a filmmaker a scene is absent. Extracted rather
+  // than restated: a warning whose wording drifts from the code is a
+  // warning nobody can check.
+  block('function slateMissingNote')
 ].join('\n');
 
 const win = {};
-const merge = new Function('window', 'console', SRC + '; return mergeBreakdownChunks;')(
+const api = new Function('window', 'console', SRC
+  + '; return { merge: mergeBreakdownChunks, missingNote: slateMissingNote };')(
   win, { warn() {}, error() {}, log() {} });
+const merge = api.merge;
+const slateMissingNote = api.missingNote;
 
 // A section shaped the way the model returns one — scenes carrying their
 // own elements, and NOTHING else. No character_breakdown, no
@@ -512,6 +523,75 @@ console.log('\nAnd on a script that numbers nothing at all');
   const labels = out.scenes.map(s => s.scene_label);
   ok('our position prints, because nothing can collide with it',
      JSON.stringify(labels) === '["#1","#2","#3"]', JSON.stringify(labels));
+}
+
+// ══════════════════════════════════════════════════
+// A SCENE THAT IS ON THE PAGE AND NOT IN THE BREAKDOWN.
+//
+// The model sometimes returns FEWER scenes than the script has. On THE
+// WEAVER'S DAUGHTER it merged "3A. INT. LAGOS OFFICE — CORRIDOR —
+// CONTINUOUS" into the scene above and returned five scenes for a
+// six-scene script.
+//
+// A wrong number is visible. A missing scene is not: nothing on the
+// document hints it ever existed, and whoever schedules from it never
+// books the day. We can tell, because we read the headings off the page
+// ourselves and know which of them no scene was matched to.
+console.log('\nA scene missing from the breakdown is named');
+{
+  win.slateChunkHeads = [['INT. LAGOS OFFICE - DAY',
+                          'INT. LAGOS OFFICE - CORRIDOR - CONTINUOUS',
+                          'INT. ADUKE\u2019S WORKSHOP - NIGHT']];
+  win.slateChunkNumbers = [['3', '3A', '5']];
+  // The model merged 3A into 3 and returned two scenes for three headings.
+  const out = merge([{ scenes: [
+    scene(3, 'Lagos Office', ['TOLANI']),
+    scene(5, "Aduke's Workshop", ['ADUKE'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+
+  ok('the missing heading is recorded',
+     (out.slate_missing || []).length === 1, JSON.stringify(out.slate_missing));
+  ok('  ...and it is the right one',
+     (out.slate_missing || [])[0] && out.slate_missing[0].number === '3A',
+     JSON.stringify(out.slate_missing));
+  ok('  ...and it is counted in the reading',
+     out.production_elements.slate_reading.headings_unmatched === 1,
+     String(out.production_elements.slate_reading.headings_unmatched));
+
+  const note = slateMissingNote(out.slate_missing);
+  ok('the note names the scene, not "some scenes"', /scene 3A/.test(note), note);
+  ok('  ...and says it is not in the breakdown',
+     /not in this breakdown/.test(note), note);
+  ok('  ...and says nothing else will show it',
+     /nothing else on this document/.test(note), note);
+}
+
+console.log('\nAnd a clean breakdown says nothing at all');
+{
+  win.slateChunkHeads = [['INT. KITCHEN - DAY', 'EXT. MARKET - DAY']];
+  win.slateChunkNumbers = [['1', '2']];
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']), scene(2, 'Market', ['ADA'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  ok('nothing recorded', !out.slate_missing, JSON.stringify(out.slate_missing));
+  ok('  ...and no note', slateMissingNote(out.slate_missing) === null);
+}
+
+console.log('\nA (CONT\u2019D) heading is a page break, not a missing scene');
+{
+  win.slateChunkHeads = [['INT. KITCHEN - DAY',
+                          "INT. KITCHEN - DAY (CONT'D)",
+                          'EXT. MARKET - DAY']];
+  win.slateChunkNumbers = [['1', '1', '2']];
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']), scene(2, 'Market', ['ADA'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  ok('no false alarm on a continuation', !out.slate_missing,
+     JSON.stringify(out.slate_missing)
+     + '  <- warning about a page break teaches filmmakers to ignore this note');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

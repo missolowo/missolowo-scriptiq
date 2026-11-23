@@ -3961,8 +3961,38 @@
         // headings_read against model_scenes answers it in one line, for
         // any script, without us ever seeing a word of it. Nothing renders
         // these: every document reads production_elements by name.
+        // ── Scenes that are on the page but not in this breakdown ──
+        //
+        // The model sometimes returns FEWER scenes than the script has: it
+        // merges two into one, or drops one. On THE WEAVER'S DAUGHTER it
+        // merged "3A. INT. LAGOS OFFICE — CORRIDOR — CONTINUOUS" into the
+        // scene above, and the breakdown came back with five scenes for a
+        // six-scene script.
+        //
+        // That is worse than a wrong number. A wrong number is visible; a
+        // missing scene is not. Nothing else on the document hints that it
+        // ever existed, and a production manager scheduling from it simply
+        // never books the day.
+        //
+        // We can tell, because we read the headings off the page ourselves
+        // and we know which of them no scene was matched to. A heading
+        // carrying (CONT'D) is skipped: that is a page break, not a scene.
+        if (slateHaveRecord && slateAllHeads.length) {
+          var slateClaimed = {};
+          slateMatch.forEach(function (h) { if (h >= 0) slateClaimed[h] = true; });
+          var slateMissing = [];
+          for (var mi = 0; mi < slateAllHeads.length; mi++) {
+            if (slateClaimed[mi]) continue;
+            var slateHeadTxt = String(slateAllHeads[mi] || '');
+            if (!slateHeadTxt || SLATE_CONTD_RE.test(slateHeadTxt)) continue;
+            slateMissing.push({ number: slateAllNums[mi] || null, head: slateHeadTxt });
+          }
+          if (slateMissing.length) merged.slate_missing = slateMissing;
+        }
+
         merged.production_elements.slate_reading = {
           headings_read: slateAllHeads.length,
+          headings_unmatched: (merged.slate_missing || []).length,
           numbers_read: slateAllNums.filter(function (n) { return !!n; }).length,
           model_scenes: slateAllScenes.length,
           scenes_placed: slateMatch.filter(function (i) { return i >= 0; }).length,
@@ -4178,6 +4208,38 @@
           + 'worse mistake.</div>';
       }
 
+      // Said plainly, and named. "Some scenes may be missing" is a sentence
+      // nobody can act on; "scene 3A is not in this breakdown" is one a
+      // production manager can check against the page in ten seconds.
+      function slateMissingNote(missing) {
+        var list = (missing || []);
+        if (!list.length) return null;
+        var named = list.map(function (m) {
+          if (m.number) return 'scene ' + m.number;
+          var head = String(m.head || '').replace(/\s+/g, ' ').trim();
+          return head ? '\u201c' + head.slice(0, 44) + '\u201d' : 'one heading';
+        });
+        // Six is enough to act on; a longer list means something else is
+        // wrong and the count is the useful part.
+        var shown = named.slice(0, 6).join(', ')
+          + (named.length > 6 ? ' and ' + (named.length - 6) + ' more' : '');
+        var one = list.length === 1;
+        return '<strong>' + list.length + ' scene' + (one ? '' : 's')
+          + ' in your script ' + (one ? 'is' : 'are') + ' not in this breakdown</strong>: '
+          + shown + '. We read ' + (one ? 'it' : 'them') + ' on your pages, but no scene '
+          + 'came back for ' + (one ? 'it' : 'them') + '. Worth checking before you '
+          + 'schedule \u2014 nothing else on this document will show '
+          + (one ? 'it is' : 'they are') + ' missing.';
+      }
+
+      function slateMissingNoteHtml(missing) {
+        var note = slateMissingNote(missing);
+        if (!note) return '';
+        return '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;'
+          + 'line-height:1.5;border:1px solid var(--warn,#C97E3D);color:var(--warn,#C97E3D)">'
+          + note + '</div>';
+      }
+
       function slateNumberingNoteHtml(scenes) {
         var note = slateNumberingNote(scenes);
         if (!note) return '';
@@ -4283,6 +4345,7 @@
         // Under the report rather than above it: a reader meets the numbers
         // first and the explanation when they need it.
         html += slateCastReviewHtml(chars);
+        html += slateMissingNoteHtml(data.slate_missing);
         html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
@@ -6111,6 +6174,19 @@
         pdf.gap(4);
       }
 
+      // A missing scene matters most on the PDF, because that is the copy
+      // that goes to a production. Same sentence, same plain-text rules.
+      function slatePdfMissingNote(pdf, missing) {
+        var note = slateMissingNote(missing);
+        if (!note) return;
+        var plain = note.replace(/<[^>]+>/g, '')
+          .replace(/—/g, '-').replace(/’/g, "'")
+          .replace(/[“”]/g, '"');
+        pdf.gap(2);
+        pdf.annotation(plain);
+        pdf.gap(4);
+      }
+
       // ── DOCUMENT: SCRIPT BREAKDOWN ──
       async function slateExportBreakdown() {
         if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
@@ -6191,6 +6267,7 @@
         // The PDF is the copy that reaches set, so the key to the numbering
         // belongs here more than anywhere. Printed only when a # label
         // actually exists — a cleanly numbered script gets no footnote.
+        slatePdfMissingNote(pdf, d.slate_missing);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 3 — Locations');
@@ -6202,6 +6279,7 @@
             return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
           })
         );
+        slatePdfMissingNote(pdf, d.slate_missing);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 4 — Production Elements');
