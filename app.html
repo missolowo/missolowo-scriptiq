@@ -3668,8 +3668,36 @@
         //
         // Every note says which of those two it is, so a reader can always
         // tell what the script stated from what we inferred.
+        var slateSpanStats = {};
         (function () {
           var slateSeqSpanRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+
+          // ── What the MODEL said, before we extend anything ──
+          //
+          // A scene_type opens a span that runs forward until the next type
+          // or a marked return, and with no return in the script, to the
+          // end of the film. iRANTI came back with 111 of 117 scenes shown
+          // as another time while only 37 carried a sequence type: the rest
+          // is span inheritance.
+          //
+          // Whether that is right turns on one fact nobody here knows: does
+          // the model type EVERY scene inside a flashback, or only the
+          // first? If every scene, spans are unnecessary and the mechanism
+          // itself is the fault. If only the first, spans are needed and
+          // merely need an ending.
+          //
+          // Stored breakdowns cannot answer it, because by the time one is
+          // saved the span has already overwritten the model's own answer.
+          // So it is counted here, before that happens, and one real run
+          // settles it. Counts only — no titles, no locations.
+          var slateModelTyped = 0, slateModelReturns = 0;
+          merged.scenes.forEach(function (s) {
+            if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') slateModelTyped++;
+            if (s.slate_returns_to_present || s.scene_type === 'BACK TO PRESENT') {
+              slateModelReturns++;
+            }
+          });
+
           var spans = [];
           var open = null;
           merged.scenes.forEach(function (s, i) {
@@ -3726,6 +3754,15 @@
           spans.forEach(function (sp) {
             for (var i = sp.from; i < sp.endsBefore; i++) inSpan[i] = sp;
           });
+
+          // Handed out to the reading record below, which is built after
+          // this runs. It says plainly how much of a breakdown is the
+          // model's own answer and how much is ours extending it.
+          slateSpanStats.scene_types_from_model = slateModelTyped;
+          slateSpanStats.returns_marked = slateModelReturns;
+          slateSpanStats.spans_opened = spans.length;
+          slateSpanStats.spans_running_to_end =
+            spans.filter(function (sp) { return sp.endedBy === 'end'; }).length;
 
           merged.scenes.forEach(function (s, i) {
             var sp = inSpan[i];
@@ -3993,6 +4030,10 @@
         merged.production_elements.slate_reading = {
           headings_read: slateAllHeads.length,
           headings_unmatched: (merged.slate_missing || []).length,
+          scene_types_from_model: slateSpanStats.scene_types_from_model,
+          returns_marked: slateSpanStats.returns_marked,
+          spans_opened: slateSpanStats.spans_opened,
+          spans_running_to_end: slateSpanStats.spans_running_to_end,
           numbers_read: slateAllNums.filter(function (n) { return !!n; }).length,
           model_scenes: slateAllScenes.length,
           scenes_placed: slateMatch.filter(function (i) { return i >= 0; }).length,

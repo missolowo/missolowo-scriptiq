@@ -594,5 +594,56 @@ console.log('\nA (CONT\u2019D) heading is a page break, not a missing scene');
      + '  <- warning about a page break teaches filmmakers to ignore this note');
 }
 
+// ══════════════════════════════════════════════════
+// WHAT THE MODEL SAID, BEFORE WE EXTENDED IT.
+//
+// A scene_type opens a span that runs forward until the next type or a
+// marked return, and with no return in the script, to the end of the
+// film. iRANTI came back with 111 of 117 scenes shown as another time
+// while only 37 carried a sequence type — the rest is span inheritance.
+//
+// Whether that is right turns on one fact: does the model type EVERY
+// scene inside a flashback, or only the first? If every scene, the span
+// mechanism is itself the fault. If only the first, spans are needed and
+// merely need an ending.
+//
+// A stored breakdown cannot answer it, because by the time one is saved
+// the span has overwritten the model's own answer. So it is counted
+// before that happens, and one real run settles it instead of a guess.
+console.log('\nThe model\u2019s own answer is counted before we extend it');
+{
+  win.slateChunkHeads = [['INT. KITCHEN - DAY', 'EXT. COMPOUND - DAY',
+                          'INT. SCHOOL - DAY', 'INT. KITCHEN - NIGHT',
+                          'EXT. ROAD - DAY']];
+  win.slateChunkNumbers = [['1', '2', '3', '4', '5']];
+  // The model typed ONE scene. Four end up typed, through inheritance.
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']),
+    Object.assign(scene(2, 'Compound', ['ADA']), { scene_type: 'FLASHBACK' }),
+    scene(3, 'School', ['ADA']), scene(4, 'Kitchen', ['ADA']),
+    scene(5, 'Road', ['ADA'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  const r = out.production_elements.slate_reading;
+  const typedAfter = out.scenes.filter(s => s.scene_type).length;
+
+  ok('the MODEL typed one scene', r.scene_types_from_model === 1,
+     String(r.scene_types_from_model));
+  ok('  ...and four carry a type once we are done', typedAfter === 4,
+     typedAfter + ' — the difference is the span, and it is the question');
+  ok('one span was opened', r.spans_opened === 1, String(r.spans_opened));
+  ok('  ...and it runs to the end of the film',
+     r.spans_running_to_end === 1, String(r.spans_running_to_end)
+     + ' — a flashback reaching the final scene is almost always wrong');
+  ok('no return was marked in the script', r.returns_marked === 0,
+     String(r.returns_marked));
+
+  // The counts must describe the model, not us. If this ever reads 4 the
+  // capture has moved after the span pass and answers nothing.
+  ok('the count is the model\u2019s, not the result',
+     r.scene_types_from_model !== typedAfter,
+     'counted after the span, which is the one thing it must not do');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
