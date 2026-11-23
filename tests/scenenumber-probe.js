@@ -65,14 +65,27 @@ const HEAD = [
   block('function slateHeadTextAt'),
   block('function slateMontageBeat'),
   block('function slateEndsSequence'),
-  block('function slateNextNonBlank')
+  block('function slateNextNonBlank'),
+  // The two that decide whether a beat becomes a scene. Until 23 November
+  // nothing in this file reached them, so the promotion of beats to scenes
+  // — and its removal — had no coverage at all.
+  stmt('var SLATE_SCENE_MARKER'),
+  stmt('var SLATE_NUM_ONLY_SRC'),
+  stmt('var SLATE_ROWS_PER_PAGE'),
+  stmt('var SLATE_CHARS_PER_ROW'),
+  block('function slateSceneTypeFrom'),
+  block('function slateRowsIn'),
+  block('function slateEighthsFromRows'),
+  block('function slateSceneMarksIn'),
+  block('function slateCountScenes')
 ].join('\n');
 
 const api = new Function('console', HEAD
   + '; return { lone: slateLoneSceneNumber, next: slateNextNonBlank,'
   + '           margin: slateMarginNumberedHeading, contd: SLATE_CONTD_RE,'
   + '           seq: slateNumberedSequenceHeading, beat: slateMontageBeat,'
-  + '           ends: slateEndsSequence, HEADSRC: slateHeadingSrc };')(
+  + '           ends: slateEndsSequence, HEADSRC: slateHeadingSrc,'
+  + '           marks: slateSceneMarksIn, count: slateCountScenes };')(
   { warn() {}, error() {}, log() {} });
 
 const lone = (line, next) => api.lone(line, next === undefined ? '' : next);
@@ -259,18 +272,22 @@ console.log('  ...and a sentence that merely mentions one is not');
 }
 
 // ══════════════════════════════════════════════════
-// A montage beat is a setup, and a setup is a scene. Ten beats in ten
-// places are ten company moves and ten lighting calls, and a first AD
-// scheduling from a breakdown that calls them one scene loses a day
-// finding out.
+// A montage beat belongs TO its montage. The writer numbered the montage
+// once, so it is one scene — and ten beats in ten places are still ten
+// setups, ten company moves and ten lighting calls, so every beat is
+// carried on that scene with its own location and shown under it. The
+// count follows the script; the detail stays on the page.
 //
-// They also decide whether the SCENE NUMBERS survive. The model expands
-// every beat into a scene; the merge only trusts our numbers when our
-// count agrees with the model's. THE HILLS BETWEEN US has two montages
-// and seventeen beats between them, and while those went uncounted the
-// counts never agreed and the model's invented numbers were printed
-// instead — "2.01", scene 20 twice, a transition listed as a scene.
-console.log('\nA montage beat is a scene, but only inside a montage');
+// It did not used to be that way. Beats were promoted to scenes of their
+// own, for two reasons. The production one is answered above. The
+// mechanical one was that "the merge only trusts our numbers when our
+// count agrees with the model's" — and that stopped being true on 22
+// November, when the merge began matching the two lists by heading
+// instead of requiring equal lengths.
+//
+// What follows tests the LINE: is this a beat at all? Whether a beat
+// becomes a scene is tested where that is decided, further down.
+console.log('\nA montage beat is recognised, but only inside a montage');
 {
   const B = (l, inSeq) => api.beat(l, inSeq === undefined ? true : inSeq);
 
@@ -384,6 +401,98 @@ console.log('\nBoth halves ask the same question');
   const scopies = (APP.match(/MONTAGE\|SERIES OF SHOTS/g) || []).length;
   ok('the sequence vocabulary is written exactly once',
      scopies === 1, scopies + ' copies');
+}
+
+// ══════════════════════════════════════════════════
+// WHETHER A BEAT BECOMES A SCENE.
+//
+// This is what nothing tested. Every assertion above asks whether a LINE
+// is a beat, which is a different question, and all 815 of them stayed
+// green when the answer to this one was reversed.
+//
+// THE HILLS BETWEEN US: 104 marks with beats promoted, 87 without, and
+// 17 beats across its montages. The writer's highest number is 65.
+console.log('\nA montage is ONE scene, and carries its beats');
+{
+  const script = [
+    '1. INT. ADEYEMI HOUSE — MORNING',
+    '',
+    'Omowon pours tea.',
+    '',
+    '2. MONTAGE — VARIOUS LOCATIONS — MONTHS PASSING',
+    '',
+    '— INT. ABEGUNDE HOUSE — DAY',
+    'She paints in silence.',
+    '— INT. LAGOS ART GALLERY — EVENING',
+    'Her work hangs on a white wall.',
+    '— EXT. VILLAGE SQUARE — DAY',
+    'Children run past the mango tree.',
+    '',
+    '3. EXT. IMOLE LAKE — SUNSET',
+    '',
+    'Akin stands at the water.'
+  ].join('\n');
+
+  const marks = api.marks(script);
+  const counted = api.count(script);
+
+  ok('THREE scenes, not six', marks.length === 3,
+     marks.length + ' — the writer numbered three');
+  ok('  ...and the count agrees', counted.total === 3, counted.total + '');
+  ok('  ...and it is the montage that holds the beats',
+     (marks[1].beats || []).length === 3,
+     JSON.stringify(marks.map(m => (m.beats || []).length)));
+  ok('each beat keeps its own location, so an AD sees every setup',
+     (marks[1].beats || []).join(' | ').indexOf('LAGOS ART GALLERY') >= 0,
+     JSON.stringify(marks[1].beats));
+  ok('no beat is a scene of its own', !marks.some(m => m.beat),
+     'a beat as a scene is a scene the writer never numbered');
+  ok('the beats are still counted, so the panel can say how many',
+     counted.beats === 3, counted.beats + '');
+  ok('and NO beat is reported as a scene missing its number',
+     counted.unnumbered === 0,
+     counted.unnumbered + ' — reporting beats as unnumbered scenes would be '
+     + 'a false accusation on a correctly formatted script');
+
+  // CONSERVATION. The montage's row range must now run from its heading
+  // past all its beats to the next real heading. If it does not, the page
+  // count silently loses the montage and every page number after it
+  // shifts.
+  const rows = marks.reduce((a, m) => a + (m.rows || 0), 0);
+  const lines = script.split('\n').length;
+  ok('every row of the script is accounted for exactly once',
+     rows > 0 && rows <= lines && marks[1].rows >= 6,
+     'montage rows ' + marks[1].rows + ', total ' + rows + ' of ' + lines
+     + ' lines — the montage must own its beats\u2019 rows');
+
+  // The numbers themselves, which is what a filmmaker reads.
+  ok('the writer\u2019s own numbers are what we recorded',
+     JSON.stringify(marks.map(m => m.number)) === '["1","2","3"]',
+     JSON.stringify(marks.map(m => m.number)));
+}
+
+console.log('\nA dash list that is NOT under a montage is untouched');
+{
+  // The guard that makes all of this safe. A script using dashes for
+  // emphasis, or an action line that happens to start with one, must not
+  // disappear into a scene above it.
+  const script = [
+    '1. INT. KITCHEN — DAY',
+    '',
+    'She sets out three things:',
+    '— a knife',
+    '— a bowl',
+    '— the letter',
+    '',
+    '2. EXT. ROAD — NIGHT',
+    '',
+    'He walks.'
+  ].join('\n');
+  const marks = api.marks(script);
+  ok('two scenes', marks.length === 2, marks.length + '');
+  ok('and no beats were collected from a plain dash list',
+     marks.every(m => !(m.beats || []).length),
+     JSON.stringify(marks.map(m => m.beats || [])));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

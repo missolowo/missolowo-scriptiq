@@ -308,6 +308,7 @@ A new scene begins ONLY at a scene heading (slug line). A slug line contains INT
 - NEVER start a new scene because the mood changes, a new character speaks, an argument begins, or a long scene feels like two.
 - A scene that runs for pages and covers several emotional beats is still ONE scene.
 - NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
+- A MONTAGE or SERIES OF SHOTS is ONE scene, however many beats are listed beneath it. The writer numbered it once. Return a single scene for the montage heading and do NOT return a scene for each dashed beat line under it.
 - The number of scenes you return must equal the number of slug lines in the text.
 IGNORE FRONT MATTER:
 A script may open with a title page, episode title, writer credits, a cast list, or an episode synopsis. NONE of these are scenes. Extraction begins at the first slug line and nothing before it.

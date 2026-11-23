@@ -192,6 +192,14 @@ console.log('\nThe probe can see the instructions at all');
      'this is the instruction phantom scenes break');
   ok('background must still not be invented or counted',
      /NEVER estimate a number/.test(PROMPT));
+  // One change, 23 November: a montage is one scene. Its beats are read
+  // off the page by slateMontageBeat and carried on that scene, so the
+  // model must not return one scene per beat — that is both a wrong count
+  // and the heaviest request in the script, where two runs stalled.
+  ok('a montage is asked for as ONE scene',
+     /A MONTAGE or SERIES OF SHOTS is ONE scene/.test(PROMPT));
+  ok('  ...and the beats are explicitly not scenes',
+     /do NOT return a scene for each dashed beat line/.test(PROMPT));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

@@ -2374,13 +2374,32 @@
             inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
-          // A beat inside a montage. A setup of its own, with no number of
-          // its own — and counting it is what keeps this list the same
-          // length as the model's, so the numbers above survive the merge.
+          // A beat belongs TO the montage above it, not beside it.
+          //
+          // It used to be pushed as a scene of its own, for two reasons.
+          // The first was production sense: ten beats in ten places are ten
+          // setups, and an AD must see all ten. That still holds, and is
+          // why each beat keeps its own text and location here — they are
+          // carried on the scene, not thrown away.
+          //
+          // The second was mechanical: "counting it is what keeps this list
+          // the same length as the model's, so the numbers survive the
+          // merge". That stopped being true on 22 November, when the merge
+          // started matching the two lists by heading instead of requiring
+          // them to be the same length. Nothing needs the lengths to agree
+          // any more.
+          //
+          // So the writer's own arithmetic wins: they numbered the montage
+          // once, and it is one scene. Attached rather than pushed, which
+          // also means the row range below runs from the montage heading
+          // past all its beats to the next real heading — the page count
+          // still adds up, with no separate accounting.
           var beat = slateMontageBeat(raw[i], inSeq);
           if (beat) {
-            out.push({ number: null, type: slateSceneTypeFrom(beat.text),
-                       beat: true, at: i, head: beat.text });
+            var slateOwner = out.length ? out[out.length - 1] : null;
+            if (slateOwner) {
+              (slateOwner.beats = slateOwner.beats || []).push(beat.text);
+            }
             continue;
           }
           if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
@@ -2485,12 +2504,11 @@
             inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
-          // A montage beat. Counted as a scene, because it is a setup the
-          // crew has to shoot — but NOT counted as one missing its number.
-          // The writer numbered the montage; a beat is not supposed to carry
-          // one, and reporting twenty of them as unnumbered scenes would be
-          // a brand new false accusation on a correctly formatted script.
-          if (slateMontageBeat(raw[i], inSeq)) { out.push(null); beats++; continue; }
+          // A montage beat is part of its montage, not a scene beside it.
+          // Counted so the panel can say how many there are, but never
+          // pushed: it has no number of its own, and the writer numbered
+          // the montage once.
+          if (slateMontageBeat(raw[i], inSeq)) { beats++; continue; }
           if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
@@ -2505,10 +2523,11 @@
           }
         }
         return { numbers: out, numbered: numbered, unnumbered: unnumbered,
-                 // Beats are in `total` and in `numbers` — they are scenes,
-                 // and the merge counts on this list matching the model's.
-                 // They are NOT in `unnumbered`: a beat is not a scene the
-                 // writer forgot to number.
+                 // Beats are NOT in `total` or in `numbers`. They belong to
+                 // the montage above them, which the writer numbered once,
+                 // and they are carried on that scene so an AD still sees
+                 // every setup. Counted here only so the panel can say how
+                 // many a script has.
                  beats: beats,
                  unreadable: unreadable, total: out.length };
       }
@@ -2536,6 +2555,15 @@
           window.slateChunkHeads = marks.map(function (list) {
             return list.map(function (m) { return m.head || ''; });
           });
+          // The beats of a montage, read off the page rather than asked
+          // for. The model is told a montage is ONE scene, so it does not
+          // return them — and it never needed to: "— INT. LAGOS ART
+          // GALLERY — EVENING" is already parsed exactly here. Reading them
+          // ourselves means they are right whatever the model does, and an
+          // AD still sees every setup inside the montage.
+          window.slateChunkBeats = marks.map(function (list) {
+            return list.map(function (m) { return m.beats || null; });
+          });
           // Measured off the script at the only point it is still in hand.
           window.slateChunkEighths = marks.map(function (list) {
             return list.map(function (m) { return m.eighths; });
@@ -2556,7 +2584,7 @@
         } catch (e) {
           window.slateChunkNumbers = null; window.slateChunkTypes = null;
           window.slateChunkEighths = null; window.slateChunkPages = null;
-          window.slateChunkHeads = null;
+          window.slateChunkHeads = null; window.slateChunkBeats = null;
         }
         return chunks;
       }
@@ -3262,6 +3290,7 @@
         var slateAllTypes = slateFlat('slateChunkTypes');
         var slateAllEighths = slateFlat('slateChunkEighths');
         var slateAllPages = slateFlat('slateChunkPages');
+        var slateAllBeats = slateFlat('slateChunkBeats');
         var slateHaveRecord = !!(window.slateChunkNumbers && slateAllNums.length);
 
         var slateAllScenes = [];
@@ -3368,6 +3397,11 @@
               // scene. Gated the same way the number is: if we cannot tell
               // which scene this is, a wrong length is worse than falling
               // back to the estimate.
+              // A montage's beats, from our own reading of the page. They
+              // are what makes "one scene" honest: the writer numbered the
+              // montage once, and an AD still needs all ten setups.
+              var slateB = slateAllBeats[slateHeadIdx];
+              if (slateB && slateB.length) scene.montage_beats = slateB;
               var slateE = slateAllEighths[slateHeadIdx];
               if (slateE) scene.slate_eighths = slateE;
               var slateP = slateAllPages[slateHeadIdx];
@@ -3912,6 +3946,27 @@
       // Returns null when there is nothing to explain, so a cleanly numbered
       // script gets no clutter.
 
+      // Screenplay text, safe to put in HTML.
+      //
+      // Written for the montage beats, which are the first thing to go onto
+      // the page straight from a line of someone's script. The wider
+      // problem is older and bigger than this helper: every renderer in
+      // this file interpolates script-derived text raw — descriptions,
+      // locations, character names — so a screenplay containing a script
+      // tag runs in the filmmaker's browser. Mostly that is a filmmaker
+      // attacking themselves, which is nobody's emergency, but these
+      // scripts are not always the reader's own: a production manager is
+      // sent a script by a writer, and a breakdown gets shared. Retrofit
+      // of the rest is its own task; new code uses this.
+      function slateEscapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
       // What a scene shows when we could not match it to a number of the
       // script's own. ONE definition: the scene list, the character report,
       // the location report and every export read scene_label, and they
@@ -4114,6 +4169,26 @@
             // through the script.
             + (s.scene_continuity ? '<div style="margin-top:6px;padding:7px 10px;background:' + (slateOther ? 'rgba(139,125,216,0.09)' : 'rgba(127,174,126,0.08)') + ';border-left:2px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:3px;font-size:12px;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + '">' + s.scene_continuity + '</div>' : '')
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
+            // ── The setups inside a montage ──
+            //
+            // The writer numbered the montage once, so it is one scene and
+            // one row. But ten beats in ten places are ten setups, ten
+            // company moves and ten lighting calls, and an AD scheduling
+            // from a document that hides them loses a day finding out.
+            //
+            // So the count follows the script and the detail stays on the
+            // page. Read off the script, not asked of the model.
+            + (s.montage_beats && s.montage_beats.length
+                ? '<div style="margin-top:8px;padding-left:10px;border-left:2px solid var(--line-1,#2E323A)">'
+                  + '<div style="font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;'
+                  + 'text-transform:uppercase;color:var(--text-2,#B5AFA3);margin-bottom:4px">'
+                  + s.montage_beats.length + ' setups in this montage</div>'
+                  + s.montage_beats.map(function (b) {
+                      return '<div style="font-size:12px;color:var(--text-2,#B5AFA3);'
+                           + 'padding:2px 0">\u2022 ' + slateEscapeHtml(b) + '</div>';
+                    }).join('')
+                  + '</div>'
+                : '')
             + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
             // Background is extracted by the breakdown and was being thrown
             // away here, only to reappear on the schedule two documents

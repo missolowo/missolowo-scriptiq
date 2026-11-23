@@ -350,6 +350,49 @@ console.log('\nThe reading records its own counts');
      Object.values(d).every(v => typeof v === 'number' || typeof v === 'boolean'), text);
 }
 
+// ══════════════════════════════════════════════════
+// A MONTAGE'S BEATS REACH THE BREAKDOWN.
+//
+// The model is told a montage is ONE scene, so it does not return the
+// beats — and it never needed to. "— INT. LAGOS ART GALLERY — EVENING"
+// is parsed exactly by slateMontageBeat, off the page, so the beats are
+// right whatever the model does and cost nothing to obtain.
+//
+// They have to arrive, though. A montage that reads as one row with its
+// ten setups nowhere on the document is worse than the inflated count it
+// replaced: an AD scheduling from it loses a day.
+console.log('\nThe setups inside a montage reach the scene');
+{
+  win.slateChunkHeads = [['INT. ADEYEMI HOUSE - MORNING',
+                          'MONTAGE - VARIOUS LOCATIONS - MONTHS PASSING',
+                          'EXT. IMOLE LAKE - SUNSET']];
+  win.slateChunkNumbers = [['1', '2', '3']];
+  win.slateChunkBeats = [[null,
+                          ['INT. ABEGUNDE HOUSE — DAY',
+                           'INT. LAGOS ART GALLERY — EVENING',
+                           'EXT. VILLAGE SQUARE — DAY'],
+                          null]];
+  const out = merge([{ scenes: [
+    scene(1, 'Adeyemi House', ['OMOWON']),
+    scene(2, 'Various Locations', ['OMOWON']),
+    scene(3, 'Imole Lake', ['AKIN'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null; win.slateChunkBeats = null;
+
+  const mont = out.scenes[1];
+  ok('three scenes come out', out.scenes.length === 3, out.scenes.length + '');
+  ok('the montage carries its three setups',
+     (mont.montage_beats || []).length === 3, JSON.stringify(mont.montage_beats));
+  ok('  ...with their own locations intact',
+     (mont.montage_beats || []).join(' | ').indexOf('LAGOS ART GALLERY') >= 0,
+     JSON.stringify(mont.montage_beats));
+  ok('  ...and it keeps the writer\u2019s number', mont.scene_label === '2',
+     mont.scene_label);
+  ok('the scenes either side carry no beats',
+     !out.scenes[0].montage_beats && !out.scenes[2].montage_beats,
+     JSON.stringify([out.scenes[0].montage_beats, out.scenes[2].montage_beats]));
+}
+
 console.log('\nAnd on a script that numbers nothing at all');
 {
   const out = merge([{ scenes: [
