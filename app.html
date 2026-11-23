@@ -2684,7 +2684,79 @@
           }
         }
         if (currentChunk.trim()) chunks.push(currentChunk.trim());
-        return slateRecordNumbers(chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)]);
+
+        // ── Oversize sections, without breaking the promise above ──
+        //
+        // This used to live in the caller, as "never reject — slice": any
+        // section over twice the limit was cut every maxChunkSize
+        // CHARACTERS, mid-sentence. It undid the one invariant this
+        // function exists to keep, from outside, and the comment above
+        // already says what that costs — "a chunk boundary inside a scene
+        // makes the model see two half-scenes and report them as two,
+        // which is where phantom scenes come from".
+        //
+        // Measured on THE HILLS BETWEEN US: four sections ran over, of
+        // 6323, 6582, 6258 and 8698 characters, and every one of them held
+        // exactly ONE scene. Slicing turned those four into twelve, of
+        // which eight began nowhere near a heading. The run returned 110
+        // scenes for 104 headings and 11 scenes with no location at all.
+        // iRANTI, IRIRI, LORI NKAN MI and WHEN LOVE FINDS YOU never run
+        // over, and none of them has this problem.
+        //
+        // A section that is one long scene is already bounded by that
+        // scene, and it asks the model for ONE scene's worth of output —
+        // less than an ordinary four-scene section, not more. 8698
+        // characters is about 2200 tokens. So it goes whole.
+        //
+        // It also ran AFTER this function returned, so slateRecordNumbers
+        // recorded 68 sections while 76 were sent: window.slateChunkHeads
+        // and the model's sections stopped describing the same text.
+        var slateSized = [];
+        for (var sz = 0; sz < chunks.length; sz++) {
+          slateSized = slateSized.concat(slateSplitOversize(chunks[sz], maxChunkSize));
+        }
+        return slateRecordNumbers(slateSized.length > 0 ? slateSized : [text.substring(0, maxChunkSize)]);
+      }
+
+      // Cut an oversize section at its scene headings, or not at all.
+      function slateSplitOversize(chunk, maxChunkSize) {
+        if (chunk.length <= maxChunkSize * 2) return [chunk];
+        var boundary = new RegExp('\n(?=[ \t]*' + slateHeadingSrc + ')', 'i');
+        var parts = chunk.split(boundary);
+
+        // One scene, however long. Send it whole: there is no boundary
+        // inside it that is not a lie.
+        if (parts.length <= 1) {
+          // Unless it is pathological. Nothing we have seen comes close to
+          // this — the longest real scene is 8698 characters — but a
+          // corrupted upload or a script with no headings at all should
+          // degrade rather than fail. Cut at LINE breaks, never inside a
+          // line, so the model is at least given whole sentences.
+          if (chunk.length <= maxChunkSize * 8) return [chunk];
+          var lines = chunk.split('\n'), out = [], buf = '';
+          for (var li = 0; li < lines.length; li++) {
+            if (buf && (buf + '\n' + lines[li]).length > maxChunkSize) {
+              out.push(buf); buf = lines[li];
+            } else {
+              buf += (buf ? '\n' : '') + lines[li];
+            }
+          }
+          if (buf) out.push(buf);
+          return out.length ? out : [chunk];
+        }
+
+        // Several scenes in one oversize section: the headings are real
+        // boundaries, so cutting there costs nothing.
+        var pieces = [], current = '';
+        for (var pi = 0; pi < parts.length; pi++) {
+          if (current && (current + '\n' + parts[pi]).length > maxChunkSize) {
+            pieces.push(current.trim()); current = parts[pi];
+          } else {
+            current += (current ? '\n' : '') + parts[pi];
+          }
+        }
+        if (current.trim()) pieces.push(current.trim());
+        return pieces.length ? pieces : [chunk];
       }
 
       function splitBySize(text, maxChunkSize) {
@@ -4507,19 +4579,11 @@
         document.getElementById('wsResults').style.display = 'none';
         try {
           wsProgress(5, 'Reading screenplay...');
+          // Oversize sections are the splitter's business now, and are
+          // handled before it records what it read. Slicing them out here
+          // cut scenes in half and left the recorded headings describing
+          // 68 sections while 76 were sent.
           const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
-          // Oversize policy (Jul 17 fix): never reject — slice.
-          for (let ci = 0; ci < chunks.length; ci++) {
-            if (chunks[ci].length > CHUNK_SIZE * 2) {
-              const oversized = chunks[ci];
-              const pieces = [];
-              for (let p = 0; p < oversized.length; p += CHUNK_SIZE) {
-                pieces.push(oversized.slice(p, p + CHUNK_SIZE));
-              }
-              chunks.splice(ci, 1, ...pieces);
-              ci += pieces.length - 1;
-            }
-          }
           const totalChunks = chunks.length;
 
           // A resume is only safe if the script splits the same way it did
