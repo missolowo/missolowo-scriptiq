@@ -4279,6 +4279,29 @@
           scenes_with_props: slateCountScenesWith('props'),
           scenes_with_stunts: slateCountScenesWith('stunts'),
           scenes_with_special_effects: slateCountScenesWith('special_effects'),
+          // ── How much story day the model actually gives us ──
+          //
+          // The field has been asked for since the prompt was written and
+          // was read by nothing until tonight, so NOBODY KNOWS how often
+          // the model fills it. Every answer about continuity depends on
+          // this number, and I have never seen it.
+          //
+          // Both halves matter. The count says whether the field arrives
+          // at all; the distinct count says whether it discriminates — a
+          // script where every scene is story day 1 has a field that is
+          // present and useless, and that looks identical to a good
+          // result if you only count the scenes.
+          scenes_with_story_day: slateCountScenesWith('story_day'),
+          distinct_story_days: (function () {
+            var seen = {}, n = 0;
+            merged.scenes.forEach(function (s) {
+              var v = String(s.story_day || '').trim();
+              if (!v || seen[v]) return;
+              seen[v] = true;
+              n++;
+            });
+            return n;
+          })(),
           scenes_total: merged.scenes.length
         };
 

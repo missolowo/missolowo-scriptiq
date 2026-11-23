@@ -259,6 +259,34 @@ console.log('\nThe run reports how often the model filled each category');
   ok('  ...against the scene total',
      r.scenes_total === 3, r.scenes_total + '');
 
+  // ── The number continuity detection depends on ──
+  //
+  // story_day was read by nothing until tonight, so nobody has ever seen
+  // how often the model fills it. Both halves are needed: the count says
+  // whether it arrives, the distinct count says whether it discriminates.
+  // A script where every scene is story day 1 has a field that is present
+  // and useless, and that is indistinguishable from a good result if you
+  // only count the scenes carrying one.
+  const sd = merge([{ scenes: [
+    scene(1, 'Workshop', ['ADUKE'], { story_day: 'DAY 1' }),
+    scene(2, 'Market', ['TOLANI'], { story_day: '(Day 1)' }),
+    scene(3, 'Office', ['TOLANI'], { story_day: 'DAY 2' }),
+    scene(4, 'Lake', ['ADUKE'], {})
+  ]}]).production_elements.slate_reading;
+
+  ok('scenes carrying a story day are counted',
+     sd.scenes_with_story_day === 3, sd.scenes_with_story_day + ' of 3');
+  ok('  ...and two spellings of one day count as ONE distinct day',
+     sd.distinct_story_days === 2, sd.distinct_story_days + ' — "DAY 1" and '
+     + '"(Day 1)" are the same story morning, and if they count as two the '
+     + 'normaliser is not running');
+  ok('  ...and a script with one story day everywhere is visibly useless',
+     merge([{ scenes: [
+       scene(1, 'A', ['X'], { story_day: '1' }),
+       scene(2, 'B', ['Y'], { story_day: '1' })
+     ]}]).production_elements.slate_reading.distinct_story_days === 1,
+     'present on every scene and discriminating nothing');
+
   // Scenes, not items. A scene listing nine dressing entries and a scene
   // listing one are both one scene the model actually read.
   const many = merge([{ scenes: [
