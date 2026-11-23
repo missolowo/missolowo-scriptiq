@@ -7111,6 +7111,34 @@
             + 'Rebuild it from the new schedule before sending it to anyone.');
           return;
         }
+        // ── A call sheet with no address is not a call sheet ──
+        //
+        // location_address has always been correctly refused rather than
+        // guessed — the comment in callsheet.js says so, and that decision
+        // stands. location_address_required was then set on the response
+        // and nobody acted on it: the sheet rendered, exported and printed
+        // with a blank address line, and the only sign was a small amber
+        // note on screen that does not travel into the PDF.
+        //
+        // The one thing a call sheet has to do is tell a crew where to be.
+        // Everything else on it — times, cast, elements, weather — is
+        // useless to somebody who cannot find the location. So this is
+        // refused at export, which is the last moment before a document
+        // leaves Slate and becomes a thing people act on.
+        //
+        // slateCallsheetAddress, not the server flag: the address may come
+        // from the response OR from a location entered in Production
+        // Details afterwards, and the resolver is the only thing that
+        // knows both. Checking the flag alone would block an export whose
+        // address the filmmaker had already supplied.
+        if (!slateCallsheetAddress(slateCallsheet)) {
+          alert('Day ' + (slateCallsheet.shoot_day || '') + ' has no location address.\n\n'
+            + 'A call sheet has to tell the crew where to be, so this one will not '
+            + 'export without one.\n\n'
+            + 'Add the address under Production Details › Locations, then export '
+            + 'again. Slate never guesses an address.');
+          return;
+        }
         window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};
