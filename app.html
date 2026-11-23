@@ -2142,6 +2142,20 @@
       // words present in the heading, because the location is what the two
       // genuinely share — the model rewrites a slug line but it does not
       // invent the place.
+      // Is this a sequence scene matched to a sequence heading?
+      //
+      // Both halves must say so. The heading is the page's word and the
+      // scene's type is the model's, and requiring both means an ordinary
+      // scene with a missing location never lands on a montage heading.
+      function slateSequencePair(scene, headText) {
+        var seqRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+        if (!seqRe.test(String(headText == null ? '' : headText))) return false;
+        var says = [(scene && scene.scene_type) || '',
+                    (scene && scene.int_ext) || '',
+                    (scene && scene.time_of_day) || ''].join(' ');
+        return seqRe.test(says);
+      }
+
       // wantTokens and haveTokens are an optional fast path for the
       // aligner, which compares every scene against every heading and would
       // otherwise tokenise the same heading once per scene — forty thousand
@@ -2151,7 +2165,23 @@
         if (!headText) return 0;
         var want = wantTokens || slateSceneMatchTokens(
           (scene && (scene.location || scene.set || '')) || '');
-        if (!want.length) return 0;
+
+        // ── A montage has no single location, and that is not a defect ──
+        //
+        // Asked for a montage as ONE scene, the model returns exactly that
+        // and leaves the location empty, because "VARIOUS LOCATIONS" is not
+        // a place. With nothing to match on, it scored zero against every
+        // heading, took no number and carried none of its beats: one empty
+        // field knocked out the whole feature. Observed on THE WEAVER'S
+        // DAUGHTER, 23 November — the montage came back as "#4" with its
+        // four setups nowhere.
+        //
+        // So when there is no location, ask what the page says instead. We
+        // already know which headings are montages, from the script rather
+        // than from the model, and a scene the model itself typed MONTAGE
+        // belongs to one of them. Scored below a real location match, so a
+        // montage that DOES carry a location still wins on its words.
+        if (!want.length) return slateSequencePair(scene, headText) ? 0.8 : 0;
         var have = haveTokens || slateSceneMatchTokens(headText);
         if (!have.length) return 0;
         var hit = 0;
@@ -3393,6 +3423,26 @@
               var recType = slateAllTypes[slateHeadIdx];
               if (recType === 'RETURN') scene.slate_returns_to_present = true;
               else if (recType) scene.scene_type = recType;
+              // The page's word on whether this is a montage.
+              //
+              // Scene 5 of THE WEAVER'S DAUGHTER came back typed MONTAGE.
+              // It is "INT. ADUKE'S WORKSHOP — NIGHT", an ordinary scene
+              // sitting directly after a montage, and the tag had simply
+              // run on in the model's own answer. An AD reading MONTAGE on
+              // a two-hander at a loom is being told something false about
+              // how it shoots.
+              //
+              // Only SEQUENCE types are checked this way, because a montage
+              // IS a heading form — if the page does not say it, it is not
+              // one. FLASHBACK and DREAM are left alone: those are read
+              // from the content, and a writer need not mark them.
+              else if (scene.scene_type) {
+                var slateSeqRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+                if (slateSeqRe.test(String(scene.scene_type))
+                    && !slateSeqRe.test(String(slateAllHeads[slateHeadIdx] || ''))) {
+                  scene.scene_type = null;
+                }
+              }
               // The page length we measured off the script, carried onto the
               // scene. Gated the same way the number is: if we cannot tell
               // which scene this is, a wrong length is worse than falling
@@ -3619,6 +3669,7 @@
         // Every note says which of those two it is, so a reader can always
         // tell what the script stated from what we inferred.
         (function () {
+          var slateSeqSpanRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
           var spans = [];
           var open = null;
           merged.scenes.forEach(function (s, i) {
@@ -3638,6 +3689,21 @@
               }
               return;
             }
+            // ── A montage is one scene, so it opens nothing ──
+            //
+            // A scene_type opens a span that runs forward until the next
+            // type or a marked return — and with no return in the script,
+            // to the end of the film. That is right for a FLASHBACK, which
+            // really does run across scenes. It is wrong for a MONTAGE,
+            // which IS one scene by definition.
+            //
+            // Measured on real runs before this: HILLS had 96 of its 110
+            // scenes tagged MONTAGE and 104 of them shown as another time;
+            // a producer's 117-scene script had 82 shown as another time.
+            // An AD reading that is told two thirds of the film needs
+            // flashback continuity — different costume, hair and makeup —
+            // when it does not.
+            if (slateSeqSpanRe.test(String(s.scene_type || ''))) return;
             if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') {
               // A span can end three ways, and which one it was has to be
               // recorded here or the note below guesses. Closing the previous
@@ -3680,6 +3746,10 @@
               return;
             }
             if (!sp) return;
+            // A montage inside someone else's flashback keeps its own word.
+            // Inheriting the span's type here would lose the montage, which
+            // is the one thing on this scene an AD schedules differently.
+            if (slateSeqSpanRe.test(String(s.scene_type || ''))) return;
             s.scene_type = sp.type;
             s.slate_time_frame = 'other';
             var slateKind = sp.type.toLowerCase();

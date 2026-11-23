@@ -68,6 +68,9 @@ const SRC = [
   // the two helpers that decide it. Extracted, not restated: a breakdown
   // whose labels disagree with its own footnote is the bug this prevents.
   stmt('var SLATE_NO_NUMBER'),
+  // The sequence vocabulary, needed by the merge's check that the page
+  // agrees before a MONTAGE tag survives.
+  stmt('var SLATE_SEQUENCE'),
   block('function slateSceneNumberOrNull'),
   block('function slateScriptIsNumbered'),
   // The heading matcher the merge now uses when the counts disagree.
@@ -391,6 +394,114 @@ console.log('\nThe setups inside a montage reach the scene');
   ok('the scenes either side carry no beats',
      !out.scenes[0].montage_beats && !out.scenes[2].montage_beats,
      JSON.stringify([out.scenes[0].montage_beats, out.scenes[2].montage_beats]));
+}
+
+// ══════════════════════════════════════════════════
+// THE PAGE'S WORD ON WHETHER A SCENE IS A MONTAGE.
+//
+// Scene 5 of THE WEAVER'S DAUGHTER came back typed MONTAGE. It is "INT.
+// ADUKE'S WORKSHOP — NIGHT", an ordinary two-hander sitting directly
+// after a montage, and the tag had run on in the model's own answer. An
+// AD reading MONTAGE on that scene is told something false about how it
+// shoots.
+console.log('\nA montage tag the page does not support is dropped');
+{
+  win.slateChunkHeads = [['MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING',
+                          "INT. ADUKE'S WORKSHOP - NIGHT"]];
+  win.slateChunkNumbers = [['4', '5']];
+  const out = merge([{ scenes: [
+    Object.assign(scene(4, 'Various Locations', ['ADUKE']), { scene_type: 'MONTAGE' }),
+    Object.assign(scene(5, "Aduke's Workshop", ['ADUKE']), { scene_type: 'MONTAGE' })
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+
+  ok('the real montage keeps its tag', out.scenes[0].scene_type === 'MONTAGE',
+     String(out.scenes[0].scene_type));
+  ok('the ordinary scene after it loses the one that ran on',
+     !out.scenes[1].scene_type, String(out.scenes[1].scene_type)
+     + '  <- the heading says INT. ADUKE\u2019S WORKSHOP, not MONTAGE');
+}
+
+// ══════════════════════════════════════════════════
+// A MONTAGE DOES NOT RUN ON THROUGH THE FILM.
+//
+// A scene_type opens a SPAN that runs forward until the next type or a
+// marked return, and with no return in the script, to the end. Right for
+// a FLASHBACK, which really does run across scenes. Wrong for a MONTAGE,
+// which is one scene by definition.
+//
+// Measured on real runs before this was fixed:
+//
+//   THE HILLS BETWEEN US   96 of 110 scenes tagged, 104 shown as another time
+//   iRANTI                 37 of 117 tagged,        111 shown as another time
+//   a producer's script     8 of 117 tagged,         82 shown as another time
+//
+// An AD reading that is told two thirds of the film needs flashback
+// continuity — different costume, hair and makeup — when it does not.
+console.log('\nA montage does not tag every scene after it');
+{
+  const heads = ['INT. KITCHEN - DAY', 'MONTAGE - VARIOUS LOCATIONS - A YEAR',
+                 'EXT. MARKET - DAY', 'INT. CHURCH - NIGHT', 'EXT. RIVER - DAWN',
+                 'INT. CLINIC - DAY'];
+  win.slateChunkHeads = [heads];
+  win.slateChunkNumbers = [['1', '2', '3', '4', '5', '6']];
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']),
+    Object.assign(scene(2, 'Various Locations', ['ADA']), { scene_type: 'MONTAGE' }),
+    scene(3, 'Market', ['ADA']), scene(4, 'Church', ['TADE']),
+    scene(5, 'River', ['ADA']), scene(6, 'Clinic', ['TADE'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+
+  const types = out.scenes.map(s => s.scene_type || '-');
+  const frames = out.scenes.map(s => s.slate_time_frame || '-');
+
+  ok('only the montage is tagged a montage',
+     JSON.stringify(types) === '["-","MONTAGE","-","-","-","-"]',
+     JSON.stringify(types) + '  <- a tag running on marks the rest of the film');
+  ok('  ...and only the montage is shown as another time',
+     frames.filter(f => f === 'other').length <= 1,
+     JSON.stringify(frames));
+  ok('the four scenes AFTER it are ordinary',
+     out.scenes.slice(2).every(s => !s.scene_type && s.slate_time_frame !== 'other'),
+     JSON.stringify(out.scenes.slice(2).map(s => [s.scene_type, s.slate_time_frame])));
+  ok('and none of them picked up a continuity note',
+     out.scenes.slice(2).every(s => !s.scene_continuity),
+     'a scene told it is inside a montage shoots differently');
+}
+
+console.log('\nA FLASHBACK still spans, because it really does');
+{
+  const heads = ['INT. KITCHEN - DAY', 'EXT. COMPOUND - DAY', 'INT. SCHOOL - DAY',
+                 'INT. KITCHEN - NIGHT'];
+  win.slateChunkHeads = [heads];
+  win.slateChunkNumbers = [['1', '2', '3', '4']];
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']),
+    Object.assign(scene(2, 'Compound', ['ADA']), { scene_type: 'FLASHBACK' }),
+    scene(3, 'School', ['ADA']),
+    scene(4, 'Kitchen', ['ADA'])
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  const types = out.scenes.map(s => s.scene_type || '-');
+  ok('the flashback carries on to the scenes inside it',
+     types[1] === 'FLASHBACK' && types[2] === 'FLASHBACK',
+     JSON.stringify(types) + '  <- a flashback genuinely runs across scenes');
+}
+
+console.log('\nBut a type the page cannot speak to is left alone');
+{
+  // A writer need not mark a flashback, and the model reads it from the
+  // content. Only SEQUENCE types are checked against the heading, because
+  // a montage IS a heading form.
+  win.slateChunkHeads = [["INT. ADUKE'S WORKSHOP - DAY"]];
+  win.slateChunkNumbers = [['7']];
+  const out = merge([{ scenes: [
+    Object.assign(scene(7, "Aduke's Workshop", ['ADUKE']), { scene_type: 'FLASHBACK' })
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  ok('FLASHBACK survives an unmarked heading',
+     out.scenes[0].scene_type === 'FLASHBACK', String(out.scenes[0].scene_type));
 }
 
 console.log('\nAnd on a script that numbers nothing at all');

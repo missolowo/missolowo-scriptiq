@@ -63,6 +63,8 @@ function stmt(needle) {
 // instead of letting it go green against a stale copy.
 const api = new Function('window', 'console',
   [stmt('var SLATE_MATCH_SKIP'),
+   stmt('var SLATE_SEQUENCE'),
+   block('function slateSequencePair'),
    block('function slateSceneMatchTokens'),
    block('function slateSceneMatchScore'),
    block('function slateAlignModelScenes')].join('\n')
@@ -304,6 +306,52 @@ console.log('\nWhat it costs on a long script');
   const took = Date.now() - started;
   ok('400 scenes against 400 headings, all matched', got.every((x, k) => x === k));
   ok('  ...in well under a second (' + took + 'ms)', took < 1000, took + 'ms');
+}
+
+// ══════════════════════════════════════════════════
+// A MONTAGE HAS NO SINGLE LOCATION.
+//
+// Asked for a montage as ONE scene, the model returns exactly that and
+// leaves the location empty, because "VARIOUS LOCATIONS" is not a place.
+// With nothing to match on it scored zero against every heading, took no
+// number and carried none of its beats — one empty field knocking out the
+// whole feature. Observed on THE WEAVER'S DAUGHTER on 23 November: the
+// montage came back labelled "#4" with its four setups nowhere.
+console.log('\nA montage with no location still finds its heading');
+{
+  const M = (type) => ({ location: '', set: '', int_ext: '', scene_type: type });
+  const heads = ['INT. LAGOS OFFICE - DAY',
+                 'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING',
+                 'INT. ADUKE\u2019S WORKSHOP - NIGHT'];
+  const scenes = [S('LAGOS OFFICE', 'INT'), M('MONTAGE'), S('ADUKE\u2019S WORKSHOP', 'INT')];
+  const got = align(scenes, heads);
+
+  ok('the montage lands on the montage heading',
+     JSON.stringify(got) === '[0,1,2]', JSON.stringify(got)
+     + '  <- unplaced here means no number and no beats on the document');
+  ok('  ...and it scores enough on its own',
+     score(M('MONTAGE'), 'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING') >= 0.6,
+     String(score(M('MONTAGE'), 'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING')));
+  ok('INTERCUT and SERIES OF SHOTS count too',
+     score(M('INTERCUT'), 'INTERCUT - TWO KITCHENS') >= 0.6
+     && score(M('SERIES OF SHOTS'), '12. SERIES OF SHOTS - THE HARVEST') >= 0.6);
+
+  // BOTH halves must say so, or an ordinary scene whose location the model
+  // dropped would land on a montage heading and take its number.
+  ok('a scene with NO location and no type matches nothing',
+     score({ location: '', scene_type: '' },
+           'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING') === 0,
+     'a missing location must not become a free pass onto a montage');
+  ok('  ...and a montage-typed scene does not take an ORDINARY heading',
+     score(M('MONTAGE'), 'INT. LAGOS OFFICE - DAY') === 0,
+     'the heading is the page\u2019s word and it does not say montage');
+
+  // And a montage that DOES carry a location still wins on its words,
+  // because a real location match scores higher than this fallback.
+  ok('a located montage still matches on its words',
+     score({ location: 'Various Locations', scene_type: 'MONTAGE' },
+           'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING')
+     > score(M('MONTAGE'), 'MONTAGE - VARIOUS LOCATIONS - ONE YEAR PASSING'));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
