@@ -10,7 +10,8 @@ const APP_PATH = __p.join(ROOT, 'app.html');
 const SCHEDULE_PATH = __p.join(ROOT, 'netlify', 'functions', 'schedule.js');
 
 const S = require(SCHEDULE_PATH);
-const { slateAssignDays, slateDaysFromAssignment, slateDeriveSchedule } = S;
+const { slateAssignDays, slateDaysFromAssignment, slateDeriveSchedule,
+        slateAddUnplacedToDays } = S;
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => c ? (pass++, console.log('  PASS  ' + n))
@@ -123,6 +124,84 @@ ok('no scene was lost in the move', after.scenes_scheduled === 4, String(after.s
 ok('day 1 keeps day-before-night order',
    after.schedule[0].scenes.map(s => s.time_of_day).join(',') === 'DAY,NIGHT',
    after.schedule[0].scenes.map(s => s.time_of_day).join(','));
+
+// ══════════════════════════════════════════════════
+// EVERY SCENE IN THE BREAKDOWN REACHES A SHOOT DAY.
+//
+// A scene the screenplay never gave a location used to leave the day
+// structure entirely. A call sheet is built FROM a day, so such a scene
+// could never appear on one: the breakdown knew about it, the schedule
+// listed it separately, and the document the crew carries did not have
+// it. That is a scene nobody shoots.
+//
+// It left the days for a real reason. Those scenes all share the empty
+// place key, so they formed one large group, and "largest group first"
+// sorted it to the FRONT — LORI NKAN MI's day 1 call sheet opened with
+// nine scenes that had no location, no set and mostly no cast. The
+// answer is where they sit, not whether they are there.
+console.log('\nA scene with no location is still on a day');
+{
+  const placed = [
+    scene(1, 1, 'DAY', 'MARKET', ['ADA']),
+    scene(2, 2, 'DAY', 'MARKET', ['ADA']),
+    scene(4, 4, 'DAY', 'CHURCH', ['TADE']),
+    scene(6, 6, 'DAY', 'CHURCH', ['TADE'])
+  ];
+  const unplaced = [
+    scene(3, 3, 'DAY', '', ['ADA']),
+    scene(5, 5, 'DAY', '', ['TADE'])
+  ];
+  unplaced.forEach(function (u) { u.set = ''; });
+
+  const days = slateAssignDays(placed, 2);
+  const before = days.reduce(function (a, d) { return a + d.scenes.length; }, 0);
+  slateAddUnplacedToDays(days, unplaced);
+  const after = days.reduce(function (a, d) { return a + d.scenes.length; }, 0);
+
+  ok('the placed scenes are untouched', before === 4, String(before));
+  ok('EVERY scene is now on a day', after === 6,
+     after + ' of 6 — a scene off the days can never reach a call sheet');
+
+  const all = [];
+  days.forEach(function (d) { d.scenes.forEach(function (s) { all.push(Number(s.idx)); }); });
+  ok('  ...each exactly once', new Set(all).size === all.length && all.length === 6,
+     JSON.stringify(all.sort(function (a, b) { return a - b; })));
+
+  // It travels with the part of the film it belongs to, rather than being
+  // swept to the final day away from its neighbours.
+  const dayOf = {};
+  days.forEach(function (d, i) { d.scenes.forEach(function (s) { dayOf[Number(s.idx)] = i; }); });
+  ok('scene 3 is on the same day as scene 2, which it follows',
+     dayOf[3] === dayOf[2], 'scene 3 on day ' + dayOf[3] + ', scene 2 on day ' + dayOf[2]);
+  ok('scene 5 is on the same day as scene 4',
+     dayOf[5] === dayOf[4], 'scene 5 on day ' + dayOf[5] + ', scene 4 on day ' + dayOf[4]);
+}
+
+console.log('\nAnd it never leads the day');
+{
+  const placed = [scene(2, 2, 'DAY', 'MARKET', ['ADA']),
+                  scene(3, 3, 'DAY', 'MARKET', ['ADA'])];
+  const unplaced = [scene(1, 1, 'DAY', '', ['ADA'])];
+  unplaced[0].set = '';
+  const days = slateAssignDays(placed, 1);
+  slateAddUnplacedToDays(days, unplaced);
+
+  const breakdown = { title: 'T', scenes: [] };
+  const slim = placed.concat(unplaced);
+  const sched = slateDeriveSchedule(days, breakdown, slim, placed, unplaced,
+                                    'Monday 30 June 2026');
+  const first = sched.schedule[0].scenes;
+  ok('the day opens with a scene that HAS a location',
+     String(first[0].location || first[0].set || '').trim() !== '',
+     JSON.stringify(first.map(function (s) { return [s.scene_number, s.location]; }))
+     + '  <- an empty-location scene first is the LORI NKAN MI call sheet');
+  ok('  ...and the one with none is last',
+     String(first[first.length - 1].location || '').trim() === '',
+     JSON.stringify(first.map(function (s) { return s.scene_number; })));
+  ok('  ...but it IS there', first.length === 3, String(first.length));
+  ok('the total still counts every scene', sched.total_scenes === 3,
+     String(sched.total_scenes));
+}
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

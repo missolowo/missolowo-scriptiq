@@ -148,6 +148,23 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         var dayPart = d.scenes.filter(function (s) { return !slateIsNight(s); });
         var nightPart = d.scenes.filter(slateIsNight);
         d.scenes = slateOrderBlock(dayPart).concat(slateOrderBlock(nightPart));
+        // A scene with no location NEVER leads a day.
+        //
+        // This is the whole of what went wrong before. Such scenes all
+        // share the empty place key, so they formed one large group, and
+        // "largest group first" — right for real locations — sorted it to
+        // the front. LORI NKAN MI's day 1 call sheet opened with nine
+        // scenes that had no location, no set and mostly no cast.
+        //
+        // The answer then was to take them out of the days altogether,
+        // which meant they could never reach a call sheet at all. They are
+        // scenes in the film; somebody still has to shoot them. So they go
+        // last, where they read as what they are: work to place.
+        var slateHasPlace = function (sc) {
+          return !!String(sc.loc || sc.set || '').trim();
+        };
+        d.scenes = d.scenes.filter(slateHasPlace)
+          .concat(d.scenes.filter(function (sc) { return !slateHasPlace(sc); }));
       });
 
       // Dates
@@ -259,8 +276,11 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         // this list always equals total_scenes, and the cover prints that sum
         // so a shorter schedule never reads as missing scenes.
         scenes_scheduled: slatePlaced.length,
+        // These scenes ARE on a shoot day and on its call sheet — listed
+        // here as well because a producer needs to chase the writer for a
+        // location before the day arrives, not discover it on the morning.
         unscheduled_reason: slateUnplaced.length
-          ? 'The screenplay never states a location for these scenes, so they cannot be placed on a shoot day yet.'
+          ? 'The screenplay never states a location for these scenes. They are scheduled at the end of their day so nothing is lost, but each one needs a location confirmed before that day is shot.'
           : '',
         unscheduled_scenes: slateUnplaced.map(function (s) {
           return {
@@ -341,6 +361,33 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
 // does not — that an actor is only free on Thursday. Both hand the same
 // shape to slateDeriveSchedule, which is what stops a hand-moved scene
 // and a generated one being described by different rules.
+// ── Every scene in the breakdown reaches a shoot day ──
+//
+// A scene the screenplay never gave a location used to leave the day
+// structure entirely, and a call sheet is built from a day — so it could
+// never appear on one. The breakdown knew about it, the schedule
+// reported it in a list of its own, and the document the crew actually
+// carries did not have it. That is a scene nobody shoots.
+//
+// It goes on the day its neighbours are on, so it travels with the part
+// of the film it belongs to, and last within that day.
+function slateAddUnplacedToDays(days, unplaced) {
+  if (!days.length || !unplaced.length) return;
+  var dayOf = {};
+  days.forEach(function (d, i) {
+    (d.scenes || []).forEach(function (s) { dayOf[Number(s.idx)] = i; });
+  });
+  var known = Object.keys(dayOf).map(Number).sort(function (a, b) { return a - b; });
+  unplaced.forEach(function (s) {
+    var idx = Number(s.idx);
+    var target = days.length - 1;
+    for (var i = 0; i < known.length; i++) {
+      if (known[i] < idx) target = dayOf[known[i]]; else break;
+    }
+    days[target].scenes.push(s);
+  });
+}
+
 function slateAssignDays(slatePlaced, dayCount) {
       const normKey = slateKey;
       // Group scenes by location, keeping day and night separate
@@ -628,6 +675,9 @@ exports.handler = async function(event, context) {
       } else {
         days = slateAssignDays(slatePlaced, dayCount);
       }
+      // After the days exist, never before: an unplaced scene has no
+      // location to group on, so it joins the day its neighbours landed on.
+      slateAddUnplacedToDays(days, slateUnplaced);
 
       // Everything from here follows from the day assignment above, and is
       // derived in one place so that a hand-moved scene and a generated one
@@ -740,4 +790,5 @@ exports.handler = async function(event, context) {
 module.exports.slateDeriveSchedule = slateDeriveSchedule;
 
 module.exports.slateAssignDays = slateAssignDays;
+module.exports.slateAddUnplacedToDays = slateAddUnplacedToDays;
 module.exports.slateDaysFromAssignment = slateDaysFromAssignment;
