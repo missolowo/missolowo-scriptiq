@@ -158,22 +158,15 @@ ok('  ...and the scene cap is still enforced in the splitter',
    /SLATE_MAX_SCENES_PER_CHUNK/.test(APP.replace(/SLATE_MAX_SCENES_PER_CHUNK = 4/, '')));
 
 // ══════════════════════════════════════════════════
-// A TRANSITION IS NOT A SCENE.
-//
-// "CUT TO:" came back from the model as a scene with no location and no
-// time. The scene-boundary rules were strict about mood changes and long
-// scenes and said nothing at all about transitions, which sit alone on a
-// line and look structural. Same for an episode title: HILLS is a
-// four-episode series, and "EPISODE TWO — THE RAIN" sits between slug
-// lines exactly where a heading would.
-// The whole prompt, not a window into it.
+// THE PROBE COULD NOT SEE THE INSTRUCTIONS.
 //
 // SCHEMA and RULES above cover the JSON shape and a short trailing line.
-// They do NOT cover the instruction body, which sits BEFORE the schema in
+// Neither covers the instruction body, which sits BEFORE the schema in
 // the file — "RULES:" turns out to be 55 characters from the end of the
-// template literal, so every actual rule the model is given was outside
-// anything this probe read. The scene-boundary rules, the location rules,
-// the background rules and the department rules were all unasserted.
+// template literal. So every rule the model is actually given (scene
+// boundaries, locations, background, the five department categories) was
+// outside anything this file read, and a prompt change could not be
+// asserted at all. Found on 22 November while trying to assert one.
 const PROMPT = (() => {
   const end = BD.indexOf('`;', BD.indexOf('RULES:'));
   const open = BD.lastIndexOf('`', BD.indexOf('SCENE BOUNDARIES'));
@@ -181,55 +174,23 @@ const PROMPT = (() => {
 })();
 
 console.log('\nThe probe can see the instructions at all');
-ok('the prompt body is in view', PROMPT.length > 4000,
-   PROMPT.length + ' characters — a window that misses the rules asserts nothing');
-ok('  ...and it holds the scene-boundary rules',
-   /SCENE BOUNDARIES/.test(PROMPT) && /BACKGROUND ACTORS/.test(PROMPT));
-
-console.log('\nTransitions and act breaks are named as non-scenes');
 {
-  ok('the prompt says a transition is not a scene',
-     /TRANSITION IS NOT A SCENE/.test(PROMPT), 'nothing tells the model this');
-  ['CUT TO:', 'DISSOLVE TO:', 'FADE OUT.', 'MATCH CUT TO:', 'BACK TO:']
-    .forEach(function (t) {
-      ok('  ...and names "' + t + '"', PROMPT.indexOf(t) >= 0);
-    });
-  ok('an episode title is named too, because a series script has them',
-     /EPISODE TWO/.test(PROMPT) && /is not a scene either/.test(PROMPT));
-}
-
-// ══════════════════════════════════════════════════
-// BACKGROUND IS DECIDED BY DIALOGUE, NOT BY NAMING.
-//
-// A producer told us his breakdown "missed the listed BG people". His
-// script returned background on 4 of 117 scenes, and his cast list held
-// DRIVER, RECEPTIONIST #1 and RECEPTIONIST #2 — functional roles with no
-// character name. HILLS had eight of them: VILLAGER, MARKET WOMAN,
-// POLICE OFFICER, ELDERLY MAN, YOUNG MAN, BOY, GIRL, DOCTOR.
-//
-// The rule said "named characters with dialogue are cast, not
-// background" and was silent on the opposite case, while every example
-// of background was a plural crowd. A single unnamed person had nowhere
-// to go but cast — where they are auditioned instead of booked, and
-// where they make the background count read as zero.
-console.log('\nBackground is decided by dialogue, not by naming');
-{
-  ok('the test is stated as dialogue',
-     /THE TEST IS DIALOGUE, NOT NAMING/.test(PROMPT), 'the old rule keyed on naming');
-  ok('a speaking bit part is still cast, however labelled',
-     /RECEPTIONIST #1[^\n]*is cast/.test(PROMPT),
-     'without this the fix loses speaking roles from the cast list, which is worse');
-  ok('one person counts, not only a crowd',
-     /ONE PERSON COUNTS/.test(PROMPT));
-  ok('  ...and the singular examples are there',
-     /A WAITER/.test(PROMPT) && /THE DRIVER/.test(PROMPT) && /A NURSE/.test(PROMPT),
-     'every example used to be plural, which is what biased the model to crowds');
-  ok('an unnamed non-speaking role is told to go in background and NOT cast',
-     /goes in "background" and NOT in "cast"/.test(PROMPT));
-  ok('and invention is still forbidden',
-     /Never populate a scene the writer left empty/.test(PROMPT),
-     'a prompt that asks for more background must not license inventing it');
-  ok('  ...and estimating a count still is',
+  ok('the prompt body is in view', PROMPT.length > 4000,
+     PROMPT.length + ' characters — a window that misses the rules asserts nothing');
+  ok('  ...and it holds the rules the model is given',
+     /SCENE BOUNDARIES/.test(PROMPT) && /BACKGROUND ACTORS/.test(PROMPT)
+     && /LOCATION/.test(PROMPT));
+  // The rules that are load-bearing for the scene count, so that a
+  // rewrite of this section cannot quietly drop them. On 22 November a
+  // rewrite of BACKGROUND ACTORS cost HILLS five background entries and
+  // added three phantom scenes, and was reverted.
+  ok('a scene still may not be split by mood or by speaker',
+     /NEVER start a new scene because the mood changes/.test(PROMPT),
+     'the model invents scenes when this is weak');
+  ok('  ...and the count is still tied to the slug lines',
+     /must equal the number of slug lines/.test(PROMPT),
+     'this is the instruction phantom scenes break');
+  ok('background must still not be invented or counted',
      /NEVER estimate a number/.test(PROMPT));
 }
 

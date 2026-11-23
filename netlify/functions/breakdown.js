@@ -309,8 +309,6 @@ A new scene begins ONLY at a scene heading (slug line). A slug line contains INT
 - A scene that runs for pages and covers several emotional beats is still ONE scene.
 - NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
 - The number of scenes you return must equal the number of slug lines in the text.
-- A TRANSITION IS NOT A SCENE. "CUT TO:", "SMASH CUT TO:", "HARD CUT TO:", "MATCH CUT TO:", "DISSOLVE TO:", "FADE IN:", "FADE OUT.", "FADE TO BLACK.", "BACK TO:", "END OF FLASHBACK." and the like sit alone on a line and name no location. They join or close scenes; they never open one. A transition standing between two slug lines is part of neither and is not a scene of its own.
-- An EPISODE TITLE or an act break is not a scene either: "EPISODE TWO — THE RAIN", "END OF EPISODE ONE", "ACT TWO". A series script is still read as a continuous sequence of slug lines.
 IGNORE FRONT MATTER:
 A script may open with a title page, episode title, writer credits, a cast list, or an episode synopsis. NONE of these are scenes. Extraction begins at the first slug line and nothing before it.
 - Never create a scene from a synopsis sentence.
@@ -346,14 +344,12 @@ Every room belonging to the same owner shares ONE location, so the whole buildin
 COPY NAMES EXACTLY. "ABE IGI" stays "Abe Igi" — do not translate it to "Under the Tree". Location and set names are proper nouns, like character names. Fix only capitalisation.
 
 BACKGROUND ACTORS:
-A background actor is a performer who speaks no line and has no name — whether that is one person or a hundred.
-- THE TEST IS DIALOGUE, NOT NAMING. Anyone who speaks is cast, however small the part and however they are labelled: "RECEPTIONIST #1" with a single line is cast. Anyone who speaks nothing and is named by their function alone is background: "A WAITER", "THE DRIVER", "TWO POLICEMEN", "A NURSE", "VILLAGERS", "MARKET TRADERS", "MOURNERS".
-- ONE PERSON COUNTS, not only a crowd. "A waiter sets down the plate" is one background actor, and if it is not recorded nobody is booked to play him. A non-speaking driver, guard, receptionist, nurse or passerby belongs in "background".
-- An unnamed non-speaking role goes in "background" and NOT in "cast". Do not list it in both. A cast list padded with functional roles makes a producer audition people who should have been booked as background, and leaves the background count looking like zero.
-- Put them in "background" as a short description in the script's own terms: "A waiter", "Two policemen", "Villagers at the coronation", "Market traders".
-- Only what the script puts on the page. If it places nobody in the scene beyond the speaking characters, leave "background" empty. Never populate a scene the writer left empty.
+Background actors are performers with no name and no dialogue who populate a scene — passersby, villagers, market traders, mourners, guests, commuters, a crowd.
+- Put them in "background" as a short description in the script's own terms: "Passersby", "Villagers at the coronation", "Market traders".
+- Leave "background" empty when a scene has none.
 - NEVER estimate a number. Only record a count in "background_count" if the script itself states one, e.g. "about twenty villagers". Otherwise leave it null.
 - How many background actors a scene needs is a decision for the producer and director based on budget and location. Our job is to say WHERE background is needed and WHAT KIND, never how many.
+- Named characters with dialogue are cast, not background. Do not list them twice.
 
 COSTUME, PROPS AND EQUIPMENT — record only what the script actually specifies:
 - Costume means a garment the script describes: "bright yellow wrapper", "police uniform", "torn school shirt".
