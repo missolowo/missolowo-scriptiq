@@ -190,6 +190,15 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       
       var schedule = {
         title: breakdown.title || 'Untitled Production',
+        // ── Which breakdown run this schedule was built from ──
+        // Echoed, never minted here. A schedule has no identity of its own:
+        // it is a reading of one breakdown, and the only useful thing it can
+        // say about itself is which breakdown that was. The call sheet then
+        // checks this against the breakdown it is handed, which is the
+        // comparison nothing was doing when a call sheet from one run was
+        // printed beside a schedule from another.
+        slate_run_id: breakdown.slate_run_id || '',
+        slate_run_at: breakdown.slate_run_at || '',
         total_shoot_days: days.length,
         total_scenes: Object.keys(uniqueScenes).length,
         schedule_warning: crowdedDays

@@ -26,6 +26,7 @@ const PROBES = [
   'align-probe',       // the model's scenes matched to the script's own headings
   'splitter-probe',    // what the model is actually shown, in what pieces
   'storyday-probe',    // the continuity key, read once and shown everywhere
+  'provenance-probe',  // which run produced the document in your hand
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken

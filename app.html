@@ -4913,6 +4913,79 @@
       // isolation bug wearing a new hat. Length plus a sample from three
       // places is enough to catch a different file or an edited one; it is
       // not a security hash and does not need to be.
+      // ── A run's name, short enough to be compared by eye ──
+      //
+      // Printed in the footer of every document, so the only requirement
+      // that matters is that two of them can be told apart by a person
+      // holding two sheets of paper. Six lowercase hex characters: 16.7
+      // million values, far more than a production will ever generate, and
+      // short enough to read aloud down a phone.
+      //
+      // ── Why all six are random ──
+      //
+      // The first version spent three of the six on the millisecond clock,
+      // so that two stamps would sort into the order they were made. The
+      // reasoning was wrong twice over.
+      //
+      // It was wrong on the requirement. A crew holding two call sheets is
+      // asking "are these the same run", which is equality, not order —
+      // and when they do want to know which is newer, slate_run_at and
+      // slate_built_at carry real timestamps. Nobody decodes a hex prefix.
+      //
+      // It was wrong on the arithmetic, which is the part that mattered.
+      // Three random characters is 4,096 values, so two runs started in
+      // the same few seconds collided about once in four thousand — and
+      // two runs of one script in quick succession is EXACTLY the case
+      // this stamp exists to tell apart. provenance-probe.js drew 4,000
+      // stamps in a loop and got 1,415 collisions. Two runs printed under
+      // one name would be worse than no stamp at all, because the stamp
+      // would be believed.
+      //
+      // crypto.getRandomValues where it exists, Math.random where it does
+      // not. Neither is a security decision; both give the distribution
+      // the arithmetic above needs.
+      function slateRunStamp() {
+        var out = '';
+        try {
+          if (window.crypto && window.crypto.getRandomValues) {
+            var buf = new Uint8Array(3);
+            window.crypto.getRandomValues(buf);
+            for (var i = 0; i < buf.length; i++) {
+              out += ('0' + buf[i].toString(16)).slice(-2);
+            }
+          }
+        } catch (e) { out = ''; }
+        if (out.length !== 6) {
+          out = ('00000' + Math.floor(Math.random() * 0x1000000).toString(16)).slice(-6);
+        }
+        return out.toLowerCase();
+      }
+
+      // ── Lift the stored stamp onto the breakdown, at both boundaries ──
+      //
+      // The stamp is STORED inside production_elements, because that is a
+      // JSON column that survives a save without a database change. It is
+      // READ off the top level, because eight renderers should not each
+      // know where it is kept.
+      //
+      // So it is lifted once at each point a breakdown enters memory —
+      // after a fresh run, and after loading a saved production — and
+      // every reader downstream touches only slate_run_id. Same discipline
+      // as the story day: normalise at the boundary, and leave nothing for
+      // the readers to disagree about.
+      //
+      // A production saved before stamps existed lifts nothing and keeps
+      // an empty id, which every consumer already treats as "unknown"
+      // rather than "mismatched".
+      function slateAdoptRunStamp(bd) {
+        if (!bd) return bd;
+        var run = (bd.production_elements && bd.production_elements.slate_run) || null;
+        bd.slate_run_id = (run && run.id) ? String(run.id) : '';
+        bd.slate_run_at = (run && run.at) ? String(run.at) : '';
+        bd.slate_fingerprint = (run && run.fingerprint) ? String(run.fingerprint) : '';
+        return bd;
+      }
+
       function slateScriptFingerprint(text) {
         var t = String(text || '');
         if (!t) return '';
@@ -5298,6 +5371,46 @@
             s.scene_number = n;
             if (!s.scene_index) s.scene_index = i + 1;
           });
+
+          // ── Which run produced this document ──
+          //
+          // Stamped HERE and nowhere else: this is the one moment a
+          // breakdown run completes. A production reopened from a save
+          // keeps the stamp it was saved with, because the stamp names the
+          // run that produced the documents, not the day someone looked at
+          // them again.
+          //
+          // It exists because of the call sheet Elizabeth found on 23
+          // November. Its scene numbers came from one run and the schedule
+          // beside it came from another, and nothing on either page said
+          // so. That is the worst failure this product has, because it is
+          // silent — a stale call sheet looks exactly like a current one,
+          // and a unit can arrive at the right place on the wrong day's
+          // pages.
+          //
+          // Six characters because a human has to read it off a printed
+          // footer and compare it with another printed footer, possibly on
+          // a phone, possibly at 05:00. A UUID does not get compared.
+          //
+          // It is written INSIDE production_elements, which is already a
+          // JSON column that save.js stores and load.js returns verbatim.
+          // A stamp that did not survive a save would be useless — the
+          // documents it has to identify are the ones a filmmaker comes
+          // back to next week — and a new column on the breakdowns table
+          // is a production database change, which is Elizabeth's to
+          // approve and not mine to make. slate_reading already lives
+          // here for the same reason.
+          slateBreakdown.production_elements = slateBreakdown.production_elements || {};
+          slateBreakdown.production_elements.slate_run = {
+            id: slateRunStamp(),
+            at: new Date().toISOString(),
+            // The script, not the run. Two runs of the same screenplay
+            // share this and differ in id, which is what tells a re-run
+            // apart from a different film — the question still open on
+            // whether a re-run should join the same production.
+            fingerprint: slateScriptFingerprint(extractedScriptText)
+          };
+          slateAdoptRunStamp(slateBreakdown);
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
@@ -5364,7 +5477,11 @@
        // Bridge for the Productions view, which lives in a separate script
       // block and cannot assign to these variables directly.
       window.slateRestoreProduction = function (data) {
-        slateBreakdown = data.breakdown;
+        // The second boundary. A reopened production keeps the stamp of
+        // the run that produced it — it is not re-stamped, because the
+        // stamp names when the documents were made and not when somebody
+        // looked at them again.
+        slateBreakdown = slateAdoptRunStamp(data.breakdown);
         slateSchedule = data.schedule || null;
         slateCallsheet = null;
         if (data.script_text) extractedScriptText = data.script_text;
@@ -5531,6 +5648,17 @@
       // manager to ignore the warning.
       function slateCallsheetOutOfDate() {
         if (!slateCallsheet || !slateSchedule) return false;
+        // A sheet from a different breakdown run is out of date whatever
+        // its scene list says — and it can agree scene for scene while
+        // describing another run of the script, which is how the one
+        // Elizabeth found looked right until a scene was counted.
+        //
+        // Both ids must be present to disagree: a production saved before
+        // stamps existed has neither, and that is unknown, not wrong.
+        if (slateCallsheet.slate_run_id && slateSchedule.slate_run_id
+            && slateCallsheet.slate_run_id !== slateSchedule.slate_run_id) {
+          return true;
+        }
         var day = (slateSchedule.schedule || []).filter(function (d) {
           return d.day === slateCallsheet.shoot_day;
         })[0];
@@ -5971,6 +6099,12 @@
           + '<div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Call Sheet · Day ' + (cs.shoot_day || '') + '</div>'
           + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
           + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
+          // On screen as well as in the footer, so the run can be checked
+          // before the PDF is made rather than after it has been sent.
+          + (cs.slate_run_id
+              ? '<div style="font-family:monospace;font-size:11px;margin-top:4px;color:#7A756B">Run '
+                + slateEscapeHtml(cs.slate_run_id) + '</div>'
+              : '')
           + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '')
             + (slateCallsheetAddress(cs)
                 ? ' — ' + slateCallsheetAddress(cs)
@@ -6160,7 +6294,12 @@
         return b64 ? script : null;
       }
  
-     function slateDoc(documentLabel) {
+     // documentStamp is the run that produced the data on these pages —
+     // passed in, never read from a global, so a document cannot be built
+     // carrying a stamp from something else that happens to be in memory.
+     // Blank for a production saved before run stamps existed, and the
+     // footer then prints what it always printed.
+     function slateDoc(documentLabel, documentStamp) {
               if (!window.jspdf || !window.jspdf.jsPDF) {
           alert('The PDF library is still loading, or your connection blocked it. Please check your network and try again in a moment.');
           throw new Error('jsPDF unavailable');
@@ -6262,7 +6401,17 @@
           doc.setFontSize(7);
           doc.setFont(slateBodyFont, 'normal');
           doc.text('MISSOLOWO SLATE  ·  ' + documentLabel + '  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
-          doc.text('Page ' + pg, 195, 291, { align: 'right' });
+          // ── Which run produced this page ──
+          //
+          // On every page, not only the cover, because a call sheet reaches
+          // set as a photograph of one page in somebody's camera roll.
+          //
+          // It sits next to the page number because that is where a reader
+          // already looks to check they are holding the whole document, and
+          // "is this the current version" is the same kind of question.
+          var stamp = String(documentStamp || '');
+          doc.text('Page ' + pg + (stamp ? '  ·  Run ' + stamp : ''),
+                   195, 291, { align: 'right' });
         }
         function newPage() { doc.addPage(); paintPage(); footer(); y = 24; }
         function check(n) { if (y + (n || 20) > 278) newPage(); }
@@ -6528,7 +6677,7 @@
         var chars = d.character_breakdown || [];
         var locs = d.outline_schedule || [];
         var pe = d.production_elements || {};
-        var pdf = slateDoc('Script Breakdown');
+        var pdf = slateDoc('Script Breakdown', d.slate_run_id);
 
          pdf.cover((slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Scenes', scenes.length],
@@ -6711,7 +6860,7 @@
           (d.locations && d.locations.length ? d.locations : (d.location ? [d.location] : []))
             .forEach(function (l) { if (l) locations[l] = true; });
         });
-        var pdf = slateDoc('Shooting Schedule');
+        var pdf = slateDoc('Shooting Schedule', s.slate_run_id);
         // Scenes the screenplay never placed are not on a shoot day, so the
         // days hold fewer scenes than the script has. Printing the script
         // total alone made a 31-scene schedule claim 47 and read as scenes
@@ -6967,7 +7116,7 @@
         var pd = slateProductionDetails || {};
         var scenes = cs.scenes_today || [];
         var cast = cs.cast_call_times || [];
-        var pdf = slateDoc('Call Sheet');
+        var pdf = slateDoc('Call Sheet', cs.slate_run_id);
         var d = pdf.doc;
 
         pdf.cover(cs.title || 'Untitled Production', [
