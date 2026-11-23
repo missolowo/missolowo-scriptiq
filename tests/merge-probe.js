@@ -86,15 +86,20 @@ const SRC = [
   // The note that tells a filmmaker a scene is absent. Extracted rather
   // than restated: a warning whose wording drifts from the code is a
   // warning nobody can check.
-  block('function slateMissingNote')
+  block('function slateRestoredNote'),
+  // A slug line broken into its parts, so a scene the model never returned
+  // can still be put on the document from the page alone.
+  stmt('var SLATE_HEAD ='),
+  stmt('var SLATE_NUM  ='),
+  block('function slateParseHeading')
 ].join('\n');
 
 const win = {};
 const api = new Function('window', 'console', SRC
-  + '; return { merge: mergeBreakdownChunks, missingNote: slateMissingNote };')(
+  + '; return { merge: mergeBreakdownChunks, restoredNote: slateRestoredNote };')(
   win, { warn() {}, error() {}, log() {} });
 const merge = api.merge;
-const slateMissingNote = api.missingNote;
+const slateRestoredNote = api.restoredNote;
 
 // A section shaped the way the model returns one — scenes carrying their
 // own elements, and NOTHING else. No character_breakdown, no
@@ -526,45 +531,68 @@ console.log('\nAnd on a script that numbers nothing at all');
 }
 
 // ══════════════════════════════════════════════════
-// A SCENE THAT IS ON THE PAGE AND NOT IN THE BREAKDOWN.
+// ══════════════════════════════════════════════════
+// NO SCENE IN THE SCRIPT IS LEFT OUT OF THE BREAKDOWN.
 //
-// The model sometimes returns FEWER scenes than the script has. On THE
+// The model sometimes returns fewer scenes than the script has. On THE
 // WEAVER'S DAUGHTER it merged "3A. INT. LAGOS OFFICE — CORRIDOR —
 // CONTINUOUS" into the scene above and returned five scenes for a
 // six-scene script.
 //
-// A wrong number is visible. A missing scene is not: nothing on the
-// document hints it ever existed, and whoever schedules from it never
-// books the day. We can tell, because we read the headings off the page
-// ourselves and know which of them no scene was matched to.
-console.log('\nA scene missing from the breakdown is named');
+// Warning about it was the first answer and it was not good enough: a
+// warning asks a production manager to go and find what we lost. The
+// scene is not lost. We read its heading off the page, so we have its
+// number, its location, its page and its eighths — everything except
+// what the model would have added. So it goes back, in its own place,
+// marked for what it lacks.
+//
+// A breakdown with a scene in it that has no cast listed is a scene an
+// AD can see and ask about. A breakdown missing that scene is a day
+// nobody books.
+console.log('\nA scene the model dropped is put back');
 {
   win.slateChunkHeads = [['INT. LAGOS OFFICE - DAY',
-                          'INT. LAGOS OFFICE - CORRIDOR - CONTINUOUS',
-                          'INT. ADUKE\u2019S WORKSHOP - NIGHT']];
+                          '3A. INT. LAGOS OFFICE - CORRIDOR - CONTINUOUS',
+                          "INT. ADUKE'S WORKSHOP - NIGHT"]];
   win.slateChunkNumbers = [['3', '3A', '5']];
-  // The model merged 3A into 3 and returned two scenes for three headings.
   const out = merge([{ scenes: [
     scene(3, 'Lagos Office', ['TOLANI']),
     scene(5, "Aduke's Workshop", ['ADUKE'])
   ]}]);
   win.slateChunkHeads = null; win.slateChunkNumbers = null;
 
-  ok('the missing heading is recorded',
-     (out.slate_missing || []).length === 1, JSON.stringify(out.slate_missing));
-  ok('  ...and it is the right one',
-     (out.slate_missing || [])[0] && out.slate_missing[0].number === '3A',
-     JSON.stringify(out.slate_missing));
-  ok('  ...and it is counted in the reading',
-     out.production_elements.slate_reading.headings_unmatched === 1,
-     String(out.production_elements.slate_reading.headings_unmatched));
+  ok('THREE scenes come out, not two', out.scenes.length === 3,
+     out.scenes.length + ' — the script has three and so must the breakdown');
+  ok('  ...and the restored one is in its own place, not at the end',
+     out.scenes[1].scene_number === '3A',
+     JSON.stringify(out.scenes.map(s => s.scene_number)));
+  ok('it carries its number', out.scenes[1].scene_label === '3A',
+     String(out.scenes[1].scene_label));
+  ok('  ...and its location, read off the heading',
+     /CORRIDOR/i.test(out.scenes[1].location || ''), String(out.scenes[1].location));
+  // DAY, not CONTINUOUS. The heading says CONTINUOUS, and a later pass
+  // resolves that to the time it actually continues FROM — which is what
+  // a breakdown must show, because nobody schedules a shoot day called
+  // "continuous". A restored scene goes through that pass like any other.
+  ok('  ...and a real time of day, not "CONTINUOUS"',
+     out.scenes[1].time_of_day === 'DAY', String(out.scenes[1].time_of_day));
+  ok('  ...and is marked as coming from the page',
+     out.scenes[1].slate_from_page === true, JSON.stringify(out.scenes[1].slate_from_page));
+  ok('  ...with no cast invented for it',
+     (out.scenes[1].cast || []).length === 0, JSON.stringify(out.scenes[1].cast));
 
-  const note = slateMissingNote(out.slate_missing);
+  ok('scene_index is renumbered so the schedule points at the right rows',
+     JSON.stringify(out.scenes.map(s => s.scene_index)) === '[1,2,3]',
+     JSON.stringify(out.scenes.map(s => s.scene_index)));
+  ok('  ...and the total agrees', out.total_scenes === 3, String(out.total_scenes));
+  ok('  ...and the reading records it',
+     out.production_elements.slate_reading.scenes_restored_from_page === 1,
+     String(out.production_elements.slate_reading.scenes_restored_from_page));
+
+  const note = slateRestoredNote(out.slate_restored);
   ok('the note names the scene, not "some scenes"', /scene 3A/.test(note), note);
-  ok('  ...and says it is not in the breakdown',
-     /not in this breakdown/.test(note), note);
-  ok('  ...and says nothing else will show it',
-     /nothing else on this document/.test(note), note);
+  ok('  ...and says where it came from', /read from your script/.test(note), note);
+  ok('  ...and warns it has no cast or elements', /no cast or elements/.test(note), note);
 }
 
 console.log('\nAnd a clean breakdown says nothing at all');
@@ -575,8 +603,8 @@ console.log('\nAnd a clean breakdown says nothing at all');
     scene(1, 'Kitchen', ['ADA']), scene(2, 'Market', ['ADA'])
   ]}]);
   win.slateChunkHeads = null; win.slateChunkNumbers = null;
-  ok('nothing recorded', !out.slate_missing, JSON.stringify(out.slate_missing));
-  ok('  ...and no note', slateMissingNote(out.slate_missing) === null);
+  ok('nothing restored', !out.slate_restored, JSON.stringify(out.slate_restored));
+  ok('  ...and no note', slateRestoredNote(out.slate_restored) === null);
 }
 
 console.log('\nA (CONT\u2019D) heading is a page break, not a missing scene');
@@ -589,9 +617,9 @@ console.log('\nA (CONT\u2019D) heading is a page break, not a missing scene');
     scene(1, 'Kitchen', ['ADA']), scene(2, 'Market', ['ADA'])
   ]}]);
   win.slateChunkHeads = null; win.slateChunkNumbers = null;
-  ok('no false alarm on a continuation', !out.slate_missing,
-     JSON.stringify(out.slate_missing)
-     + '  <- warning about a page break teaches filmmakers to ignore this note');
+  ok('no duplicate scene invented for a continuation', !out.slate_restored,
+     JSON.stringify(out.slate_restored)
+     + '  <- restoring a page break would invent a scene the script does not have');
 }
 
 // ══════════════════════════════════════════════════

@@ -3521,6 +3521,96 @@
           const pe = chunk.production_elements || {};
           merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
         }
+
+        // ── NO SCENE IN THE SCRIPT IS LEFT OUT OF THE BREAKDOWN ──
+        //
+        // The model sometimes returns fewer scenes than the script has. On
+        // THE WEAVER'S DAUGHTER it merged "3A. INT. LAGOS OFFICE —
+        // CORRIDOR — CONTINUOUS" into the scene above and returned five
+        // scenes for a six-scene script.
+        //
+        // Warning about it was the first answer and it was not good
+        // enough. A warning asks a production manager to go and find what
+        // we lost. The scene is not actually lost — we read its heading
+        // off the page, we know its number, its page and its eighths, and
+        // for a montage we have its setups. Everything except what the
+        // model would have added.
+        //
+        // So it goes back, in its own place in the script, carrying what
+        // the page says and marked for what it lacks. A breakdown with a
+        // scene in it that has no cast listed is a scene an AD can see and
+        // ask about. A breakdown missing that scene is a day nobody books.
+        //
+        // The pass is monotonic: walk the scenes in order, and before each
+        // one, emit any heading the matcher never claimed that sits before
+        // it. A (CONT'D) heading is skipped — that is a page break, not a
+        // scene, and restoring it would invent a duplicate.
+        if (slateHaveRecord && slateAllHeads.length) {
+          var slateClaimed = {};
+          slateMatch.forEach(function (h) { if (h >= 0) slateClaimed[h] = true; });
+
+          var slateFromPage = function (hi) {
+            var headTxt = String(slateAllHeads[hi] || '');
+            if (!headTxt || SLATE_CONTD_RE.test(headTxt)) return null;
+            var parsed = slateParseHeading(headTxt);
+            var out = {
+              scene_number: slateAllNums[hi] || null,
+              int_ext: parsed.int_ext,
+              location: parsed.location,
+              set: parsed.location,
+              time_of_day: parsed.time_of_day,
+              description: '',
+              cast: [], props: [], costume: [], equipment: [], stunts: [],
+              vehicles: [], animals: [], special_effects: [], makeup_hair: [],
+              background: '',
+              // What the document says about itself. Read from the page;
+              // the elements are not here because they never arrived.
+              slate_from_page: true
+            };
+            if (slateAllTypes[hi] && slateAllTypes[hi] !== 'RETURN') {
+              out.scene_type = slateAllTypes[hi];
+            }
+            if (slateAllEighths[hi]) out.slate_eighths = slateAllEighths[hi];
+            if (slateAllPages[hi]) out.slate_page = slateAllPages[hi];
+            if (slateAllBeats[hi] && slateAllBeats[hi].length) {
+              out.montage_beats = slateAllBeats[hi];
+            }
+            return out;
+          };
+
+          var slateOrdered = [], slateOrderedMatch = [], slateRestored = [];
+          var slateHeadCursor = 0;
+          var slateEmitUpTo = function (limit) {
+            for (; slateHeadCursor < limit; slateHeadCursor++) {
+              if (slateClaimed[slateHeadCursor]) continue;
+              var made = slateFromPage(slateHeadCursor);
+              if (!made) continue;
+              slateOrdered.push(made);
+              slateOrderedMatch.push(slateHeadCursor);
+              slateRestored.push({ number: made.scene_number, head: slateAllHeads[slateHeadCursor] });
+            }
+          };
+          for (var so = 0; so < merged.scenes.length; so++) {
+            var slateH = slateMatch[so];
+            if (slateH >= 0) { slateEmitUpTo(slateH); slateHeadCursor = slateH + 1; }
+            slateOrdered.push(merged.scenes[so]);
+            slateOrderedMatch.push(slateH);
+          }
+          slateEmitUpTo(slateAllHeads.length);
+
+          if (slateRestored.length) {
+            merged.scenes = slateOrdered;
+            slateMatch = slateOrderedMatch;
+            merged.slate_restored = slateRestored;
+            // scene_index is a scene's position in the assembled script,
+            // and the schedule and call sheet look scenes up by it. A
+            // restored scene changes those positions, so they are rewritten
+            // here rather than left pointing at the wrong rows.
+            merged.scenes.forEach(function (sc, i) { sc.scene_index = i + 1; });
+            merged.total_scenes = merged.scenes.length;
+          }
+        }
+
          // ── Rebuild the indexes from the assembled scenes ──
         // These were previously merged per chunk, but a chunk only ever
         // sees its own scenes, so its counts were local. That is where
@@ -3998,38 +4088,9 @@
         // headings_read against model_scenes answers it in one line, for
         // any script, without us ever seeing a word of it. Nothing renders
         // these: every document reads production_elements by name.
-        // ── Scenes that are on the page but not in this breakdown ──
-        //
-        // The model sometimes returns FEWER scenes than the script has: it
-        // merges two into one, or drops one. On THE WEAVER'S DAUGHTER it
-        // merged "3A. INT. LAGOS OFFICE — CORRIDOR — CONTINUOUS" into the
-        // scene above, and the breakdown came back with five scenes for a
-        // six-scene script.
-        //
-        // That is worse than a wrong number. A wrong number is visible; a
-        // missing scene is not. Nothing else on the document hints that it
-        // ever existed, and a production manager scheduling from it simply
-        // never books the day.
-        //
-        // We can tell, because we read the headings off the page ourselves
-        // and we know which of them no scene was matched to. A heading
-        // carrying (CONT'D) is skipped: that is a page break, not a scene.
-        if (slateHaveRecord && slateAllHeads.length) {
-          var slateClaimed = {};
-          slateMatch.forEach(function (h) { if (h >= 0) slateClaimed[h] = true; });
-          var slateMissing = [];
-          for (var mi = 0; mi < slateAllHeads.length; mi++) {
-            if (slateClaimed[mi]) continue;
-            var slateHeadTxt = String(slateAllHeads[mi] || '');
-            if (!slateHeadTxt || SLATE_CONTD_RE.test(slateHeadTxt)) continue;
-            slateMissing.push({ number: slateAllNums[mi] || null, head: slateHeadTxt });
-          }
-          if (slateMissing.length) merged.slate_missing = slateMissing;
-        }
-
         merged.production_elements.slate_reading = {
           headings_read: slateAllHeads.length,
-          headings_unmatched: (merged.slate_missing || []).length,
+          scenes_restored_from_page: (merged.slate_restored || []).length,
           scene_types_from_model: slateSpanStats.scene_types_from_model,
           returns_marked: slateSpanStats.returns_marked,
           spans_opened: slateSpanStats.spans_opened,
@@ -4249,11 +4310,61 @@
           + 'worse mistake.</div>';
       }
 
-      // Said plainly, and named. "Some scenes may be missing" is a sentence
-      // nobody can act on; "scene 3A is not in this breakdown" is one a
-      // production manager can check against the page in ten seconds.
-      function slateMissingNote(missing) {
-        var list = (missing || []);
+      // A slug line, broken into the three things a breakdown row needs.
+      //
+      // Written so that a scene the model never returned can still be put
+      // on the document from the page alone. Everything here comes off the
+      // heading we already read; nothing is inferred.
+      function slateParseHeading(headText) {
+        // The margin number FIRST, and before whitespace is collapsed: a
+        // shooting script separates it with a run of spaces, and
+        // collapsing them to one removes the only thing that distinguishes
+        // "EXT. WOODS – SUNDOWN   1" from a time of day called "SUNDOWN 1".
+        var line = String(headText == null ? '' : headText)
+          .replace(/[ \t]+$/, '')
+          .replace(/[ \t]{2,}[0-9]{1,4}[A-Za-z]?[.):]?$/, '')
+          .replace(/\s+/g, ' ').trim();
+
+        // A scene number folded onto the front, including an A-scene. The
+        // space after it is OPTIONAL when a heading word follows: HILLS
+        // writes "28EXT. VILLAGE SQUARE — DAY" with nothing between them,
+        // and requiring the space left the number stuck to the location.
+        line = line
+          .replace(new RegExp('^(?:(?:' + SLATE_NUM + ')[ \t]*)?[0-9]{1,4}[A-Za-z]?[.):]?'
+                              + '(?:[ \t]+|(?=(?:' + SLATE_HEAD + ')))', 'i'), '');
+
+        // The heading word itself, from the ONE vocabulary that defines
+        // them. Writing a second list here is how the Turkish and Korean
+        // bugs were made: a script saying 실내 or İÇ is a heading in one
+        // place and not in the other, and the two drift apart silently.
+        var ie = '';
+        var m = line.match(new RegExp('^(' + SLATE_HEAD + ')[.\\s]*', 'i'));
+        if (m) { ie = m[1].toUpperCase().replace(/\.$/, ''); line = line.slice(m[0].length); }
+
+        // The time of day is the last dash-separated part, and only when it
+        // reads like one. "INT. MAMA BOLA HOUSE - KITCHEN" has no time, and
+        // calling "KITCHEN" the time would put it in the wrong column.
+        var tod = '';
+        var parts = line.split(/\s[—–-]\s|\s{2,}/);
+        if (parts.length > 1) {
+          var tail = parts[parts.length - 1].trim();
+          if (/^(?:LATE |EARLY |CONTINUOUS|MOMENTS |SAME |LATER)?\s*(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|SUNSET|SUNDOWN|SUNRISE|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME|MOMENTS LATER|MONTHS PASSING|ONE YEAR PASSING)\b/i.test(tail)
+              || /PASSING$/i.test(tail)) {
+            tod = tail.replace(/[.\s]+$/, '');
+            parts.pop();
+          }
+        }
+        return { int_ext: ie, location: parts.join(' - ').trim(), time_of_day: tod };
+      }
+
+      // Said plainly, and named. These scenes ARE on the document — that is
+      // the point of restoring them — but they carry no cast or elements,
+      // and a reader must not mistake an empty row for an empty scene.
+      // "Some scenes may be incomplete" is a sentence nobody can act on;
+      // "scene 3A came from your script" is one a production manager
+      // checks against the page in ten seconds.
+      function slateRestoredNote(restored) {
+        var list = (restored || []);
         if (!list.length) return null;
         var named = list.map(function (m) {
           if (m.number) return 'scene ' + m.number;
@@ -4266,15 +4377,16 @@
           + (named.length > 6 ? ' and ' + (named.length - 6) + ' more' : '');
         var one = list.length === 1;
         return '<strong>' + list.length + ' scene' + (one ? '' : 's')
-          + ' in your script ' + (one ? 'is' : 'are') + ' not in this breakdown</strong>: '
-          + shown + '. We read ' + (one ? 'it' : 'them') + ' on your pages, but no scene '
-          + 'came back for ' + (one ? 'it' : 'them') + '. Worth checking before you '
-          + 'schedule \u2014 nothing else on this document will show '
-          + (one ? 'it is' : 'they are') + ' missing.';
+          + ' here ' + (one ? 'was' : 'were') + ' read from your script, not from the '
+          + 'breakdown</strong>: ' + shown + '. ' + (one ? 'It is' : 'They are')
+          + ' in the list with ' + (one ? 'its' : 'their') + ' number, page and '
+          + 'location, but no cast or elements came back for '
+          + (one ? 'it' : 'them') + '. Check '
+          + (one ? 'it' : 'them') + ' against your pages before you schedule.';
       }
 
-      function slateMissingNoteHtml(missing) {
-        var note = slateMissingNote(missing);
+      function slateRestoredNoteHtml(restored) {
+        var note = slateRestoredNote(restored);
         if (!note) return '';
         return '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;'
           + 'line-height:1.5;border:1px solid var(--warn,#C97E3D);color:var(--warn,#C97E3D)">'
@@ -4386,7 +4498,7 @@
         // Under the report rather than above it: a reader meets the numbers
         // first and the explanation when they need it.
         html += slateCastReviewHtml(chars);
-        html += slateMissingNoteHtml(data.slate_missing);
+        html += slateRestoredNoteHtml(data.slate_restored);
         html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
@@ -6215,10 +6327,10 @@
         pdf.gap(4);
       }
 
-      // A missing scene matters most on the PDF, because that is the copy
-      // that goes to a production. Same sentence, same plain-text rules.
-      function slatePdfMissingNote(pdf, missing) {
-        var note = slateMissingNote(missing);
+      // This matters most on the PDF, because that is the copy that goes to
+      // a production. Same sentence, same plain-text rules.
+      function slatePdfRestoredNote(pdf, restored) {
+        var note = slateRestoredNote(restored);
         if (!note) return;
         var plain = note.replace(/<[^>]+>/g, '')
           .replace(/—/g, '-').replace(/’/g, "'")
@@ -6308,7 +6420,7 @@
         // The PDF is the copy that reaches set, so the key to the numbering
         // belongs here more than anywhere. Printed only when a # label
         // actually exists — a cleanly numbered script gets no footnote.
-        slatePdfMissingNote(pdf, d.slate_missing);
+        slatePdfRestoredNote(pdf, d.slate_restored);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 3 — Locations');
@@ -6320,7 +6432,7 @@
             return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
           })
         );
-        slatePdfMissingNote(pdf, d.slate_missing);
+        slatePdfRestoredNote(pdf, d.slate_restored);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 4 — Production Elements');
