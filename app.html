@@ -3242,6 +3242,27 @@
       // chosen it and this leaves it alone. Scripts without letter case —
       // Korean, Japanese, Chinese — have no uppercase to find, so they are
       // never altered.
+      // D or N, the way a call sheet carries it — and the full words when
+      // it is neither.
+      //
+      // This was the first LETTER of the time of day, which gives D for
+      // DAY and N for NIGHT and nonsense for everything else: a montage
+      // reading "ONE YEAR PASSING" printed as "O", EARLY MORNING as "E",
+      // MORNING as "M". A 1st AD cannot light from "O", and a code that is
+      // wrong some of the time is worse than no code, because the right
+      // ones stop being trusted too.
+      function slateDayNightCode(tod) {
+        var t = String(tod == null ? '' : tod).toUpperCase().trim();
+        if (!t) return '\u2014';
+        if (/\bNIGHT\b/.test(t)) return 'N';
+        if (/\bDAWN\b/.test(t)) return 'DAWN';
+        if (/\bDUSK\b|\bSUNSET\b|\bSUNDOWN\b/.test(t)) return 'DUSK';
+        if (/\bDAY\b|\bMORNING\b|\bAFTERNOON\b|\bDAYLIGHT\b/.test(t)) return 'D';
+        // Anything else is said in full rather than abbreviated into a
+        // letter that means nothing.
+        return t;
+      }
+
       function slateTitleCase(name) {
         var str = String(name || '');
         if (!str) return str;
@@ -3452,6 +3473,38 @@
               // montage once, and an AD still needs all ten setups.
               var slateB = slateAllBeats[slateHeadIdx];
               if (slateB && slateB.length) scene.montage_beats = slateB;
+              // ── THE PAGE NAMES THE PLACE, NOT THE MODEL ──
+              //
+              // The script says "1. INT. ADUKE'S WORKSHOP - EARLY
+              // MORNING". The breakdown said "Aduke's House", while scene
+              // 5 of the same script said "Aduke's Workshop" — so one room
+              // became two locations, listed twice in the location report
+              // and grouped apart in the schedule. On more than one shoot
+              // day that is a company move to an address that does not
+              // exist, and a call sheet a driver cannot follow.
+              //
+              // This is the rule we already apply to scene numbers: the
+              // page is the authority and the model is a reader of it. We
+              // have the heading in hand, matched to this very scene, so
+              // the location, the set and the interior/exterior come off
+              // it. The model keeps what the page cannot say — who is in
+              // the scene, and what it needs.
+              //
+              // The trade: where a heading says only "KITCHEN" and the
+              // model inferred "Mama Bola's Kitchen", we now print
+              // KITCHEN. That is what an AD finds when they look the scene
+              // up in the script they are holding, which is the test that
+              // matters.
+              var slatePageHead = slateAllHeads[slateHeadIdx];
+              if (slatePageHead) {
+                var slateOnPage = slateParseHeading(slatePageHead);
+                if (slateOnPage.location) {
+                  scene.location = slateTitleCase(slateOnPage.location);
+                  if (slateOnPage.set) scene.set = slateTitleCase(slateOnPage.set);
+                }
+                if (slateOnPage.int_ext) scene.int_ext = slateOnPage.int_ext;
+                if (slateOnPage.time_of_day) scene.time_of_day = slateOnPage.time_of_day;
+              }
               var slateE = slateAllEighths[slateHeadIdx];
               if (slateE) scene.slate_eighths = slateE;
               var slateP = slateAllPages[slateHeadIdx];
@@ -3556,8 +3609,11 @@
             var out = {
               scene_number: slateAllNums[hi] || null,
               int_ext: parsed.int_ext,
+              // The place travelled to, and the room lit — kept apart, as
+              // on every other scene. Putting the location in both made a
+              // restored scene group under a set nobody lights.
               location: parsed.location,
-              set: parsed.location,
+              set: parsed.set || '',
               time_of_day: parsed.time_of_day,
               description: '',
               cast: [], props: [], costume: [], equipment: [], stunts: [],
@@ -4337,9 +4393,27 @@
         // them. Writing a second list here is how the Turkish and Korean
         // bugs were made: a script saying 실내 or İÇ is a heading in one
         // place and not in the other, and the two drift apart silently.
+        // MONTAGE and its relatives open a heading the same way INT does,
+        // and they are no more a location than INT is. Left in, "63.
+        // MONTAGE - VARIOUS LOCATIONS - MONTHS PASSING" makes "Montage"
+        // the place a unit travels to, and it turns up in the location
+        // report as somewhere to drive. The scene TYPE is carried
+        // separately, from the page, so nothing is lost by removing it.
+        //
+        // Tested BEFORE the heading word, because INTERCUT begins with INT
+        // and the other order left the location reading "ERCUT".
+        var seq = line.match(new RegExp('^(?:' + SLATE_SEQUENCE + ')\\b[ \\t]*[—–:-]?[ \\t]*', 'i'));
+        if (seq) line = line.slice(seq[0].length);
+
+        // The same guard the main reader uses, for the same reason: without
+        // it INT matches the front of INTERIOR'S, INTERCUT and any other
+        // word that merely starts that way. One rule, written once.
         var ie = '';
-        var m = line.match(new RegExp('^(' + SLATE_HEAD + ')[.\\s]*', 'i'));
-        if (m) { ie = m[1].toUpperCase().replace(/\.$/, ''); line = line.slice(m[0].length); }
+        if (!seq) {
+          var m = line.match(new RegExp(
+            '^(' + SLATE_HEAD + ')(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s]*', 'i'));
+          if (m) { ie = m[1].toUpperCase().replace(/\.$/, ''); line = line.slice(m[0].length); }
+        }
 
         // The time of day is the last dash-separated part, and only when it
         // reads like one. "INT. MAMA BOLA HOUSE - KITCHEN" has no time, and
@@ -4354,7 +4428,13 @@
             parts.pop();
           }
         }
-        return { int_ext: ie, location: parts.join(' - ').trim(), time_of_day: tod };
+        // The LOCATION is the place a unit travels to; the SET is the room
+        // it lights. "INT. LAGOS OFFICE - CORRIDOR" is one journey and two
+        // setups, and a call sheet that collapses them sends a driver to
+        // "Lagos Office - Corridor".
+        var place = parts.shift() || '';
+        return { int_ext: ie, location: place.trim(),
+                 set: parts.join(' - ').trim(), time_of_day: tod };
       }
 
       // Said plainly, and named. These scenes ARE on the document — that is
@@ -6385,6 +6465,21 @@
           if (s.scene_continuity) { pdf.annotation(s.scene_continuity, 34, 152); pdf.gap(3); }
           if (s.description) pdf.body(s.description, 34, 158);
           pdf.gap(2);
+          // ── The setups inside a montage, on the page that reaches set ──
+          //
+          // A montage is ONE scene and one row, because the writer numbered
+          // it once. But its beats are in four different places, and a 1st
+          // AD reading one line schedules one setup.
+          //
+          // On THE WEAVER'S DAUGHTER those four were Aduke's workshop, the
+          // market, the Lagos office and Aduke's compound at dusk — two of
+          // them places the unit had already wrapped. That is a day lost
+          // and a re-rig, and the information was in the breakdown all
+          // along: it was on the screen and not on the PDF, which is the
+          // copy a production actually carries.
+          if (s.montage_beats && s.montage_beats.length) {
+            pdf.labelledList(s.montage_beats.length + ' setups', s.montage_beats, 15);
+          }
           pdf.labelledList('Cast', s.cast);
           var bgPdf = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
           if (bgPdf && bgPdf !== 'null') pdf.labelledList('Background', [bgPdf]);
@@ -6574,7 +6669,7 @@
             // pages or nine.
             var schE = Number(sc.eighths) || 0;
             var schLen = schE ? ('   ' + Math.floor(schE / 8) + ' ' + (schE % 8) + '/8') : '';
-            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet + schLen + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -6917,10 +7012,24 @@
           // a crew reads. Blank is honest; null looks like a fault.
           var csSet = s.set || s.location || '';
           if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
-          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + ((s.time_of_day || '\u2014').charAt(0)) + '   ' + csSet + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
+          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(s.time_of_day) + '   ' + csSet + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
+          // Background belongs on the document the floor carries.
+          //
+          // It was on the breakdown and on the schedule, and missing from
+          // here — so the one page a 2nd AD works from did not say to book
+          // the extras. THE WEAVER'S DAUGHTER scene 2 needs traders, a
+          // woman selling oranges, schoolboys and a driver; the call sheet
+          // listed a cast of one.
+          var csBg = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+          if (csBg && csBg !== 'null') pdf.labelledList('Background', [csBg]);
+          // And the setups inside a montage. One row, four places: without
+          // these an AD schedules one setup and meets four on the day.
+          if (s.montage_beats && s.montage_beats.length) {
+            pdf.labelledList(s.montage_beats.length + ' setups', s.montage_beats, 15);
+          }
           // Departments on the day they are needed. A stunt or an animal
           // discovered on the morning is a day lost; on the call sheet the
           // night before it is a phone call. Empty lists print nothing, so an
@@ -6996,7 +7105,7 @@
             d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number), 15, pdf.getY());
             d.setFont('helvetica', 'normal');
             d.setFontSize(8.5);
-            d.text((sc.int_ext || '—') + ' · ' + ((sc.time_of_day || '—').charAt(0))
+            d.text((sc.int_ext || '—') + ' · ' + slateDayNightCode(sc.time_of_day)
               + '   ' + (sc.set || '—')
               + (advE ? '   ' + Math.floor(advE / 8) + ' ' + (advE % 8) + '/8' : ''),
               32, pdf.getY());

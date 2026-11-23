@@ -568,8 +568,13 @@ console.log('\nA scene the model dropped is put back');
      JSON.stringify(out.scenes.map(s => s.scene_number)));
   ok('it carries its number', out.scenes[1].scene_label === '3A',
      String(out.scenes[1].scene_label));
-  ok('  ...and its location, read off the heading',
-     /CORRIDOR/i.test(out.scenes[1].location || ''), String(out.scenes[1].location));
+  // The LOCATION is where the unit travels; the SET is the room it
+  // lights. A heading naming both gives both, and a call sheet that
+  // collapses them sends a driver to "Lagos Office - Corridor".
+  ok('  ...its location, read off the heading',
+     /LAGOS OFFICE/i.test(out.scenes[1].location || ''), String(out.scenes[1].location));
+  ok('  ...and its set, kept apart from the location',
+     /CORRIDOR/i.test(out.scenes[1].set || ''), String(out.scenes[1].set));
   // DAY, not CONTINUOUS. The heading says CONTINUOUS, and a later pass
   // resolves that to the time it actually continues FROM — which is what
   // a breakdown must show, because nobody schedules a shoot day called
@@ -671,6 +676,72 @@ console.log('\nThe model\u2019s own answer is counted before we extend it');
   ok('the count is the model\u2019s, not the result',
      r.scene_types_from_model !== typedAfter,
      'counted after the span, which is the one thing it must not do');
+}
+
+// ══════════════════════════════════════════════════
+// THE PAGE NAMES THE PLACE, NOT THE MODEL.
+//
+// THE WEAVER'S DAUGHTER, 23 November. The script says "1. INT. ADUKE'S
+// WORKSHOP - EARLY MORNING". The breakdown said "Aduke's House". Scene 5
+// of the same script, the same room, said "Aduke's Workshop".
+//
+// One room became two locations: two rows in the location report, two
+// groups in the schedule, and on any shoot longer than a day a company
+// move to an address that does not exist. A 1st AD reading that call
+// sheet sends a driver somewhere there is no set.
+//
+// This is the rule already applied to scene numbers. The page is the
+// authority; the model is a reader of it.
+console.log('\nThe location comes off the page');
+{
+  win.slateChunkHeads = [["1. INT. ADUKE'S WORKSHOP - EARLY MORNING",
+                          '3A. INT. LAGOS OFFICE - CORRIDOR - CONTINUOUS',
+                          "5. INT. ADUKE'S WORKSHOP - NIGHT"]];
+  win.slateChunkNumbers = [['1', '3A', '5']];
+  const out = merge([{ scenes: [
+    // What the model actually returned for scene 1.
+    Object.assign(scene(1, "Aduke's House", ['ADUKE']), { int_ext: 'INT' }),
+    Object.assign(scene(2, 'Lagos Office', ['TOLANI']), { int_ext: 'INT' }),
+    Object.assign(scene(3, "Aduke's Workshop", ['ADUKE']), { int_ext: 'INT' })
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+
+  ok('scene 1 is at the workshop, as the script says',
+     out.scenes[0].location === "Aduke's Workshop",
+     String(out.scenes[0].location) + '  <- the model said "Aduke\u2019s House"');
+  ok('  ...so scenes 1 and 5 are ONE location, not two',
+     out.scenes[0].location === out.scenes[2].location,
+     JSON.stringify([out.scenes[0].location, out.scenes[2].location])
+     + '  <- two names for one room is a company move that does not exist');
+
+  // And it reaches the document a location manager works from.
+  const places = (out.outline_schedule || []).map(l => l.set_location);
+  ok('the location report lists that room ONCE',
+     places.filter(p => /workshop/i.test(p)).length === 1,
+     JSON.stringify(places));
+  ok('  ...and never under the model\u2019s name for it',
+     !places.some(p => /house/i.test(p)), JSON.stringify(places));
+
+  // The set stays separate from the location.
+  ok('a heading naming both gives both',
+     out.scenes[1].location === 'Lagos Office' && out.scenes[1].set === 'Corridor',
+     JSON.stringify([out.scenes[1].location, out.scenes[1].set]));
+}
+
+console.log('\nBut only where the page actually says something');
+{
+  // An unplaced scene has no heading of ours to read, so the model's
+  // answer stands. Better a name we are unsure of than no name at all.
+  win.slateChunkHeads = [['INT. KITCHEN - DAY']];
+  win.slateChunkNumbers = [['1']];
+  const out = merge([{ scenes: [
+    scene(1, 'Kitchen', ['ADA']),
+    Object.assign(scene(2, 'Somewhere The Model Named', ['ADA']), { int_ext: 'EXT' })
+  ]}]);
+  win.slateChunkHeads = null; win.slateChunkNumbers = null;
+  const kept = out.scenes.find(s => /Somewhere/i.test(s.location || ''));
+  ok('an unmatched scene keeps the model\u2019s location', !!kept,
+     JSON.stringify(out.scenes.map(s => s.location)));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

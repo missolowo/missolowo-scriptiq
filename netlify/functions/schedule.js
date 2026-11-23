@@ -613,7 +613,11 @@ exports.handler = async function(event, context) {
         // position for breakdowns saved before scene_index existed.
         idx: s.scene_index || (i + 1),
         n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
-        ie: s.int_ext || 'INT',
+        // Never invented. A montage has no interior or exterior, and
+        // defaulting a blank to INT printed "INT" beside "Various
+        // Locations" on a shooting schedule — a statement about how the
+        // scene shoots that the script never makes.
+        ie: s.int_ext || '',
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',
         set: s.set || '',
