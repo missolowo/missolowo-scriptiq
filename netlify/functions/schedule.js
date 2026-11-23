@@ -246,6 +246,26 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             company_move: d.locations.length > 1,
             // Opportunities, not instructions. Nothing above has moved.
             compromise_shoots: compromises,
+            // ── Which story days this shoot day touches ──
+            //
+            // A shoot day is assembled by location, so it routinely holds
+            // scenes from several different days of the STORY. That is
+            // normal and not a fault — but it is exactly when wardrobe and
+            // hair have to plan a change mid-day, and nothing told them.
+            //
+            // Distinct values in the order they appear on the day, so a
+            // reader sees both how many changes the day needs and which
+            // way round they run. Reported; nothing is reordered.
+            story_days: (function () {
+              var seen = {}, out = [];
+              d.scenes.forEach(function (s) {
+                var sd = String(s.sd || '').trim();
+                if (!sd || seen[sd]) return;
+                seen[sd] = true;
+                out.push(sd);
+              });
+              return out;
+            })(),
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
@@ -261,6 +281,7 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
                 location: s.loc || '',
                 description: '',
                 eighths: s.eighths || 0,
+                story_day: s.sd || '',
                 cast_required: s.cast || [],
                 background: s.bg || '',
                 props: []
@@ -288,6 +309,7 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             scene_number: s.n,
             int_ext: s.ie,
             time_of_day: s.tod,
+            story_day: s.sd || '',
             cast_required: s.cast || [],
             background: s.bg || ''
           };
@@ -625,6 +647,15 @@ exports.handler = async function(event, context) {
         // is how a production manager judges whether the day is achievable,
         // so it has to travel with the scene.
         eighths: Number(s.slate_eighths) || 0,
+        // The story day, carried verbatim. It was normalised once at merge
+        // time and is never re-read here — a second reader is a second
+        // opinion, and continuity is the last place that helps.
+        //
+        // It travels because a shoot day is assembled out of script order:
+        // the scenes of one story morning can land on three different
+        // shoot days, and wardrobe can only plan for that if the schedule
+        // says so.
+        sd: s.story_day || '',
         cast: (s.cast || []).slice(0, 8),
         // Flagged, never counted — how many is a producer decision.
         bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')

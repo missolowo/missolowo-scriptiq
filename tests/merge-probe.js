@@ -91,7 +91,11 @@ const SRC = [
   // can still be put on the document from the page alone.
   stmt('var SLATE_HEAD ='),
   stmt('var SLATE_NUM  ='),
-  block('function slateParseHeading')
+  block('function slateParseHeading'),
+  // The continuity key, normalised at the boundary. The merge is where the
+  // model's answer arrives, so it is the one place that reads it — which is
+  // why this probe needs it and the two serverless functions do not.
+  block('function slateStoryDay')
 ].join('\n');
 
 const win = {};

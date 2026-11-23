@@ -184,6 +184,10 @@ exports.handler = async function(event, context) {
         // split have no set field, so fall back to the location.
         set: s.set || s.location || '',
         description: s.description || '',
+        // Passed through, never re-read. Normalised once at merge time.
+        // A call sheet is the document hair and wardrobe actually carry, so
+        // of the three this is the one that most needed it.
+        story_day: s.story_day || '',
         cast: s.cast || [],
         // The model returns this as a string or an array depending on the
         // scene. Accept both — an array would render as raw JSON on a
@@ -373,7 +377,8 @@ Return ONLY valid JSON:
             int_ext: sc.int_ext,
             time_of_day: sc.time_of_day,
             set: sc.set || '',
-            eighths: sc.eighths || 0
+            eighths: sc.eighths || 0,
+            story_day: sc.story_day || ''
           };
         }),
         cast: who

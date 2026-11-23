@@ -3263,6 +3263,55 @@
         return t;
       }
 
+      // ── The story day, read once and displayed everywhere ──
+      //
+      // Which day of the STORY a scene happens on — not which day of the
+      // shoot. It is what wardrobe and hair work from: scenes 12 and 48 may
+      // be shot three weeks apart and still have to match, because in the
+      // film they are the same morning.
+      //
+      // The breakdown prompt has asked the model for it all along and the
+      // model answers. Until now the value was cleaned of stray characters
+      // at merge time and then read by nothing: no renderer, no PDF, no
+      // schedule row, no call sheet. We paid for the field on every run and
+      // deleted it.
+      //
+      // ONE definition of what a story day IS, here, for the same reason
+      // slateDayNightCode exists: five renderers deciding separately how to
+      // read "(DAY 1)" is five chances to disagree on a continuity document.
+      // What each document CALLS it is the renderer's business — a slugline
+      // says "Story Day 1", a schedule strip says "SD1" — but they all read
+      // the same answer out of here.
+      function slateStoryDay(value) {
+        var raw = String(value == null ? '' : value).trim();
+        if (!raw) return '';
+        var up = raw.toUpperCase();
+        if (up === 'NULL' || up === 'UNDEFINED' || up === 'N/A' || up === 'TBD') return '';
+
+        // A bare time of day is NOT a story day, and this is the mistake the
+        // model actually makes: asked for a story day on a scene whose
+        // heading says DAY, it answers "DAY". Printing that as the story day
+        // would tell wardrobe that every daylight scene in the film matches
+        // every other one.
+        if (/^\(?\s*(?:DAY|NIGHT|MORNING|AFTERNOON|EVENING|DAWN|DUSK|CONTINUOUS|LATER|MOMENTS LATER|SAME)\s*\)?$/.test(up)) {
+          return '';
+        }
+
+        // The number is the story day, however it was written: "1",
+        // "DAY 1", "(DAY 1)", "Story Day 1", "D1". A range stays a range —
+        // "DAY 2-3" is a scene the writer spread over two days and a
+        // production needs to see that, not a tidied "2".
+        var range = up.match(/(\d+)\s*(?:-|–|—|\s+TO\s+)\s*(\d+)/);
+        if (range) return range[1] + '–' + range[2];
+        var one = up.match(/\d+/);
+        if (one) return one[0];
+
+        // No number anywhere. Something like "Flashback" or "Wedding day"
+        // is the writer's own way of grouping scenes, so it is kept as
+        // written rather than thrown away for not being a numeral.
+        return raw;
+      }
+
       function slateTitleCase(name) {
         var str = String(name || '');
         if (!str) return str;
@@ -3548,6 +3597,18 @@
                 scene[f] = scene[f].map(slateCleanField).filter(Boolean);
               }
             });
+
+            // The story day, read ONCE — here, where the model's answer
+            // arrives — and normalised in place. Everything downstream only
+            // displays it: the schedule and the call sheet pass the field
+            // through verbatim and never interpret it.
+            //
+            // That is deliberate. A reader in app.html, another in
+            // schedule.js and a third in callsheet.js is the duplicate
+            // source of truth that every bug this evening came from. One
+            // reader at the boundary leaves nothing for the other two to
+            // disagree about.
+            scene.story_day = slateStoryDay(scene.story_day);
 
             merged.scenes.push({
               ...scene,
@@ -4528,6 +4589,15 @@
             // makeup, and the scenes usually shoot together — an AD needs to
             // see it on the breakdown, not work it out from the script.
             + (s.scene_type ? '<span style="margin-left:10px;padding:2px 8px;border:1px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:999px;font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + ';vertical-align:middle">' + s.scene_type + '</span>' : '')
+            // The story day. Not a warning and not a badge about this scene's
+            // own nature — a key that ties this scene to every other scene
+            // wardrobe has to match it to, so it is shown plainly.
+            + (slateStoryDay(s.story_day)
+                ? '<span style="margin-left:10px;padding:2px 8px;border:1px solid var(--line-1,#2E323A);'
+                  + 'border-radius:999px;font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;'
+                  + 'color:var(--text-2,#B5AFA3);vertical-align:middle">SD '
+                  + slateEscapeHtml(slateStoryDay(s.story_day)) + '</span>'
+                : '')
             + '</div>'
             // Said in words, not just a badge. A reader should never have to
             // work out whether they are inside a flashback by counting back
@@ -5612,6 +5682,28 @@
                   + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
                   + '</div>';
               })()
+           // ── Which story days this shoot day covers ──
+           //
+           // A shoot day is built by location, so it routinely spans
+           // several days of the story. That is not a fault and is not
+           // phrased as one. But a day covering three story days needs
+           // three wardrobe looks standing by, and the only document that
+           // could have said so said nothing.
+           //
+           // One line, in the same register as BG above: a fact, stated.
+           // The count is given because it is the number that costs money.
+           + (function () {
+                var sds = (d.story_days || []).filter(Boolean);
+                if (!sds.length) return '';
+                return '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:6px;font-family:monospace">'
+                  + 'Story day' + (sds.length > 1 ? 's' : '') + ': '
+                  + sds.map(slateEscapeHtml).join('  ·  ')
+                  + (sds.length > 1
+                      ? '<span style="color:var(--text-3,#7D786E)">   — '
+                        + sds.length + ' continuity looks on this day</span>'
+                      : '')
+                  + '</div>';
+              })()
            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
            // ── An opportunity, phrased as one ──
            // Deliberately not the warn colour used for missing locations:
@@ -5895,7 +5987,14 @@
               var bg = bgText
                 ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
                 : '';
-              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
+              // Story day on the row. Hair and wardrobe read this document
+              // on the morning, so the key they match against belongs on
+              // the line, not in a panel somewhere else.
+              var sdText = slateStoryDay(s.story_day);
+              var sd = sdText
+                ? '<span style="font-family:monospace;font-size:12px;color:#4A463D">&nbsp; SD ' + slateEscapeHtml(sdText) + '</span>'
+                : '';
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + sd + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
           + cast.map(function(c) {
               return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
@@ -6451,8 +6550,14 @@
           // omitted rather than guessed when we could not match the scene to
           // its place on the page.
           var bdE = Number(s.slate_eighths) || 0;
+          // The story day, on the line a department head reads first. This
+          // is the one piece of continuity information on a breakdown
+          // sheet: scenes sharing a story day have to match on screen
+          // however far apart they are shot.
+          var bdSd = slateStoryDay(s.story_day);
           var bdMeta = (s.slate_page ? '   p.' + s.slate_page : '')
-            + (bdE ? '   ' + Math.floor(bdE / 8) + ' ' + (bdE % 8) + '/8' : '');
+            + (bdE ? '   ' + Math.floor(bdE / 8) + ' ' + (bdE % 8) + '/8' : '')
+            + (bdSd ? '   Story Day ' + bdSd : '');
           pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not specified in script') + ' — ' + (s.time_of_day || '—')
             + bdMeta
             + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
@@ -6635,8 +6740,15 @@
 
         days.forEach(function(day, di) {
           var slateDayPages = slateDayEighths(day);
+          // The story days this shoot day covers, on the header where the
+          // page count already is. Both answer the same question — what
+          // does this day cost — one in pages and one in wardrobe changes.
+          var slateDaySd = (day.story_days || []).filter(Boolean);
           pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set')
-            + (slateDayPages ? '  ·  ' + slateDayPages : ''));
+            + (slateDayPages ? '  ·  ' + slateDayPages : '')
+            + (slateDaySd.length
+                ? '  ·  Story day' + (slateDaySd.length > 1 ? 's ' : ' ') + slateDaySd.join(', ')
+                : ''));
           // A day header naming real places while most of its scenes belong
           // to none of them is how a crew ends up driving somewhere for
           // nothing. Said plainly, directly under the header.
@@ -6669,7 +6781,10 @@
             // pages or nine.
             var schE = Number(sc.eighths) || 0;
             var schLen = schE ? ('   ' + Math.floor(schE / 8) + ' ' + (schE % 8) + '/8') : '';
-            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
+            var schSd = slateStoryDay(sc.story_day);
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen
+              + (schSd ? '   SD ' + schSd : '')
+              + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -6935,6 +7050,32 @@
           pdf.gap(4);
         }
 
+        // ── When one shoot day covers several days of the story ──
+        //
+        // Said only when there is more than one, because the scene rows
+        // already carry SD and a sheet that annotates the ordinary case
+        // teaches a crew to skip its annotations.
+        //
+        // Costume and hair are named because they are who this costs. A
+        // day holding story days 1 and 4 needs two looks standing by, and
+        // nobody finds that out at 06:00 if the sheet says it at 21:00.
+        var csSds = (function () {
+          var seen = {}, out = [];
+          scenes.forEach(function (s) {
+            var v = slateStoryDay(s.story_day);
+            if (!v || seen[v]) return;
+            seen[v] = true;
+            out.push(v);
+          });
+          return out;
+        })();
+        if (csSds.length > 1) {
+          pdf.annotation('This day covers story days ' + csSds.join(', ')
+            + '. Costume and hair need ' + csSds.length
+            + ' continuity looks on set, not one.', 15, 175);
+          pdf.gap(4);
+        }
+
         pdf.sectionHeader('Weather & Logistics');
         fourUp([
           ['High / Low', (pd.weather_high || '—') + ' / ' + (pd.weather_low || '—')],
@@ -7012,7 +7153,13 @@
           // a crew reads. Blank is honest; null looks like a fault.
           var csSet = s.set || s.location || '';
           if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
-          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(s.time_of_day) + '   ' + csSet + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
+          // The story day, on the document hair and wardrobe carry to set.
+          // Short form here because the call sheet row is tight and the
+          // people reading it already know what SD means.
+          var csSd = slateStoryDay(s.story_day);
+          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(s.time_of_day) + '   ' + csSet
+            + (csSd ? '   SD ' + csSd : '')
+            + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
