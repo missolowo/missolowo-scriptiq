@@ -7268,6 +7268,90 @@
           doc.text(text, x || 34, y + 4);
         }
 
+        // ── The strip-board colour ──
+        //
+        // The convention a production board has used for decades, and the
+        // reason an AD can read a board across a room:
+        //
+        //   INT / DAY    white
+        //   EXT / DAY    yellow
+        //   INT / NIGHT  blue
+        //   EXT / NIGHT  green
+        //
+        // There is NO standard colour for dawn or dusk — the scheduling
+        // tools each invented their own — so those are drawn as an outline
+        // with no fill rather than rounded into day or night. Which one a
+        // dusk scene belongs to is a lighting decision, and guessing it on
+        // a document a gaffer reads is making that decision by accident.
+        // The letter code is printed on the row either way, so nothing
+        // here depends on colour alone.
+        //
+        // Drawn in the left margin at x=11, so no text moves and no row
+        // grows: the bar cannot change a layout that is already verified.
+        // Every bar is outlined, because white is one of the four states
+        // and a white fill on white paper is nothing at all — and this
+        // schedule is printed in mono as often as not, where the four
+        // read as four distinct greys.
+        var SLATE_STRIP = {
+          'INT|D': [255, 255, 255],
+          'EXT|D': [247, 209, 94],
+          'INT|N': [132, 170, 212],
+          'EXT|N': [138, 188, 140]
+        };
+        function stripKey(intExt, tod) {
+          var ie = String(intExt == null ? '' : intExt).toUpperCase().trim();
+          // A heading written INT/EXT belongs to neither column. The script
+          // said both, so the board says neither rather than picking one.
+          if (ie !== 'INT' && ie !== 'EXT') return '';
+          var code = slateDayNightCode(tod);
+          if (code !== 'D' && code !== 'N') return '';
+          return ie + '|' + code;
+        }
+        function stripBar(intExt, tod) {
+          var fill = SLATE_STRIP[stripKey(intExt, tod)];
+          doc.setDrawColor(150, 146, 136);
+          doc.setLineWidth(0.2);
+          // Tall enough to read as a STRIP. The first version was 8mm on a
+          // 19mm row and read as a tick beside the scene number rather
+          // than a band down the page — which loses the one property that
+          // makes a board worth having: a day's shape visible from across
+          // a room without reading a word of it. 12mm fills the row and
+          // still clears the next one.
+          if (fill) {
+            doc.setFillColor(fill[0], fill[1], fill[2]);
+            doc.rect(11, y - 2.5, 2.6, 12, 'FD');
+          } else {
+            doc.rect(11, y - 2.5, 2.6, 12, 'D');
+          }
+        }
+        // Said once per schedule. A board nobody has the key to is a board
+        // read by guessing, and three of these four colours mean nothing
+        // to a filmmaker who has never worked off strips.
+        function stripLegend() {
+          check(16);
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          var cx = 15;
+          [['INT|D', 'INT / DAY'], ['EXT|D', 'EXT / DAY'],
+           ['INT|N', 'INT / NIGHT'], ['EXT|N', 'EXT / NIGHT']
+          ].forEach(function (pair) {
+            var c = SLATE_STRIP[pair[0]];
+            doc.setFillColor(c[0], c[1], c[2]);
+            doc.setDrawColor(150, 146, 136);
+            doc.setLineWidth(0.2);
+            doc.rect(cx, y - 1.6, 2.6, 4.4, 'FD');
+            doc.text(pair[1], cx + 4.4, y + 2);
+            cx += 42;
+          });
+          y += 7;
+          doc.setFontSize(7.5);
+          doc.setTextColor.apply(doc, SLATE_MUTED);
+          doc.text('Dawn and dusk have no standard colour and are left unfilled. '
+                 + 'The time of day is printed on every row.', 15, y);
+          y += 6;
+        }
+
          function body(text, x, width) {
           doc.setTextColor.apply(doc,SLATE_INK);
           doc.setFontSize(9.5);
@@ -7421,6 +7505,8 @@
           sectionHeader: sectionHeader,
           sceneNumeral: sceneNumeral,
           slugline: slugline,
+          stripBar: stripBar,
+          stripLegend: stripLegend,
           body: body,
           annotation: annotation,
           labelledList: labelledList,
@@ -7770,6 +7856,9 @@
           (slateBreakdown && slateBreakdown.scenes) || allScenes);
         if (slateUnnumSch) { pdf.gap(3); pdf.annotation(slateUnnumSch, 15, 175); }
 
+        pdf.gap(4);
+        pdf.stripLegend();
+
         // A day's page count is how a production manager judges whether the
         // day is achievable at all — four pages is a normal day, twelve is
         // not. It was never printed, so the schedule showed what to shoot
@@ -7787,7 +7876,12 @@
           // page count already is. Both answer the same question — what
           // does this day cost — one in pages and one in wardrobe changes.
           var slateDaySd = (day.story_days || []).filter(Boolean);
-          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set')
+          // The date is only there once a start date is set in Production
+          // Details, and an empty one printed its separators anyway:
+          // "Day 01 of 15  ·    ·  IMOLE HILLS". Found by rendering a
+          // schedule with no dates, which is what every schedule looks
+          // like before the shoot is boarded.
+          pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + (day.date ? '  ·  ' + day.date : '') + '  ·  ' + (day.location || 'No location set')
             + (slateDayPages ? '  ·  ' + slateDayPages : '')
             + (slateDaySd.length
                 ? '  ·  Story day' + (slateDaySd.length > 1 ? 's ' : ' ') + slateDaySd.join(', ')
@@ -7814,6 +7908,9 @@
           }
           (day.scenes || []).forEach(function(sc) {
             pdf.check(24);
+              // Before the numeral, so the bar sits beside the row it
+              // describes rather than the one below it.
+              pdf.stripBar(sc.int_ext, sc.time_of_day);
               pdf.sceneNumeral(sc.scene_label || sc.scene_number);
              // Day header carries the location; the row names the SET —
             // which room, not which building.
