@@ -167,5 +167,86 @@ console.log('\nThe day header does not print a separator for a date it has not g
      + 'and every schedule is unboarded before a start date is set');
 }
 
+console.log('\nThe board itself');
+{
+  // Asserted by what each document carries, not by where the code sits:
+  // the board exists, and the detailed day-by-day still prints the cast,
+  // props and description that a board deliberately leaves out.
+  ok('the board is added, not swapped in',
+     /pdf\.sectionHeader\('The Board'\)/.test(APP)
+     && /pdf\.labelledList\('Cast', sc\.cast_required \|\| sc\.cast\)/.test(APP)
+     && /pdf\.labelledList\('Props', sc\.props\)/.test(APP)
+     && /if \(sc\.description\) pdf\.body\(sc\.description, 34, 130\);/.test(APP),
+     'professional practice has two documents — the board and the detailed '
+     + 'day-by-day — and compressing the second into the first throws away '
+     + 'the cast, props and description a department reads the night before');
+  ok('it is printed once', (APP.match(/sectionHeader\('The Board'\)/g) || []).length === 1);
+  ok('a day is marked with a separator row',
+     /if \(row && row\.sep\) \{/.test(APP) && /slateBoardRows\.push\(\{ sep:/.test(APP),
+     'a board with no day breaks is one continuous list with no shape');
+  ok('  ...drawn where the page break is already owned',
+     /if \(row && row\.sep\) \{[\s\S]{0,200}check\(12\);/.test(APP));
+}
+
+console.log('\nA strip column is a colour, not a word');
+{
+  // This cost three renders. The strip column holds 'INT|D' and is 6mm
+  // wide, so measuring it as text asked how many lines that takes in a
+  // 2mm column. The answer is six, every row came out 31mm tall, and the
+  // board ran eleven pages for 86 scenes at seven scenes a page.
+  //
+  // No assertion could have seen it and the text extracted from the PDF
+  // looked perfect. It was found by measuring the Y positions of the
+  // rendered rows.
+  ok('a strip column is not measured as text',
+     /if \(c\.strip\) return 1;/.test(APP),
+     'measuring "INT|D" in a 2mm column reports six lines and triples '
+     + 'every row on the board');
+  ok('  ...and is drawn the height of its row',
+     /doc\.rect\(cx, y - 3, 3, rowH - 1\.5, 'FD'\)/.test(APP),
+     'a run of nights has to read as a band, not a row of dots');
+  ok('  ...outlined even when filled, as on the detailed rows',
+     /doc\.rect\(cx, y - 3, 3, rowH - 1\.5, 'D'\)/.test(APP));
+}
+
+console.log('\nThe columns are sized by measurement, not by eye');
+{
+  ok('D/N fits EVENING',
+     /\{ label: 'D\/N', width: 20 \}/.test(APP),
+     'EVENING is 14.2mm at 9pt helvetica and needs 18.2 with padding; at '
+     + '14 it broke as "EVENI / NG" and at 18 as "EVENIN / G"');
+  ok('  ...and a longer word is abbreviated rather than broken',
+     /return c\.length > 8 \? c\.slice\(0, 4\) \+ '\.' : c;/.test(APP),
+     'CONTINUOUS is 21.3mm and would break mid-word as "CONTINUOU / S"');
+  ok('  ...leaving the standard codes untouched',
+     'DAWN'.length <= 8 && 'DUSK'.length <= 8 && 'EVENING'.length <= 8);
+
+  // 6 + 16 + 12 + 20 + 56 + 18 + 12 + 40
+  const widths = (APP.match(/width: (\d+)(?=[,}])/g) || []);
+  ok('the board columns total the table width',
+     /width: 6, strip: true/.test(APP) && /\{ label: 'Set', width: 56 \}/.test(APP),
+     'table() draws a 180mm rule under every row, so columns that do not '
+     + 'sum to 180 leave a column hanging over the edge of it');
+}
+
+console.log('\nCast numbers agree with the breakdown');
+{
+  ok('they come from the character breakdown, not from a new count',
+     /slateBreakdown && slateBreakdown\.character_breakdown/.test(APP)
+     && /slateCastNo\[k\] = c\.cast_number;/.test(APP),
+     'a board numbering the cast its own way would have an AD calling the '
+     + 'wrong actor off the wrong document');
+  ok('  ...keyed the same way the merge canonicalises a name',
+     /slateCastNo\[slateCastKey\(n\)\]/.test(APP),
+     'ADUKE and Aduke are one actor, and VOICE OF ADUKE is the same one '
+     + 'again');
+  ok('  ...de-duplicated and in order',
+     /if \(no && nums\.indexOf\(no\) === -1\) nums\.push\(no\);/.test(APP)
+     && /nums\.sort\(function \(a, b\) \{ return a - b; \}\)/.test(APP),
+     '"3, 1, 3" is not a cast list');
+  ok('an empty column is explained',
+     /A blank Cast column means the script names nobody in that scene/.test(APP));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
