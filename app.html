@@ -3595,6 +3595,40 @@
                  all_inferred: inferred > 0 && stated === 0 };
       }
 
+      // ── Why some scenes show a dash instead of a number ──
+      //
+      // A scene whose number the script never gave prints as "—" on every
+      // document. That is deliberate: a scene number is what a crew calls a
+      // scene by on set, and a number Slate made up would be called down a
+      // phone and written on a clapperboard as though the writer had chosen
+      // it. THE HILLS BETWEEN US has fifteen headings its writer did not
+      // number, so this is not a rare shape.
+      //
+      // What was missing was the sentence. A dash with no explanation reads
+      // as Slate failing to read the page, and the honest version of this
+      // feature has to say which it is. Said once per document, from one
+      // derivation, rather than beside every dash.
+      function slateUnnumberedNote(scenes) {
+        var n = 0;
+        (scenes || []).forEach(function (s) {
+          if (!s) return;
+          var lab = String(s.scene_label == null ? '' : s.scene_label).trim();
+          var num = String(s.scene_number == null ? '' : s.scene_number).trim();
+          var bad = function (v) {
+            return !v || v === '—' || v === '-' || v === 'null' || v === 'undefined';
+          };
+          if (bad(lab) && bad(num)) n++;
+        });
+        if (!n) return '';
+        return n === 1
+          ? 'One scene is not numbered in the script and is shown as —. '
+            + 'Slate does not number it, because a scene number is what a crew '
+            + 'calls a scene by.'
+          : n + ' scenes are not numbered in the script and are shown as —. '
+            + 'Slate does not number them, because a scene number is what a crew '
+            + 'calls a scene by.';
+      }
+
       // The shoot day each scene landed on, from a schedule. Returns null
       // when there is no schedule yet, which the grouping above treats as
       // "shoot days unknown" rather than "all on one day".
@@ -4965,6 +4999,11 @@
           + chip(scenes.length + ' Scenes') + chip(chars.length + ' Characters')
           + chip(locs.filter(function(l){return !l.no_location;}).length + ' Locations') + chip(data.language_detected || 'English') + '</div>';
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:20px 0 12px">Report 1 — Scene Breakdown</div>';
+        var slateUnnumScreen = slateUnnumberedNote(scenes);
+        if (slateUnnumScreen) {
+          html += '<div style="font-size:12px;color:var(--muted,#9C958A);margin:-4px 0 14px">'
+            + slateEscapeHtml(slateUnnumScreen) + '</div>';
+        }
         html += scenes.map(function(s) {
           // Colour marks the time frame, the way BG marks background actors.
           // A flashback is another time: scanning the breakdown, a reader
@@ -7438,6 +7477,9 @@
         ]);
 
         pdf.sectionHeader('Report 1 — Scene Breakdown');
+        // Said once, here, rather than beside every dash.
+        var slateUnnumPdf = slateUnnumberedNote(scenes);
+        if (slateUnnumPdf) { pdf.annotation(slateUnnumPdf, 15, 175); pdf.gap(4); }
         scenes.forEach(function(s) {
           // Reserve more room when a continuity note is coming, or the note
           // and the scene below it land on the same lines at a page break.
@@ -7719,6 +7761,14 @@
            slateUnsched.length ? (allScenes.length + ' of ' + slateTotalScenes) : slateTotalScenes],
           ['Locations', Object.keys(locations).length]
         ]);
+
+        // The same sentence as the breakdown, from the same derivation. It
+        // matters more here than there: a 1st AD reads a dash in the shooting
+        // order and has to know whether the script left that scene unnumbered
+        // or Slate lost the number.
+        var slateUnnumSch = slateUnnumberedNote(
+          (slateBreakdown && slateBreakdown.scenes) || allScenes);
+        if (slateUnnumSch) { pdf.gap(3); pdf.annotation(slateUnnumSch, 15, 175); }
 
         // A day's page count is how a production manager judges whether the
         // day is achievable at all — four pages is a normal day, twelve is
@@ -8320,6 +8370,11 @@
           pdf.annotation('No scenes are scheduled for this day. Check the shooting schedule before distributing this call sheet.');
           pdf.gap(4);
         }
+        // Counted on TODAY's scenes, not the film's. A call sheet is one
+        // day, and "15 scenes are not numbered" on a feature would be read
+        // as fifteen of them on this day.
+        var slateUnnumCs = slateUnnumberedNote(scenes);
+        if (slateUnnumCs) { pdf.annotation(slateUnnumCs, 15, 175); pdf.gap(4); }
         scenes.forEach(function(s) {
           pdf.check(20);
           pdf.sceneNumeral(s.scene_label || s.scene_number);

@@ -34,6 +34,7 @@ const PROBES = [
   'montage-schedule-probe', // a montage is one scene and several units of work
   'logistics-probe',   // what a unit needs to find the day
   'department-probe',  // what each department brings, and on which day
+  'unnumbered-probe',  // a scene the script never numbered, and why
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken
