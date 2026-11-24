@@ -2496,6 +2496,8 @@
           '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
           + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
         var out = [], numbered = 0, unnumbered = 0, beats = 0, unreadable = [], inSeq = false;
+        // Headings that are the same scene printed again after a page break.
+        var continuations = 0;
         for (var i = 0; i < raw.length; i++) {
           var nb = slateNextNonBlank(raw, i + 1);
           var m = slateLoneSceneNumber(raw[i], nb.text);
@@ -2544,6 +2546,27 @@
             var wn = raw[i].match(withNum);
             var slateN = wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null;
             out.push(slateN);
+
+            // ── A continuation is not another scene ──
+            //
+            // "37. EXT. LAKE PATH — DAWN (CONT'D)" at the top of a new page
+            // is scene 37 again, not a scene 88. The breakdown has always
+            // known this: slateFromPage refuses to rebuild a CONT'D heading,
+            // so the document comes out with the right scenes.
+            //
+            // The COUNT did not know it, and that is the bug. The health
+            // panel told a filmmaker "87 scenes found" and the breakdown
+            // then contained 86. They count, find one fewer, and conclude a
+            // scene went missing — which is the exact complaint we spent 23
+            // November chasing, arriving this time from our own arithmetic
+            // rather than from any scene actually being lost.
+            //
+            // The heading still goes into `out`, untouched. That array is
+            // the splitter's record and the alignment's index, and both are
+            // correct as they stand; removing an entry would shift every
+            // index after it. Only what we TELL the filmmaker changes.
+            if (SLATE_CONTD_RE.test(raw[i])) { continuations++; continue; }
+
             // "Numbered" means we know this scene's number, wherever the
             // writer put it. A BROTHER'S LOVE writes "1.EXT. COMPOUND - DAY"
             // and Better Half "1.00. INT. STUDIO" — the number is ON the
@@ -2559,7 +2582,16 @@
                  // every setup. Counted here only so the panel can say how
                  // many a script has.
                  beats: beats,
-                 unreadable: unreadable, total: out.length };
+                 // Reported so the panel can explain itself rather than
+                 // just showing a smaller number than the page appears to
+                 // hold. A filmmaker who counts headings by eye gets the
+                 // larger figure, and has every right to ask why.
+                 continuations: continuations,
+                 unreadable: unreadable,
+                 // SCENES, not headings. `numbers` above still carries one
+                 // entry per heading, continuations included, because it is
+                 // the splitter's record and the alignment's index.
+                 total: out.length - continuations };
       }
 
       // Kept as the splitter's interface — same input, same output, one
@@ -8640,19 +8672,21 @@
         // scene count made one 47-scene screenplay report as 38.
         // The count comes from the one walk, not from max() of two readers.
         // That max was the reason the panel and the breakdown disagreed.
-        var sceneTotal = scenes.length, numbered = 0, unnumbered = 0;
+        var sceneTotal = scenes.length, numbered = 0, unnumbered = 0, continuations = 0;
         try {
           var slateCount = slateCountScenes(text);
           sceneTotal = slateCount.total;
           numbered = slateCount.numbered;
           unnumbered = slateCount.unnumbered;
+          continuations = slateCount.continuations || 0;
           // Fall back only if this script has no headings our walk can see
           // at all, so a format we cannot read still reports something.
           if (!sceneTotal) sceneTotal = scenes.length;
         } catch (e) {}
         return { score: score, band: band, sceneCount: scenes.length,
                  sceneTotal: sceneTotal, numbered: numbered,
-                 unnumbered: unnumbered, findings: findings };
+                 unnumbered: unnumbered, continuations: continuations,
+                 findings: findings };
      }
       window.slateHealthCheck = slateHealthCheck;
     
@@ -8734,6 +8768,21 @@
                 : (r.sceneTotal || r.sceneCount) + ' scene'
                   + ((r.sceneTotal || r.sceneCount) === 1 ? '' : 's') + ' found'
                   + (r.sceneTotal ? ' · this script numbers no scenes' : ''))
+            // ── Said before they count, not after they complain ──
+            //
+            // A filmmaker scrolling their own script counts the headings
+            // they can see. Where a scene continues over a page break the
+            // heading is printed twice, so their count is higher than ours
+            // by exactly the number of continuations — and the conclusion
+            // they reach is that we lost a scene.
+            //
+            // Naming it here costs one short clause and pre-empts the only
+            // complaint this product has ever actually received.
+            + (r.continuations
+                ? '<span style="color:var(--text-3,#7D786E)"> · ' + r.continuations
+                  + ' heading' + (r.continuations > 1 ? 's' : '')
+                  + ' repeated after a page break, counted once</span>'
+                : '')
           + '</div>'
           + '</div></div>';
 

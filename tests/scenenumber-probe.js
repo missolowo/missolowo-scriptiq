@@ -495,5 +495,88 @@ console.log('\nA dash list that is NOT under a montage is untouched');
      JSON.stringify(marks.map(m => m.beats || [])));
 }
 
+
+
+// ══════════════════════════════════════════════════
+// A CONTINUATION IS NOT ANOTHER SCENE.
+//
+// Found on 24 November, measuring whether a filmmaker's scene can go
+// missing. It cannot — but the COUNT said it had.
+//
+// "37. EXT. LAKE PATH — DAWN (CONT'D)" at the top of a new page is scene
+// 37 again, not a scene 88. slateFromPage has always refused to rebuild a
+// CONT'D heading, so the breakdown came out with the right 86 scenes. The
+// health panel, reading the same script through slateCountScenes, said 87.
+//
+// A filmmaker counts, finds one fewer than promised, and concludes a scene
+// went missing. That is the exact complaint this product has actually
+// received, arriving this time from our own arithmetic rather than from
+// any scene being lost.
+console.log('\nA scene continued over a page break is counted once');
+{
+  const countApi = new Function('window', 'console',
+    ['var SLATE_HEAD =', 'var SLATE_NUM  =', 'var SLATE_CONTD_RE', 'var SLATE_SCENE_MARKER',
+     'var SLATE_NUM_ONLY_SRC', 'var slateHeadingSrc', 'var SLATE_SEQUENCE',
+     'var SLATE_ROWS_PER_PAGE', 'var SLATE_CHARS_PER_ROW'].map(stmt).join('\n') + '\n'
+    + ['function slateCleanSceneNumber', 'function slateLoneSceneNumber',
+       'function slateNextNonBlank', 'function slateMarginNumberedHeading',
+       'function slateNumberedSequenceHeading', 'function slateHeadTextAt',
+       'function slateMontageBeat', 'function slateEndsSequence',
+       'function slateSceneTypeFrom', 'function slateRowsIn',
+       'function slateEighthsFromRows', 'function slateIsNotTitle',
+       'function slateSceneMarksIn', 'function slateCountScenes'].map(block).join('\n')
+    + '; return slateCountScenes;')({}, { warn() {}, error() {}, log() {} });
+
+  // The real shape, from THE HILLS BETWEEN US.
+  const script = '36. INT. KITCHEN — DAY\n\nShe waits.\n\n'
+    + '37. EXT. LAKE PATH — DAWN\n\nHe walks.\n\n'
+    + "37. EXT. LAKE PATH — DAWN (CONT'D)\n\nHe keeps walking.\n\n"
+    + '38. INT. CHURCH — DAY\n\nThey pray.\n';
+  const r = countApi(script);
+
+  ok('three scenes, not four', r.total === 3, r.total + '');
+  ok('  ...and the continuation is reported, not silently dropped',
+     r.continuations === 1, r.continuations + '');
+  ok('  ...and is not counted as a numbered scene',
+     r.numbered === 3, r.numbered + ' — scene 37 is numbered once, not twice');
+
+  // The array is the splitter's record and the alignment's index. Removing
+  // an entry would shift every index after it, so the heading STAYS there
+  // and only what we tell the filmmaker changes.
+  ok('the headings array still carries every heading',
+     r.numbers.length === 4,
+     r.numbers.length + ' — the alignment indexes into this, so dropping an '
+     + 'entry would shift every scene after it');
+
+  // Every spelling Word produces. A continuation we fail to recognise is a
+  // phantom scene in the count.
+  ["(CONT'D)", "(CONT’D)", '(CONTD)', '(CONTINUED)', '(cont’d)',
+   '( CONT’D )'].forEach(function (mark) {
+    const s2 = '1. INT. ROOM — DAY\n\nA.\n\n1. INT. ROOM — DAY ' + mark + '\n\nB.\n';
+    ok('  ' + mark + ' is recognised', countApi(s2).total === 1,
+       countApi(s2).total + ' scenes');
+  });
+
+  // And the opposite error: a scene that merely MENTIONS continuing is a
+  // scene. Over-matching here would hide real scenes from the count.
+  ok('a heading that is not a continuation still counts',
+     countApi('1. INT. ROOM — DAY\n\nA.\n\n2. INT. HALL — CONTINUOUS\n\nB.\n').total === 2,
+     'CONTINUOUS is a time of day, not a page break');
+}
+
+console.log('\nThe panel says so before the filmmaker counts');
+{
+  ok('the health panel carries the continuation count',
+     /continuations = slateCount\.continuations/.test(APP));
+  ok('  ...and says it in words on the panel',
+     /repeated after a page break, counted once/.test(APP),
+     'a filmmaker scrolling their own script sees the heading twice and '
+     + 'will otherwise conclude we lost a scene');
+  ok('  ...and says nothing when there are none',
+     /r\.continuations\s*\n?\s*\?/.test(APP),
+     'an always-on note about page breaks is noise on the 4 scripts in 5 '
+     + 'that have none');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
