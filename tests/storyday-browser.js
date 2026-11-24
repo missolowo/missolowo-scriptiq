@@ -143,7 +143,12 @@ function fixture() {
     ok('  ...and unknown counts the rest',
        out.reading.story_days_unknown === 2, JSON.stringify(out.reading));
     ok('  ...and distinct days counts the writer’s too',
-       out.reading.distinct_story_days === 2, JSON.stringify(out.reading));
+       out.reading.distinct_story_days_after === 2, JSON.stringify(out.reading));
+    ok('  ...without overwriting what the model itself gave us',
+       out.reading.distinct_story_days === undefined,
+       JSON.stringify(out.reading)
+       + ' — the merge owns that number, and it is the only measurement '
+       + 'of how often the model fills the field');
   }
 
   // ── 4. The instrumentation must never be the thing that breaks ──

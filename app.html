@@ -5585,7 +5585,30 @@
               r.story_days_inferred = slateSdApplied;
               r.story_days_unknown = (bd.scenes || []).length - slateSdApplied;
               r.story_days_skipped = slateSdNote;
-              r.distinct_story_days = (function () {
+
+              // ── Why this is a NEW field and does not overwrite
+              //    distinct_story_days ──
+              //
+              // The merge writes scenes_with_story_day and
+              // distinct_story_days before this pass runs, and that pair
+              // measures one thing: how often the MODEL fills the field.
+              // The note where they are written says nobody has ever seen
+              // that number, and every answer about continuity depends on
+              // it.
+              //
+              // The first version of this overwrote distinct_story_days
+              // with the count AFTER inference. That destroyed the only
+              // measurement of the model's own behaviour — and left
+              // slate_reading holding two pre-inference numbers and one
+              // post-inference number with nothing saying which was
+              // which. On a good run it would have read
+              // scenes_with_story_day: 0 beside distinct_story_days: 3,
+              // which is not a surprising result, it is two answers to
+              // different questions filed under one name.
+              //
+              // So: the merge owns what the model gave us. This owns what
+              // we added. One reader per fact, on both sides.
+              r.distinct_story_days_after = (function () {
                 var seen = {}, n = 0;
                 (bd.scenes || []).forEach(function (s) {
                   var v = String(s.story_day || '').trim();
