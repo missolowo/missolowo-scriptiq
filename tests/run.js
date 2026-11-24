@@ -72,4 +72,5 @@ console.log('  node tests/funnel-browser.js   the funnel events actually fire');
 console.log('  node tests/homepage-browser.js how far down the homepage people get');
 console.log('  node tests/pagefurniture-browser.js  page numbers are not scene numbers');
 console.log('  node tests/layout-browser.js   a PDF page is a layout, not a stream');
+console.log('  node tests/storyday-browser.js the one inference, run against a 401');
 process.exit(failed ? 1 : 0);

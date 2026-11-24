@@ -170,7 +170,75 @@ console.log('\nEvery way this can fail leaves the breakdown as it was');
 
   const caller = block(APP, 'async function slateInferStoryDays');
   ok('the caller survives a non-ok response',
-     /if \(!res\.ok\) return bd;/.test(caller));
+     /if \(!res\.ok\) \{/.test(caller) && /slateSdNote = 'http_' \+ res\.status/.test(caller),
+     'and records WHICH status, because a 401 and an honest empty answer '
+     + 'looked identical on the first live run');
+
+  // ── The bug this probe missed, and the assertion that ends the class ──
+  //
+  // The first live run of the pass, 24 November, did nothing at all. The
+  // caller used bare fetch() where every other call to a Netlify function
+  // in this file goes through slateFetch, which attaches the bearer token
+  // and refreshes it on a 401. slateAuthenticate refused the request and
+  // the pass returned quietly.
+  //
+  // Diagnosing it meant reading the function, the caller and a working
+  // call side by side. This assertion is the generalisation: no endpoint
+  // in app.html may be called without auth, ever again.
+  // The rule is not "always slateFetch" — pricing is a public endpoint, and
+  // the signup hook hands over the token it was just given, before any
+  // session is stored for slateFetch to read. The rule is that no call to
+  // an AUTHENTICATED endpoint may go out without a token, and which
+  // endpoints those are is read from the functions directory rather than
+  // kept in a list here, so a new authenticated function is covered on the
+  // day it is written.
+  const FN_DIR = __p.join(ROOT, 'netlify/functions');
+  const authed = fs.readdirSync(FN_DIR)
+    .filter(function (f) { return /\.js$/.test(f); })
+    .filter(function (f) {
+      return /slateAuthenticate\s*\(/.test(fs.readFileSync(__p.join(FN_DIR, f), 'utf8'));
+    })
+    .map(function (f) { return f.replace(/\.js$/, ''); });
+
+  ok('the authenticated endpoints are discovered, not listed',
+     authed.length >= 7 && authed.indexOf('storyday') >= 0,
+     authed.join(', '));
+
+  const unauthed = authed.filter(function (name) {
+    const re = new RegExp("([A-Za-z]*)fetch\\('\\/\\.netlify\\/functions\\/"
+                          + name + "'", 'g');
+    let m, bad = false;
+    while ((m = re.exec(APP))) {
+      if (m[1] === 'slate') continue;                  // slateFetch: fine
+      // A hand-rolled call is fine ONLY if it sets the header itself.
+      const tail = APP.slice(m.index, m.index + 400);
+      if (!/'Authorization': 'Bearer ' \+/.test(tail)) bad = true;
+    }
+    return bad;
+  });
+  ok('every authenticated endpoint is called with a token',
+     unauthed.length === 0,
+     unauthed.join(', ') + ' — called with a bare fetch and no Authorization '
+     + 'header, so slateAuthenticate refuses it and the failure is silent');
+  ok('  ...and the story-day pass uses slateFetch',
+     /slateFetch\('\/\.netlify\/functions\/storyday'/.test(APP));
+
+  // The other half of the same class. Both ends of this wire name the
+  // scene, and if they named it differently every row would miss its
+  // scene, apply nothing, and report a clean zero — a failure that looks
+  // exactly like a script with no story days in it.
+  ok('both ends of the wire key the scene by the same word',
+     /out\.push\(\{ index: i, day: String\(d\) \}\)/.test(FN)
+     && /byIndex\[Number\(r && r\.index\)\]/.test(APP),
+     'the function emits `index`; the caller must read `index`');
+
+  ok('the outcome is recorded on every path, not only on success',
+     /\} finally \{/.test(caller)
+     && /r\.story_days_skipped = slateSdNote;/.test(caller),
+     'slate_reading had no story_days_* fields at all after the failed run, '
+     + 'so the failure was indistinguishable from an absence');
+  ok('  ...and the instrumentation cannot itself break a breakdown',
+     /catch \(e2\)/.test(caller));
   ok('  ...and anything thrown', /catch \(e\) \{/.test(caller));
   ok('  ...and says nothing to the filmmaker about it',
      !/alert\(|showError|slateToast/.test(caller),
