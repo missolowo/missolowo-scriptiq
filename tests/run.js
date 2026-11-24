@@ -30,6 +30,10 @@ const PROBES = [
   'callsheet-guard-probe', // what stops a bad call sheet leaving Slate
   'continuity-probe',  // which scenes have to match each other
   'storyday-pass-probe', // the one place we infer, and how it is contained
+  'packer-probe',      // how a shoot day is built: pages, light, conservation
+  'montage-schedule-probe', // a montage is one scene and several units of work
+  'logistics-probe',   // what a unit needs to find the day
+  'department-probe',  // what each department brings, and on which day
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken

@@ -182,8 +182,19 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       // Count by identity, not by number. Counting by scene_number collapsed
       // every unnumbered scene into a single "null" entry, so a script with
       // five unnumbered scenes reported four fewer than it has.
+      //
+      // Counted by SCENE, not by unit of work. A montage split into four
+      // setups is still one scene of the filmmaker's screenplay, and a
+      // total_scenes three higher than their breakdown would read as the
+      // schedule inventing scenes — the exact complaint the run stamp and
+      // the continuation count were added to prevent.
       var uniqueScenes = {};
       slimScenes.forEach(function (s) { uniqueScenes[String(s.idx)] = true; });
+      // Units of work, which is what a day is packed with and what
+      // conservation is asserted on. One per scene, or one per montage
+      // setup.
+      var uniqueUnits = {};
+      slimScenes.forEach(function (s) { uniqueUnits[String(s.key || s.idx)] = true; });
       // Warn when a day carries more locations than a crew could realistically
       // move between. We do not silently produce an impossible day.
       var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
@@ -253,6 +264,52 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             // this can say so plainly instead of implying a place.
             scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
+            // ── The moves themselves, not just that there are some ──
+            //
+            // company_move was a boolean computed from locations.length > 1,
+            // which tells a crew there is a move somewhere in the day —
+            // something they had already worked out from the two locations
+            // printed at the top of their call sheet.
+            //
+            // The day is in shooting order, so we know more than that: WHICH
+            // scene the unit moves after, and from where to where. That is
+            // the sentence a 1st AD writes by hand, derived from data we
+            // already hold.
+            //
+            // It is only reliable because the day is now ordered by light and
+            // location rather than by the order pieces happened to be pushed.
+            // Before that, "move after scene 3A" could name any scene.
+            //
+            // No travel estimate. Never guessed, on the same rule as the
+            // address: a wrong travel time is worse than none, because a unit
+            // plans the morning around it.
+            company_moves: (function () {
+              var out = [];
+              var prevLoc = null, prevScene = null;
+              (d.scenes || []).forEach(function (s) {
+                var here = String(s.loc || '').trim();
+                // A scene the script never placed moves nobody: the unit is
+                // wherever it already was. It is reported separately, and
+                // guessing a move around it would invent travel.
+                if (!here) return;
+                if (prevLoc !== null && slatePlaceKey(here) !== slatePlaceKey(prevLoc)) {
+                  out.push({
+                    // The last scene shot before the unit travels — which is
+                    // how an AD says it, because that is the moment the move
+                    // actually happens.
+                    after_scene: prevScene && prevScene.label != null
+                      ? prevScene.label
+                      : (prevScene && prevScene.n != null ? prevScene.n : null),
+                    after_scene_index: prevScene ? prevScene.idx : null,
+                    from: prevLoc,
+                    to: here
+                  });
+                }
+                prevLoc = here;
+                prevScene = s;
+              });
+              return out;
+            })(),
             // Opportunities, not instructions. Nothing above has moved.
             compromise_shoots: compromises,
             // ── Which story days this shoot day touches ──
@@ -278,6 +335,17 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
+                // A montage setup is not the whole montage. Said on the row
+                // so a 1st AD reading "4" knows they are shooting one beat
+                // of it today and where the others went.
+                montage_setup: s.beat || 0,
+                montage_setups: s.beats || 0,
+                montage_beat: s.beat_text || '',
+                // The unit of work this row is, which is what conservation
+                // counts and what a move should address. Emitted so the
+                // workspace can move ONE setup later; today it moves a
+                // montage whole, and the validator accepts either.
+                unit: s.key || String(s.idx),
                 scene_number: s.n,
                 int_ext: s.ie,
                 time_of_day: s.tod,
@@ -315,6 +383,9 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         unscheduled_scenes: slateUnplaced.map(function (s) {
           return {
             scene_index: s.idx,
+            montage_setup: s.beat || 0,
+            montage_setups: s.beats || 0,
+            montage_beat: s.beat_text || '',
             scene_number: s.n,
             int_ext: s.ie,
             time_of_day: s.tod,
@@ -419,6 +490,43 @@ function slateAddUnplacedToDays(days, unplaced) {
   });
 }
 
+// ── The order a shooting day actually runs ──
+//
+// Dawn first, because you get it once and the light is gone. Then the
+// body of the day. Then dusk, which is the same problem as dawn. Night
+// last, because once you have turned the lights round you are not going
+// back to daylight.
+//
+// ONE reading of the time of day, used by two callers that both needed it.
+// The grouping previously asked `indexOf('NIGHT') >= 0` inline and the
+// ordering needed the same judgement — two places deciding one thing is
+// the bug class that produced the scene numbers, the locations, the
+// montage and the span. Only NIGHT ranks 3, so the grouping this replaces
+// keeps exactly the shape it had.
+function slateLightRank(tod) {
+  var t = String(tod == null ? '' : tod).toUpperCase();
+  if (t.indexOf('NIGHT') >= 0) return 3;
+  if (t.indexOf('DUSK') >= 0 || t.indexOf('SUNSET') >= 0 || t.indexOf('EVENING') >= 0) return 2;
+  if (t.indexOf('DAWN') >= 0 || t.indexOf('SUNRISE') >= 0) return 0;
+  return 1;
+}
+
+// A scene's length in eighths of a page, which is how a day is costed.
+//
+// A scene whose eighths never arrived must not be free. If it were, a day
+// would absorb any number of them and the page budget would mean nothing
+// on exactly the scripts where the reading went wrong. One page is the
+// honest stand-in: it is the rough average of a real scene, and it errs
+// toward a lighter day rather than a longer one.
+const SLATE_EIGHTHS_UNKNOWN = 8;
+function slateSceneEighths(s) {
+  var e = Number(s && s.eighths);
+  return (isFinite(e) && e > 0) ? e : SLATE_EIGHTHS_UNKNOWN;
+}
+function slateEighthsOf(scenes) {
+  return (scenes || []).reduce(function (a, s) { return a + slateSceneEighths(s); }, 0);
+}
+
 function slateAssignDays(slatePlaced, dayCount) {
       const normKey = slateKey;
       // Group scenes by location, keeping day and night separate
@@ -428,7 +536,7 @@ function slateAssignDays(slatePlaced, dayCount) {
         if (loc === 'null' || loc === 'undefined' || loc === 'Unspecified') loc = '';
         // slatePlaceKey, not normKey — see the note above. Two spellings of
         // one location must not become two groups, or they become two trips.
-        const key = slatePlaceKey(loc) + '|' + (String(s.tod).toUpperCase().indexOf('NIGHT') >= 0 ? 'N' : 'D');
+        const key = slatePlaceKey(loc) + '|' + (slateLightRank(s.tod) === 3 ? 'N' : 'D');
         if (!groups[key]) groups[key] = { location: loc, night: key.endsWith('|N'), scenes: [] };
         groups[key].scenes.push(s);
       });
@@ -441,25 +549,53 @@ function slateAssignDays(slatePlaced, dayCount) {
       // otherwise the call sheet prints one address while listing scenes
       // shot somewhere else, and crew go to the wrong place.
       const perDay = Math.ceil(slatePlaced.length / dayCount) || 1;
+
+      // ── A day is a number of PAGES, not a number of scenes ──
+      //
+      // Eighths were computed per scene, stored, and printed on the
+      // schedule, and then played no part in deciding what a day held.
+      // Nine half-page scenes and nine three-page scenes were the same day
+      // to this packer. No AD schedules that way: a day is four to five
+      // pages, fewer on a night exterior.
+      //
+      // The scene count stays as a SECOND ceiling rather than being
+      // replaced, because an AD is counting two things. Twenty-five
+      // half-page scenes is three pages and twenty-five setups, and the
+      // setups are what runs out of daylight. A day closes when either
+      // budget would be exceeded.
+      const perDayEighths = Math.ceil(slateEighthsOf(slatePlaced) / dayCount) || 1;
+
       const days = [];
-      let current = { scenes: [], locations: [] };
+      let current = { scenes: [], locations: [], eighths: 0, light: null };
 
       function closeDay() {
         if (current.scenes.length) days.push(current);
-        current = { scenes: [], locations: [] };
+        current = { scenes: [], locations: [], eighths: 0, light: null };
       }
 
-    
+
       // Split each location into evenly-sized pieces first. A location with
       // 12 scenes and a 9-per-day limit becomes 6 and 6, not 9 and 3 — a
       // three-scene day still costs a full crew, so an even spread is both
       // cheaper and more realistic to shoot.
+      //
+      // Split on PAGES too, for the same reason the day budget is pages: a
+      // location holding four twelve-page scenes is four days of work and
+      // used to come through as one piece.
+      //
+      // The night flag travels with the piece. It was dropped here — the
+      // grouping separated `location|D` from `location|N` correctly and
+      // then this line threw the distinction away, so the packer happily
+      // put a day piece and a night piece on one day.
       var pieces = [];
       ordered.forEach(function (g) {
-        var needed = Math.max(1, Math.ceil(g.scenes.length / perDay));
+        var byCount = Math.ceil(g.scenes.length / perDay);
+        var byPages = Math.ceil(slateEighthsOf(g.scenes) / perDayEighths);
+        var needed = Math.max(1, byCount, byPages);
         var size = Math.ceil(g.scenes.length / needed);
         for (var i = 0; i < g.scenes.length; i += size) {
-          pieces.push({ location: g.location, scenes: g.scenes.slice(i, i + size) });
+          pieces.push({ location: g.location, night: !!g.night,
+                        scenes: g.scenes.slice(i, i + size) });
         }
       });
 
@@ -467,20 +603,33 @@ function slateAssignDays(slatePlaced, dayCount) {
       // taking a day to itself.
       var overflow = [];
       pieces.forEach(function (p) {
+        var pEighths = slateEighthsOf(p.scenes);
+        // Either budget. Pages is the real one; setups is what runs out of
+        // daylight.
+        var wouldOverrun = (current.scenes.length + p.scenes.length > perDay)
+                        || (current.eighths + pEighths > perDayEighths);
+        // Day work and night work on one day means turning the lights
+        // round mid-shoot, which no unit does by choice. Preferred, not
+        // enforced: conservation matters more than purity, so this only
+        // closes a day while there are days left to open. The overflow
+        // placer below may still have to mix, and that is the right trade.
+        var wouldMixLight = current.light !== null && current.light !== !!p.night;
+
         // Once every day is spoken for, hold the rest back rather than
         // dumping them all into the final day — twenty scenes across
         // seventeen locations is not a day anyone can shoot.
-        if (days.length >= dayCount - 1 && current.scenes.length + p.scenes.length > perDay) {
+        if (days.length >= dayCount - 1 && wouldOverrun) {
           overflow.push(p);
           return;
         }
-        if (current.scenes.length &&
-            current.scenes.length + p.scenes.length > perDay &&
+        if (current.scenes.length && (wouldOverrun || wouldMixLight) &&
             days.length < dayCount - 1) {
           closeDay();
         }
-        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location); 
+        if (p.location && current.locations.indexOf(p.location) < 0) current.locations.push(p.location);
         p.scenes.forEach(function (s) { current.scenes.push(s); });
+        current.eighths += pEighths;
+        if (current.light === null) current.light = !!p.night;
       });
       closeDay();
 
@@ -490,21 +639,108 @@ function slateAssignDays(slatePlaced, dayCount) {
       // exists does it go to the emptiest one.
       overflow.forEach(function (p) {
         if (!days.length) {
-        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [] }); 
+        days.push({ scenes: p.scenes.slice(), locations: p.location ? [p.location] : [],
+                    eighths: slateEighthsOf(p.scenes), light: !!p.night });
           return;
         }
-        var sameLocation = days.filter(function (d) {
-          return d.locations.indexOf(p.location) >= 0;
-        });
-        var pool = sameLocation.length ? sameLocation : days;
+        // ── Same location, but only if that day can still take it ──
+        //
+        // Returning to a place you have wrapped means travelling back, so
+        // a day already going there is the cheap answer. It is not the
+        // answer at any price. Preferring location unconditionally stacked
+        // every leftover piece of one location onto the same day: on a
+        // two-day test of three one-page scenes and three four-page
+        // scenes, it produced a 3-page day beside a 12-page day — pages
+        // measured and then ignored, which is the defect this whole change
+        // is about.
+        //
+        // An AD would rather make a second trip than schedule a day
+        // nobody can shoot. So: days at this location WITH ROOM first, then
+        // any day with room, then — because a scene must land somewhere —
+        // the emptiest day there is.
+        var pEighths = slateEighthsOf(p.scenes);
+        var hasRoom = function (d) {
+          return (d.eighths || 0) + pEighths <= perDayEighths;
+        };
+        var sameLoc = function (d) { return d.locations.indexOf(p.location) >= 0; };
+        var sameLight = function (d) { return d.light === !!p.night; };
+        var and = function () {
+          var fns = [].slice.call(arguments);
+          return days.filter(function (d) {
+            return fns.every(function (f) { return f(d); });
+          });
+        };
+
+        // ── Light outranks location, and the first version had it backwards ──
+        //
+        // Measured on a synthetic 78-scene feature against the previous
+        // packer: ordering went from 6 days out of order to 0 and the worst
+        // day from 14.8 pages to 10.8, but days mixing day and night work
+        // went from 2 to 7. Worse on the very thing P1.2 is about.
+        //
+        // The cause was this preference order. Filtering for ROOM before
+        // LIGHT meant a night piece landed on a day-work day whenever the
+        // only days with space were day days.
+        //
+        // Light and location are not the same kind of cost. Returning to a
+        // wrapped location is hours of travel — expensive, and sometimes
+        // worth paying. Putting day exteriors and night exteriors on one
+        // day is not expensive, it is impossible: you cannot shoot daylight
+        // after dark, so that day does not get shot as printed. A physical
+        // constraint outranks a cost.
+        //
+        // So the order is: same light and same location with room, then
+        // same light with room, then same location with room, then any day
+        // with room, and only then the emptiest day there is — because a
+        // scene with nowhere to go is still the one outcome worse than all
+        // of these.
+        var pool = and(sameLight, sameLoc, hasRoom);
+        if (!pool.length) pool = and(sameLight, hasRoom);
+        if (!pool.length) pool = and(sameLoc, hasRoom);
+        if (!pool.length) pool = and(hasRoom);
+        if (!pool.length) pool = and(sameLight);
+        if (!pool.length) pool = days;
+        // Emptiest by PAGES, not by scene count — the budget this packer
+        // now works to.
         var target = pool.reduce(function (a, b) {
-          return a.scenes.length <= b.scenes.length ? a : b;
+          return (a.eighths || 0) <= (b.eighths || 0) ? a : b;
         });
       if (p.location && target.locations.indexOf(p.location) < 0) target.locations.push(p.location);
         p.scenes.forEach(function (s) { target.scenes.push(s); });
+        target.eighths = (target.eighths || 0) + pEighths;
       });
 
+      // ── Order each day by the light ──
+      //
+      // The scenes sat in whatever order the pieces were pushed, so a day
+      // could print night scene 3, day scene 40, night scene 7. A unit
+      // shoots to the light: dawn while you have it, the body of the day,
+      // then dusk, then night once the lamps are turned round.
+      //
+      // A STABLE sort on the light rank alone, so the location clustering
+      // the grouping worked for survives inside each block. Sorting by
+      // anything else here would undo the whole point of grouping.
+      slateOrderDaysByLight(days);
+
       return days;
+}
+
+// A day runs dawn, day, dusk, night, whoever built it — the packer or a
+// filmmaker moving scenes by hand. It lived inside slateAssignDays at
+// first, so a hand-moved day came back in whatever order the assignment
+// happened to iterate.
+//
+// A STABLE sort on the light alone, so the location clustering survives
+// inside each block. Sorting by anything else undoes the grouping.
+function slateOrderDaysByLight(days) {
+  (days || []).forEach(function (d) {
+    if (!d || !Array.isArray(d.scenes)) return;
+    d.scenes = d.scenes
+      .map(function (s, i) { return { s: s, i: i, r: slateLightRank(s && s.tod) }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (x) { return x.s; });
+  });
+  return days;
 }
 
 // ── Taking an assignment from the filmmaker ──
@@ -539,15 +775,37 @@ function slateDaysFromAssignment(slatePlaced, assignment) {
   // schedule entirely; one we do not recognise means the workspace and
   // the breakdown disagree about what this production contains, and
   // choosing which of them is right is not ours to do.
+  //
+  // A montage's setups are separate units of work, so each needs a day.
+  // The workspace currently addresses a montage by its scene index, which
+  // means "move the whole montage" — a reasonable thing to ask for, and it
+  // must not fail validation. So a unit is looked up by its own key first
+  // and falls back to its scene's: a unit key moves one setup, a scene
+  // index moves all of them together.
+  //
+  // Without the fallback, dragging a four-beat montage sent one key for
+  // four units and the filmmaker got "these scenes were left out".
+  var dayFor = function (s) {
+    var byUnit = want[String(s.key || s.idx)];
+    return byUnit === undefined ? want[String(s.idx)] : byUnit;
+  };
   var missing = [];
   slatePlaced.forEach(function (s) {
-    if (want[String(s.idx)] === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
+    if (dayFor(s) === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
   });
   if (missing.length) {
     return { error: 'These scenes were left out of the assignment: ' + missing.join(', ') + '.' };
   }
+  //
+  // Both forms are legitimate: the scene index ("move the whole montage")
+  // and the unit key ("move setup 2"). Keying this on the index alone
+  // rejected every unit-level assignment as referring to a scene the
+  // breakdown does not have.
   var known = {};
-  slatePlaced.forEach(function (s) { known[String(s.idx)] = true; });
+  slatePlaced.forEach(function (s) {
+    known[String(s.idx)] = true;
+    if (s.key) known[String(s.key)] = true;
+  });
   var unknown = keys.filter(function (key) { return !known[key]; });
   if (unknown.length) {
     return { error: 'The assignment refers to scenes this breakdown does not have: ' + unknown.join(', ') + '.' };
@@ -559,7 +817,8 @@ function slateDaysFromAssignment(slatePlaced, assignment) {
   // it.
   var days = [];
   for (var d = 0; d < maxDay; d++) days.push({ scenes: [], locations: [] });
-  slatePlaced.forEach(function (s) { days[want[String(s.idx)] - 1].scenes.push(s); });
+  slatePlaced.forEach(function (s) { days[dayFor(s) - 1].scenes.push(s); });
+  slateOrderDaysByLight(days);
   return { days: days };
 }
 
@@ -637,25 +896,60 @@ exports.handler = async function(event, context) {
     // ── STEP 4: Slim the scenes ──
     // Scheduling only needs scene identity, location, timing and cast.
     // Sending full descriptions/props/costume blew the function timeout.
-       const slimScenes = (breakdown.scenes || []).map(function (s, i) {
-      return {
+      // ── A montage is one scene, and several units of work ──
+      //
+      // The breakdown keeps it as one scene: the writer wrote one scene and
+      // the page is the authority. The SCHEDULE cannot, because its setups
+      // are in different places. Four beats across a workshop, a market, an
+      // office and a compound used to come through as one row at whichever
+      // location won, and no unit travels to four places to shoot a
+      // montage — they pick up the market beat on the market day.
+      //
+      // So a beat is a schedulable unit here, and only here. Each carries
+      // the montage it belongs to, so the call sheet can say "scene 4,
+      // setup 2 of 4" rather than implying the whole montage is being shot.
+      //
+      // `key` is the identity everything downstream counts on: the scene
+      // index for an ordinary scene, index:beat for a setup. Conservation
+      // is asserted on it, which makes the guarantee STRONGER than before —
+      // a montage was previously one row with its four setups unaccounted
+      // for anywhere.
+      function slateSlimOne(s, i, setup) {
+        var idx = s.scene_index || (i + 1);
+        return {
         // Permanent identity — carried through so the call sheet can match
         // scenes by identity instead of by number. Falls back to array
         // position for breakdowns saved before scene_index existed.
-        idx: s.scene_index || (i + 1),
+        idx: idx,
+        // The unit of work. One per scene, or one per montage setup.
+        key: setup ? (idx + ':' + setup.n) : String(idx),
+        beat: setup ? setup.n : 0,
+        beats: setup ? (s.montage_setups || []).length : 0,
+        beat_text: setup ? setup.text : '',
         n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
         // Never invented. A montage has no interior or exterior, and
         // defaulting a blank to INT printed "INT" beside "Various
         // Locations" on a shooting schedule — a statement about how the
         // scene shoots that the script never makes.
-        ie: s.int_ext || '',
-        tod: s.time_of_day || 'DAY',
-        loc: s.location || s.set_location || '',
-        set: s.set || '',
+        //
+        // A SETUP does have one, because its beat line is a slug line: the
+        // montage says nothing about interior or exterior, but "EXT. OJA
+        // TUNTUN MARKET — MORNING" says plenty.
+        ie: setup ? (setup.int_ext || '') : (s.int_ext || ''),
+        tod: setup ? (setup.time_of_day || s.time_of_day || 'DAY') : (s.time_of_day || 'DAY'),
+        loc: setup ? (setup.location || '') : (s.location || s.set_location || ''),
+        set: setup ? (setup.set || setup.location || '') : (s.set || ''),
         // Page length, measured off the script at split time. A day's total
         // is how a production manager judges whether the day is achievable,
         // so it has to travel with the scene.
-        eighths: Number(s.slate_eighths) || 0,
+        //
+        // A montage's eighths are divided across its setups rather than
+        // counted once per beat: the writer wrote one scene of that length,
+        // and charging the whole montage to every beat would make a
+        // four-beat montage four times its real page count.
+        eighths: setup
+          ? Math.max(1, Math.round((Number(s.slate_eighths) || 0) / Math.max(1, (s.montage_setups || []).length)))
+          : (Number(s.slate_eighths) || 0),
         // The story day, carried verbatim. It was normalised once at merge
         // time and is never re-read here — a second reader is a second
         // opinion, and continuity is the last place that helps.
@@ -665,11 +959,27 @@ exports.handler = async function(event, context) {
         // shoot days, and wardrobe can only plan for that if the schedule
         // says so.
         sd: s.story_day || '',
+        // Every setup carries the montage's full cast. A call sheet for a
+        // day holding one beat still has to call the people in it, and the
+        // breakdown does not say which beat each performer appears in.
         cast: (s.cast || []).slice(0, 8),
         // Flagged, never counted — how many is a producer decision.
         bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
-      };
-    });
+        };
+      }
+
+       const slimScenes = [];
+       (breakdown.scenes || []).forEach(function (s, i) {
+         var setups = Array.isArray(s && s.montage_setups) ? s.montage_setups : [];
+         // One setup is not worth splitting: it is a montage with a single
+         // beat, which schedules exactly like a scene.
+         if (setups.length > 1) {
+           setups.forEach(function (u) { slimScenes.push(slateSlimOne(s, i, u)); });
+         } else {
+           slimScenes.push(slateSlimOne(s, i, null));
+         }
+       });
+
 
     // ── STEP 5: Build the schedule in CODE — deterministic, instant, no timeout ──
     // The AI only adds production notes afterwards. Grouping scenes by
@@ -836,3 +1146,4 @@ module.exports.slateDeriveSchedule = slateDeriveSchedule;
 module.exports.slateAssignDays = slateAssignDays;
 module.exports.slateAddUnplacedToDays = slateAddUnplacedToDays;
 module.exports.slateDaysFromAssignment = slateDaysFromAssignment;
+module.exports.slateOrderDaysByLight = slateOrderDaysByLight;
