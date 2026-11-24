@@ -3420,6 +3420,30 @@
         });
       }
 
+      // ── Whose story day is this, ours or the writer's? ──
+      //
+      // A script supervisor has to be able to tell the difference. One is
+      // a fact they can rely on; the other is a judgement they may want to
+      // check, and the whole reason the pass is allowed to answer "I do
+      // not know" is that a confident wrong answer sends them to plan a
+      // costume around scenes that never had to match.
+      //
+      // Counted rather than marked per scene. In practice a script is
+      // almost always ALL inferred or ALL stated — a writer either has the
+      // convention or does not — so marking sixty rows individually would
+      // be sixty pieces of noise to say one thing once. The renderers say
+      // it once, and name the exceptions only in the mixed case.
+      function slateStoryDayProvenance(scenes) {
+        var inferred = 0, stated = 0;
+        (scenes || []).forEach(function (s) {
+          if (!s || !String(s.story_day || '').trim()) return;
+          if (s.story_day_inferred) inferred++; else stated++;
+        });
+        return { inferred: inferred, stated: stated,
+                 mixed: inferred > 0 && stated > 0,
+                 all_inferred: inferred > 0 && stated === 0 };
+      }
+
       // The shoot day each scene landed on, from a schedule. Returns null
       // when there is no schedule yet, which the grouping above treats as
       // "shoot days unknown" rather than "all on one day".
@@ -4916,10 +4940,25 @@
           var slateCont = slateContinuityGroups(scenes, slateDayOfScene(slateSchedule));
           if (slateCont.length) {
             html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 5 — Continuity by Story Day</div>';
+            var slateProv = slateStoryDayProvenance(scenes);
             html += '<div style="color:var(--text-2,#B5AFA3);font-size:12px;margin-bottom:12px">'
               + 'Scenes that happen on the same day of the story have to match on screen, '
               + 'however far apart they are shot. Nothing here is a fault — it is what '
-              + 'has to agree.</div>';
+              + 'has to agree.'
+              // Said once, here, rather than marked on sixty rows. A script
+              // supervisor needs to know whose judgement they are reading
+              // before they plan a costume around it.
+              + (slateProv.inferred
+                  ? '<br><span style="color:var(--warn,#C97E3D)">'
+                    + (slateProv.mixed
+                        ? slateProv.inferred + ' of these story days were worked out by Slate from '
+                          + 'the narrative; the rest are marked in your script.'
+                        : 'Your script does not mark story days, so these were worked out by Slate '
+                          + 'from the narrative.')
+                    + ' Worth a check before wardrobe plans around them. Scenes Slate could not '
+                    + 'place are left out rather than guessed.</span>'
+                  : '')
+              + '</div>';
             html += slateCont.map(function (g) {
               var split = g.split
                 ? '<span style="color:var(--warn,#C97E3D);font-family:var(--font-data);font-size:11px;margin-left:10px">'
@@ -5284,6 +5323,98 @@
       // A production saved before stamps existed lifts nothing and keeps
       // an empty id, which every consumer already treats as "unknown"
       // rather than "mismatched".
+      // ── Ask the story-day pass, and apply only what it is allowed to ──
+      //
+      // The pass answers about scenes; it does not get to decide which
+      // scenes exist. It returns {index, day} keyed on scene_index and
+      // this writes ONE field. It cannot add a scene, remove one, reorder
+      // them or change any other value — which is why row conservation
+      // needs no guard here. There is nothing for it to conserve against.
+      //
+      // Everything that can go wrong leaves the breakdown untouched: a
+      // network failure, a slow model, a malformed answer, a script that
+      // marks its own days. The pass is free, so a failure costs a
+      // filmmaker nothing and there is nothing to refund.
+      async function slateInferStoryDays(bd) {
+        try {
+          if (!bd || !Array.isArray(bd.scenes) || !bd.scenes.length) return bd;
+
+          var res = await fetch('/.netlify/functions/storyday', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              // Only what the reasoning needs. No action lines, no
+              // dialogue: a one-line description is enough to tell "the
+              // next morning" from "moments later", and sending the
+              // screenplay would be slower and a promise we do not need
+              // to make.
+              scenes: bd.scenes.map(function (s) {
+                return {
+                  scene_index: s.scene_index,
+                  scene_label: s.scene_label || s.scene_number || '',
+                  scene_type: s.scene_type || '',
+                  int_ext: s.int_ext || '',
+                  time_of_day: s.time_of_day || '',
+                  location: s.location || '',
+                  description: String(s.description || '').slice(0, 160),
+                  story_day: s.story_day || ''
+                };
+              })
+            })
+          });
+          if (!res.ok) return bd;
+          var data = await res.json();
+          var rows = Array.isArray(data.story_days) ? data.story_days : [];
+
+          var byIndex = {};
+          bd.scenes.forEach(function (s) { byIndex[Number(s.scene_index)] = s; });
+
+          var applied = 0;
+          rows.forEach(function (r) {
+            var s = byIndex[Number(r && r.index)];
+            if (!s) return;
+            // The writer's own mark wins, always. Consistent with every
+            // other field: if they went to the trouble, ours is not an
+            // improvement on theirs.
+            if (String(s.story_day || '').trim()) return;
+            var v = slateStoryDay(r.day);
+            if (!v) return;
+            s.story_day = v;
+            // Said in the data so the documents can say it on the page.
+            // A script supervisor has to be able to tell our reading from
+            // the writer's statement, because one is a fact and the other
+            // is a judgement they may want to check.
+            s.story_day_inferred = true;
+            applied++;
+          });
+
+          // Counts only, beside the rest of slate_reading, so the first
+          // real run can be read rather than trusted — the same way the
+          // four element categories are being watched.
+          if (bd.production_elements && bd.production_elements.slate_reading) {
+            var r = bd.production_elements.slate_reading;
+            r.story_days_inferred = applied;
+            r.story_days_unknown = bd.scenes.length - applied;
+            r.story_days_skipped = data.skipped || data.failed || '';
+            r.distinct_story_days = (function () {
+              var seen = {}, n = 0;
+              bd.scenes.forEach(function (s) {
+                var v = String(s.story_day || '').trim();
+                if (!v || seen[v]) return;
+                seen[v] = true; n++;
+              });
+              return n;
+            })();
+          }
+          return bd;
+        } catch (e) {
+          // Deliberately silent to the filmmaker. Their breakdown is
+          // complete and correct without this; a red error about a free
+          // pass they did not ask for would only worry them.
+          return bd;
+        }
+      }
+
       function slateAdoptRunStamp(bd) {
         if (!bd) return bd;
         var run = (bd.production_elements && bd.production_elements.slate_run) || null;
@@ -5718,6 +5849,26 @@
             fingerprint: slateScriptFingerprint(extractedScriptText)
           };
           slateAdoptRunStamp(slateBreakdown);
+
+          // ── The story day, worked out rather than read ──
+          //
+          // Every other field on this breakdown came off the filmmaker's
+          // page. This one cannot: the first live run, 24 November, came
+          // back with story_day empty on all six scenes, because THE
+          // WEAVER'S DAUGHTER — like most screenplays and nearly every
+          // Nollywood one — does not mark them. A 1st AD works them out
+          // from the narrative in ten minutes. So do we.
+          //
+          // Here, after the merge, because the breakdown reads in
+          // four-scene chunks and a chunk cannot know that scene 40 is a
+          // year after scene 39 unless it sees both. And before the save,
+          // so a filmmaker who comes back next week finds the days still
+          // on their scenes.
+          //
+          // Free, and failing safe is the whole contract: every exit below
+          // leaves the breakdown exactly as it was.
+          await slateInferStoryDays(slateBreakdown);
+
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
@@ -7147,6 +7298,17 @@
           pdf.annotation('Scenes on the same day of the story have to match on screen, '
             + 'however far apart they are shot. Nothing here is a fault — it is what has '
             + 'to agree. Costume and makeup are shown as the script described them.', 15, 175);
+          var slatePdfProv = slateStoryDayProvenance(scenes);
+          if (slatePdfProv.inferred) {
+            pdf.gap(3);
+            pdf.annotation((slatePdfProv.mixed
+                ? slatePdfProv.inferred + ' of these story days were worked out by Slate from the '
+                  + 'narrative; the rest are marked in the script.'
+                : 'This script does not mark story days, so these were worked out by Slate from '
+                  + 'the narrative.')
+              + ' Worth a check before wardrobe plans around them. Scenes Slate could not place '
+              + 'are left out rather than guessed.', 15, 175);
+          }
           pdf.gap(4);
 
           // ── A table, not a labelled list ──
@@ -7668,7 +7830,13 @@
         if (csSds.length > 1) {
           pdf.annotation('This day covers story days ' + csSds.join(', ')
             + '. Costume and hair need ' + csSds.length
-            + ' continuity looks on set, not one.', 15, 175);
+            + ' continuity looks on set, not one.'
+            // The call sheet never shows Report 5, so if the provenance is
+            // not said here it is not said anywhere a unit will read it.
+            + (slateStoryDayProvenance(scenes).inferred
+                ? ' Story days were worked out by Slate from the narrative rather than marked in '
+                  + 'the script — worth a check.'
+                : ''), 15, 175);
           pdf.gap(4);
         }
 

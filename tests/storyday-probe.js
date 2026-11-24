@@ -148,9 +148,12 @@ console.log('\nReading twice gives the same answer');
 // ONE READER, NOT THREE.
 console.log('\nThere is exactly one reader, and it is at the boundary');
 {
+  // The open paren matters: slateStoryDayProvenance shares the prefix, and
+  // a loose pattern reported two readers where there is one. An assertion
+  // that cries wolf is one the next person turns off.
   ok('app.html defines slateStoryDay once',
-     (APP.match(/function slateStoryDay/g) || []).length === 1,
-     (APP.match(/function slateStoryDay/g) || []).length + ' definitions');
+     (APP.match(/function slateStoryDay\(/g) || []).length === 1,
+     (APP.match(/function slateStoryDay\(/g) || []).length + ' definitions');
 
   ok('the merge normalises the field where the model’s answer arrives',
      /scene\.story_day\s*=\s*slateStoryDay\(scene\.story_day\)/.test(APP),
