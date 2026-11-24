@@ -3420,6 +3420,81 @@
         });
       }
 
+      // ── What each department has to bring, for a given set of scenes ──
+      //
+      // The only question a department head actually asks: what do I need
+      // on Tuesday. A props master reads a day, not a film.
+      //
+      // Elements were derived per scene and rolled up per PRODUCTION —
+      // Report 4, every prop in the picture — with nothing in between. The
+      // useful unit is the day, and a props master merging six scene
+      // blocks in their head at 6am is how a prop gets left in the van.
+      //
+      // The scene labels matter as much as the items. "Floor loom (1, 5)"
+      // says it is needed twice and has to survive the day; "Shuttle (1)"
+      // says it wraps after scene 1. A bare list of items loses that, and
+      // it is the part a department plans around.
+      //
+      // ONE derivation, used by the call sheet and by the schedule's prep
+      // report. Two renderers grouping separately is the duplicate source
+      // of truth behind the scene numbers, the locations, the montage and
+      // the span.
+      var SLATE_DEPARTMENTS = [
+        ['Props',          'props'],
+        ['Set Dressing',   'set_dressing'],
+        ['Costume',        'costume'],
+        ['Hair & Makeup',  'makeup_hair'],
+        ['Camera & Grip',  'equipment'],
+        ['Stunts',         'stunts'],
+        ['Action Vehicles','vehicles'],
+        ['Animals',        'animals'],
+        ['SFX',            'special_effects'],
+        ['VFX',            'visual_effects'],
+        ['Sound',          'sound'],
+        ['Music',          'music']
+      ];
+
+      function slateDepartmentLoad(scenes) {
+        var out = [];
+        SLATE_DEPARTMENTS.forEach(function (pair) {
+          var label = pair[0], field = pair[1];
+          var order = [], byItem = {};
+          (scenes || []).forEach(function (s) {
+            var list = (s && s[field]) || [];
+            if (!Array.isArray(list)) list = [list];
+            // The scene as a crew says it: its label, or its number, or a
+            // dash. The same text the scene carries on every other
+            // document, so a reader can find it.
+            var where = (s && (s.scene_label
+              || (s.scene_number == null ? null : String(s.scene_number)))) || '—';
+            list.forEach(function (raw) {
+              var item = String(raw == null ? '' : raw).trim();
+              if (!item || item === 'null' || item === 'undefined') return;
+              // Case-insensitive, because "Floor loom" in scene 1 and
+              // "floor loom" in scene 5 is one prop and must not be
+              // packed twice.
+              var key = item.toLowerCase();
+              if (!byItem[key]) {
+                byItem[key] = { item: item, scenes: [] };
+                order.push(key);
+              }
+              if (byItem[key].scenes.indexOf(where) < 0) {
+                byItem[key].scenes.push(where);
+              }
+            });
+          });
+          // A department with nothing to bring is not a department on this
+          // sheet. Most films have no animals, and a row of empty headings
+          // teaches a crew that the headings mean nothing.
+          if (!order.length) return;
+          out.push({
+            department: label,
+            items: order.map(function (k) { return byItem[k]; })
+          });
+        });
+        return out;
+      }
+
       // ── A montage's setups, resolved to real places ──
       //
       // A montage is ONE scene in the breakdown, because the writer wrote
@@ -7803,6 +7878,62 @@
           }
         })();
 
+        // ── Department load, day by day ──
+        //
+        // The same derivation the call sheet uses, run over every day. The
+        // call sheet answers "what do I bring tomorrow"; this answers
+        // "what does this film need from me, and when" — which is what a
+        // production manager costs a picture from and what a department
+        // head reads in prep.
+        //
+        // It needs the breakdown, because the schedule carries slim scenes
+        // without elements. A schedule opened without its breakdown prints
+        // no section rather than an empty one.
+        (function () {
+          var bdScenes = (slateBreakdown && slateBreakdown.scenes) || [];
+          if (!bdScenes.length) return;
+          var byIndex = {};
+          bdScenes.forEach(function (sc) { byIndex[Number(sc.scene_index)] = sc; });
+
+          var anyPrinted = false;
+          days.forEach(function (day, di) {
+            // A montage split across days lists its scene once per setup,
+            // so the full scene is collected once — a department does not
+            // pack the same prop twice for one scene.
+            var seen = {}, dayScenes = [];
+            (day.scenes || []).forEach(function (row) {
+              var full = byIndex[Number(row.scene_index)];
+              if (!full || seen[row.scene_index]) return;
+              seen[row.scene_index] = true;
+              dayScenes.push(full);
+            });
+            var load = slateDepartmentLoad(dayScenes);
+            if (!load.length) return;
+            if (!anyPrinted) {
+              pdf.sectionHeader('Department Load by Day');
+              pdf.annotation('What each department has to bring, and on which day. '
+                + 'The scene numbers beside an item say where it is needed \u2014 an item '
+                + 'on two scenes has to survive between them.', 15, 175);
+              pdf.gap(4);
+              anyPrinted = true;
+            }
+            pdf.check(16 + load.length * 6);
+            pdf.sceneNumeral('Day ' + String(day.day || di + 1).padStart(2, '0'));
+            // sceneNumeral draws at y+4 and never advances y — it is built
+            // to sit beside a slugline, and in a scene row it is body()
+            // that moves the cursor past it. Without this gap the first two
+            // department rows printed straight through "Day 01".
+            pdf.gap(7);
+            load.forEach(function (dep) {
+              pdf.labelledList(dep.department, dep.items.map(function (it) {
+                return it.item + '  (' + it.scenes.join(', ') + ')';
+              }), 15);
+            });
+            pdf.gap(4);
+            pdf.rule();
+          });
+        })();
+
         siqTrack('pdf_export', { document_type: 'schedule', shoot_days: days.length });
         pdf.save(((s.title || 'production').replace(/\s+/g, '-').toLowerCase()) + '-shooting-schedule.pdf');
       }
@@ -8210,6 +8341,29 @@
           pdf.gap(11);
           pdf.rule();
         });
+
+        // ── What each department brings today ──
+        //
+        // The scene blocks above answer "what happens in scene 3". This
+        // answers "what do I pack", and they are different people reading.
+        // A props master merging six scene blocks in their head at 6am is
+        // how a prop gets left in the van.
+        //
+        // The scene numbers beside each item are the point: "Floor loom
+        // (1, 5)" says it is needed twice and has to survive the day,
+        // "Shuttle (1)" says it wraps after scene 1.
+        var csLoad = slateDepartmentLoad(scenes);
+        if (csLoad.length) {
+          pdf.sectionHeader('Department Load \u2014 Today');
+          csLoad.forEach(function (dep) {
+            pdf.check(10 + dep.items.length * 4);
+            pdf.labelledList(dep.department, dep.items.map(function (it) {
+              return it.item + '  (' + it.scenes.join(', ') + ')';
+            }), 15);
+            pdf.gap(2);
+          });
+          pdf.gap(4);
+        }
 
         // ── Tomorrow ──
         // Every real call sheet ends here, because this is what the crew act
