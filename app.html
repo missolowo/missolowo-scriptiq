@@ -6093,6 +6093,20 @@
         locations: [], weather_high: '', weather_low: '', precipitation: '',
         humidity_wind: '', sunrise_sunset: '', forecast_note: '',
         hospital: '', base_camp: '', base_camp_maps: '',
+        // ── What a unit asks for and no document carried ──
+        //
+        // Thirty vehicles arrive at a residential compound with nowhere
+        // stated to put them. The safety notes promise a meal break within
+        // six hours and nothing says where it is served. Somebody is being
+        // picked up and the sheet does not say from where.
+        //
+        // Per production, like everything else here, which is an honest
+        // limitation rather than the right answer: parking genuinely
+        // differs by location, and so does base camp above it. Per-location
+        // logistics is a larger change to how a filmmaker enters data, and
+        // this is worth shipping first to find out whether that is what
+        // they actually need.
+        crew_parking: '', catering: '', transport: '', travel_estimate: '',
         director: '', producer: '', first_ad: '', line_producer: '',
         emergency_contacts: [], department_timeline: [], crew: [],
         cast_hotel: '', crew_hotel: '', quote_of_day: '',
@@ -7998,8 +8012,47 @@
           ['Nearest Hospital', pd.hospital],
           ['Base Camp', pd.base_camp],
           ['Base Camp — Maps', pd.base_camp_maps],
-          ['', '']
+          ['Crew Parking', pd.crew_parking]
         ]);
+        // Catering and transport, beside parking. Empty prints a dash like
+        // every other cell here, so a production that has not filled them
+        // sees the same sheet it saw before.
+        if (pd.catering || pd.transport) {
+          fourUp([
+            ['Catering / Meals', pd.catering],
+            ['Transport', pd.transport],
+            ['', ''],
+            ['', '']
+          ]);
+        }
+
+        // ── The unit move, said as a sentence ──
+        //
+        // company_move was a boolean, which told a crew there was a move
+        // somewhere in the day — something they had worked out already from
+        // the two locations at the top of this page. The schedule knows the
+        // day in shooting order, so it knows which scene the unit moves
+        // after and from where to where. That is what a 1st AD writes by
+        // hand, and it was derivable all along.
+        //
+        // The travel estimate is only printed when the filmmaker supplies
+        // one. Never guessed, on the same rule as the address: a wrong
+        // travel time is worse than none, because a unit plans the morning
+        // around it.
+        var csMoves = Array.isArray(cs.company_moves) ? cs.company_moves : [];
+        if (csMoves.length) {
+          pdf.gap(3);
+          pdf.labelledList(csMoves.length > 1 ? 'Unit Moves' : 'Unit Move',
+            csMoves.map(function (m) {
+              return (m.after_scene ? 'After scene ' + m.after_scene + ': ' : '')
+                // A word, not an arrow. U+2192 is not in the PDF's font and
+                // printed as "!'" on the page — found by rendering the call
+                // sheet and reading it. "to" also reads aloud, which matters
+                // on a document people quote down a phone.
+                + (m.from || 'current location') + ' to ' + (m.to || 'next location')
+                + (pd.travel_estimate ? '   (allow ' + pd.travel_estimate + ')' : '');
+            }), 15);
+        }
 
         pdf.sectionHeader('Key Contacts');
         fourUp([
@@ -8178,7 +8231,19 @@
           pdf.sectionHeader('Tomorrow — Day ' + String(adv.day).padStart(2, '0')
             + (adv.date ? '  ·  ' + adv.date : '')
             + (adv.location ? '  ·  ' + adv.location : ''));
-          if (adv.company_move) {
+          // Tomorrow's move, said the same way as today's. "More than one
+          // location" was all a crew got, and planning travel tonight is
+          // easier when you know which way you are travelling.
+          var advMoves = Array.isArray(adv.company_moves) ? adv.company_moves : [];
+          if (advMoves.length) {
+            pdf.annotation('Company move tomorrow: '
+              + advMoves.map(function (m) {
+                  return (m.from || 'current location') + ' to ' + (m.to || 'next location')
+                    + (m.after_scene ? ' after scene ' + m.after_scene : '');
+                }).join('; ')
+              + '. Plan travel tonight.');
+            pdf.gap(3);
+          } else if (adv.company_move) {
             pdf.annotation('Company move tomorrow — more than one location. Plan travel tonight.');
             pdf.gap(3);
           }
@@ -8317,6 +8382,10 @@
         pd.hospital = g('pdHospital');
         pd.base_camp = g('pdBaseCamp');
         pd.base_camp_maps = g('pdBaseCampMaps');
+        pd.crew_parking = g('pdCrewParking');
+        pd.catering = g('pdCatering');
+        pd.transport = g('pdTransport');
+        pd.travel_estimate = g('pdTravelEstimate');
         pd.director = g('pdDirector');
         pd.producer = g('pdProducer');
         pd.first_ad = g('pdFirstAd');
@@ -8389,6 +8458,15 @@
               field('pdHospital', 'Nearest hospital', pd.hospital, 'Lagos Island Gen. — 0803 000 0000')
             + field('pdBaseCamp', 'Base camp', pd.base_camp, 'Gate B, Ikorodu Rd')
             + field('pdBaseCampMaps', 'Maps link', pd.base_camp_maps, 'maps.app.goo.gl/...'))
+          // What a unit asks for and no document carried. The placeholders
+          // are the answers a Lagos production manager would actually give,
+          // because a placeholder that shows the SHAPE of an answer gets
+          // filled in and one that says "enter parking" does not.
+          + group('Parking, Catering &amp; Transport',
+              field('pdCrewParking', 'Crew parking', pd.crew_parking, 'Compound gate — 20 vehicles, attendant on duty')
+            + field('pdCatering', 'Catering / meals', pd.catering, 'Served at base camp — breakfast 07:00, lunch 13:00')
+            + field('pdTransport', 'Transport / shuttle', pd.transport, 'Bus from Ojota 05:30 — call 2nd AD to book')
+            + field('pdTravelEstimate', 'Travel time between locations', pd.travel_estimate, '45 minutes'))
           + group('Key Contacts',
               field('pdDirector', 'Director', pd.director, 'Name · 0803 000 0000')
             + field('pdProducer', 'Producer', pd.producer, 'Name · 0803 000 0000')

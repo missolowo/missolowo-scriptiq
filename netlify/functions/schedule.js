@@ -264,6 +264,52 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             // this can say so plainly instead of implying a place.
             scenes_without_location: unplaced,
             company_move: d.locations.length > 1,
+            // ── The moves themselves, not just that there are some ──
+            //
+            // company_move was a boolean computed from locations.length > 1,
+            // which tells a crew there is a move somewhere in the day —
+            // something they had already worked out from the two locations
+            // printed at the top of their call sheet.
+            //
+            // The day is in shooting order, so we know more than that: WHICH
+            // scene the unit moves after, and from where to where. That is
+            // the sentence a 1st AD writes by hand, derived from data we
+            // already hold.
+            //
+            // It is only reliable because the day is now ordered by light and
+            // location rather than by the order pieces happened to be pushed.
+            // Before that, "move after scene 3A" could name any scene.
+            //
+            // No travel estimate. Never guessed, on the same rule as the
+            // address: a wrong travel time is worse than none, because a unit
+            // plans the morning around it.
+            company_moves: (function () {
+              var out = [];
+              var prevLoc = null, prevScene = null;
+              (d.scenes || []).forEach(function (s) {
+                var here = String(s.loc || '').trim();
+                // A scene the script never placed moves nobody: the unit is
+                // wherever it already was. It is reported separately, and
+                // guessing a move around it would invent travel.
+                if (!here) return;
+                if (prevLoc !== null && slatePlaceKey(here) !== slatePlaceKey(prevLoc)) {
+                  out.push({
+                    // The last scene shot before the unit travels — which is
+                    // how an AD says it, because that is the moment the move
+                    // actually happens.
+                    after_scene: prevScene && prevScene.label != null
+                      ? prevScene.label
+                      : (prevScene && prevScene.n != null ? prevScene.n : null),
+                    after_scene_index: prevScene ? prevScene.idx : null,
+                    from: prevLoc,
+                    to: here
+                  });
+                }
+                prevLoc = here;
+                prevScene = s;
+              });
+              return out;
+            })(),
             // Opportunities, not instructions. Nothing above has moved.
             compromise_shoots: compromises,
             // ── Which story days this shoot day touches ──

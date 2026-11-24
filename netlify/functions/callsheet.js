@@ -439,6 +439,9 @@ Return ONLY valid JSON:
         location: slateNextDay.location || '',
         locations: slateNextDay.locations || [],
         company_move: !!slateNextDay.company_move,
+        // Tomorrow's moves too. The advance is read to know what to
+        // prepare, and a move is the thing that most changes a morning.
+        company_moves: Array.isArray(slateNextDay.company_moves) ? slateNextDay.company_moves : [],
         scenes: (slateNextDay.scenes || []).map(function (sc) {
           return {
             scene_index: sc.scene_index,
@@ -479,6 +482,12 @@ Return ONLY valid JSON:
       location_address_required: !location_address,
       locations: dayData.locations || (dayLocation ? [dayLocation] : []),
       company_move: !!dayData.company_move,
+      // The moves themselves — after which scene, from where to where.
+      // Derived by the schedule from the day's shooting order; the call
+      // sheet only carries them. A boolean told a crew there was a move
+      // somewhere in the day, which they had already worked out from the
+      // two locations at the top of the page.
+      company_moves: Array.isArray(dayData.company_moves) ? dayData.company_moves : [],
       scenes_today: scenesToday,
       cast_call_times: castCallTimes,
       advance_schedule: slateAdvance,
