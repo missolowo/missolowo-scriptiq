@@ -300,8 +300,20 @@ console.log('\nThe first run reports on itself');
     ok('  ' + k + ' is recorded', caller.indexOf(k) > 0,
        'the failure here is quiet wrongness, which only a real script shows');
   });
+  // The merge counts what the MODEL gave us; the pass counts what we have
+  // after inferring. Collapsing them into one field answers neither
+  // question, and the model's own rate is the one nobody has measured.
+  ok('the pass does not overwrite the merge’s count',
+     /r\.distinct_story_days_after = /.test(caller)
+     && !/r\.distinct_story_days = /.test(caller),
+     'scenes_with_story_day is pre-inference and never updated, so a '
+     + 'post-inference distinct count beside it contradicts it');
+  ok('  ...and the merge still writes its own pair',
+     /scenes_with_story_day: slateCountScenesWith\('story_day'\)/.test(APP)
+     && /distinct_story_days: \(function/.test(APP));
+
   ok('distinct is counted, not just coverage',
-     /distinct_story_days = \(function/.test(caller),
+     /distinct_story_days_after = \(function/.test(caller),
      'a script where every scene comes back day 1 is present everywhere and '
      + 'discriminates nothing, and that looks identical to a good result if '
      + 'you only count coverage');
