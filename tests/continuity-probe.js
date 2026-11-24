@@ -282,5 +282,35 @@ console.log('\nIt reaches both documents, and costs nothing');
      + 'nobody reads twice');
 }
 
+console.log('\nA story day that outlives the page still says which day it is');
+{
+  // THE HILLS BETWEEN US puts 32 scenes on story day 1. The group names
+  // itself on its first row only — right, because a heading in a table
+  // collides with the rows it heads — so pages two and three of that group
+  // had an empty Story Day column on every row. A script supervisor turning
+  // the page saw scene numbers with nothing saying what they have to match.
+  //
+  // Found by rendering a real feature-length breakdown and reading it. The
+  // six-scene fixture the renderers had always been driven with cannot
+  // produce a group that spans a page, which is why no assertion saw this.
+  ok('the Story Day column is marked to carry',
+     /\{ label: 'Story Day', width: 32, bold: true, carry: true \}/.test(APP));
+  ok('  ...and the table carries it only after a page break',
+     /else if \(broke && carried\[i\]\) val = carried\[i\] \+ '  \(cont\.\)';/.test(APP),
+     'repeating it on every row would undo the grouping the blank column '
+     + 'exists to create');
+  ok('  ...marked as a continuation, not a second group',
+     /\(cont\.\)/.test(APP),
+     'a bare repeated "1" reads as story day 1 starting again');
+  ok('  ...carrying the name only, not the count in brackets',
+     /carried\[i\] = val\.split\('  \('\)\[0\]/.test(APP),
+     'the count belongs to the whole group, not the part of it on this '
+     + 'page — and a short label cannot wrap and change the row height '
+     + 'already measured');
+  ok('the break is recorded where the break is decided',
+     /if \(y \+ rowH > 278\) \{ newPage\(\); header\(\); broke = true; \}/.test(APP),
+     'any other place would be guessing where the page ended');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
