@@ -5487,10 +5487,29 @@
       // marks its own days. The pass is free, so a failure costs a
       // filmmaker nothing and there is nothing to refund.
       async function slateInferStoryDays(bd) {
+        // ── Why the outcome is recorded on every path, not just success ──
+        //
+        // The first version wrote its counters only after a good response.
+        // It then failed on the very first live run — 24 November, run
+        // 42780a — and slate_reading simply had no story_days_* fields at
+        // all. A 401 looked exactly like "the model found no story days",
+        // which is the same silent shape as the stale call sheet: the
+        // failure and the honest empty answer were indistinguishable.
+        //
+        // Diagnosing it meant reading the function, the caller and a
+        // working call side by side. It should have taken one query.
+        var slateSdApplied = 0;
+        var slateSdNote = '';
         try {
           if (!bd || !Array.isArray(bd.scenes) || !bd.scenes.length) return bd;
 
-          var res = await fetch('/.netlify/functions/storyday', {
+          // slateFetch, not fetch. It attaches the bearer token and
+          // refreshes it on a 401, and EVERY other call to a Netlify
+          // function in this file goes through it. This one did not, so
+          // slateAuthenticate refused it and the pass returned quietly
+          // having done nothing. storyday-pass-probe.js now asserts that
+          // no bare fetch reaches a function endpoint.
+          var res = await slateFetch('/.netlify/functions/storyday', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5513,9 +5532,17 @@
               })
             })
           });
-          if (!res.ok) return bd;
+          if (!res.ok) {
+            // Recorded, not swallowed. The filmmaker still sees nothing —
+            // their breakdown is complete without this — but the next
+            // person looking at slate_reading sees "http_401" rather than
+            // an absence they have to reason about.
+            slateSdNote = 'http_' + res.status;
+            throw new Error(slateSdNote);
+          }
           var data = await res.json();
           var rows = Array.isArray(data.story_days) ? data.story_days : [];
+          slateSdNote = data.skipped || data.failed || '';
 
           var byIndex = {};
           bd.scenes.forEach(function (s) { byIndex[Number(s.scene_index)] = s; });
@@ -5538,31 +5565,37 @@
             s.story_day_inferred = true;
             applied++;
           });
-
-          // Counts only, beside the rest of slate_reading, so the first
-          // real run can be read rather than trusted — the same way the
-          // four element categories are being watched.
-          if (bd.production_elements && bd.production_elements.slate_reading) {
-            var r = bd.production_elements.slate_reading;
-            r.story_days_inferred = applied;
-            r.story_days_unknown = bd.scenes.length - applied;
-            r.story_days_skipped = data.skipped || data.failed || '';
-            r.distinct_story_days = (function () {
-              var seen = {}, n = 0;
-              bd.scenes.forEach(function (s) {
-                var v = String(s.story_day || '').trim();
-                if (!v || seen[v]) return;
-                seen[v] = true; n++;
-              });
-              return n;
-            })();
-          }
+          slateSdApplied = applied;
           return bd;
         } catch (e) {
-          // Deliberately silent to the filmmaker. Their breakdown is
-          // complete and correct without this; a red error about a free
-          // pass they did not ask for would only worry them.
+          // Deliberately silent to the FILMMAKER. Their breakdown is
+          // complete and correct without this, and a red error about a
+          // free pass they did not ask for would only worry them.
+          //
+          // Silent to us was the mistake. See the note at the top.
+          if (!slateSdNote) slateSdNote = 'threw';
           return bd;
+        } finally {
+          // Counts only, beside the rest of slate_reading, and written on
+          // EVERY path — success, refusal, throw — so a run can be read
+          // rather than reasoned about.
+          try {
+            if (bd && bd.production_elements && bd.production_elements.slate_reading) {
+              var r = bd.production_elements.slate_reading;
+              r.story_days_inferred = slateSdApplied;
+              r.story_days_unknown = (bd.scenes || []).length - slateSdApplied;
+              r.story_days_skipped = slateSdNote;
+              r.distinct_story_days = (function () {
+                var seen = {}, n = 0;
+                (bd.scenes || []).forEach(function (s) {
+                  var v = String(s.story_day || '').trim();
+                  if (!v || seen[v]) return;
+                  seen[v] = true; n++;
+                });
+                return n;
+              })();
+            }
+          } catch (e2) { /* instrumentation must never break a breakdown */ }
         }
       }
 
