@@ -26,6 +26,13 @@ function block(needle) {
 }
 const moveSrc  = block("async function slateMoveScenes");
 const staleSrc = block('function slateCallsheetOutOfDate');
+// The move path enriches the breakdown before sending it, so a montage
+// moved by hand does not re-collapse into one row. The REAL functions, not
+// stubs: this probe caught the new dependency by throwing, and a stub
+// would have let a broken enrichment through.
+const schedSrc = block('function slateBreakdownForSchedule');
+const headSrc  = block('function slateParseHeading');
+const titleSrc = block('function slateTitleCase');
 
 function harness(opts) {
   opts = opts || {};
@@ -56,6 +63,9 @@ function harness(opts) {
         document = deps.document, localStorage = deps.localStorage, siqTrack = deps.siqTrack,
         renderWorkspaceSchedule = deps.renderWorkspaceSchedule, slateSave = deps.slateSave,
         window = deps.window, slateFetch = deps.slateFetch;
+    ${titleSrc}
+    ${headSrc}
+    ${schedSrc}
     ${staleSrc}
     ${moveSrc}
     return { move: slateMoveScenes, read: function () {

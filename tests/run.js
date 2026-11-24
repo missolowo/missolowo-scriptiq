@@ -31,6 +31,7 @@ const PROBES = [
   'continuity-probe',  // which scenes have to match each other
   'storyday-pass-probe', // the one place we infer, and how it is contained
   'packer-probe',      // how a shoot day is built: pages, light, conservation
+  'montage-schedule-probe', // a montage is one scene and several units of work
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken

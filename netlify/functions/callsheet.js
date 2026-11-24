@@ -202,6 +202,27 @@ exports.handler = async function(event, context) {
       }
       return Number.MAX_SAFE_INTEGER;
     }
+    // ── Which setups of a montage are today's ──
+    //
+    // A montage's beats are scheduled separately now, so two of its four
+    // setups may be on this day and two on another. The sheet shows the
+    // montage ONCE — the breakdown filter is keyed on scene_index, so
+    // duplicates collapse, which is right — but a crew handed "scene 4,
+    // 4 setups" would prepare all four and travel for them.
+    //
+    // So the sheet carries only the setups this day actually shoots, taken
+    // from the schedule's own rows rather than from the breakdown.
+    const slateSetupsToday = {};
+    (dayData.scenes || []).forEach(function (s) {
+      if (!s || !s.montage_setup) return;
+      var k = 'i' + s.scene_index;
+      (slateSetupsToday[k] = slateSetupsToday[k] || []).push({
+        n: s.montage_setup,
+        of: s.montage_setups || 0,
+        beat: s.montage_beat || ''
+      });
+    });
+
     const slateByNumber = bySceneNumberField('scene_number');
     const scenesToday = todaysFullScenes.slice().sort(function (a, b) {
       var ra = slateRankOf(a), rb = slateRankOf(b);
@@ -224,6 +245,10 @@ exports.handler = async function(event, context) {
         // A call sheet is the document hair and wardrobe actually carry, so
         // of the three this is the one that most needed it.
         story_day: s.story_day || '',
+        // Empty for an ordinary scene. For a montage, the setups being
+        // shot today and nothing else — the full list is on the breakdown,
+        // where a reader is planning the film rather than the morning.
+        montage_setups_today: slateSetupsToday['i' + s.scene_index] || [],
         cast: s.cast || [],
         // The model returns this as a string or an array depending on the
         // scene. Accept both — an array would render as raw JSON on a

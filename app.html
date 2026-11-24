@@ -3420,6 +3420,82 @@
         });
       }
 
+      // ── A montage's setups, resolved to real places ──
+      //
+      // A montage is ONE scene in the breakdown, because the writer wrote
+      // one scene and the page is the authority. That decision stands. But
+      // its setups are usually in four different places, and the schedule
+      // had it as one row at one location — a day that cannot be shot as
+      // printed, discovered on the morning.
+      //
+      // montage_beats held the setups all along and the scheduler never
+      // saw them: they are built here in app.html, printed on the
+      // breakdown and call sheet PDFs, and slimScenes never carried them.
+      // The same shape as story_day and the eighths — computed, then
+      // dropped at the boundary.
+      //
+      // Parsed HERE rather than in schedule.js, with slateParseHeading,
+      // which already reads a slug line into location, set, INT/EXT and
+      // time of day and is already tested. A second parser in the
+      // serverless function is the duplicate source of truth that produced
+      // the scene numbers, the locations, the montage and the span.
+      //
+      // Non-mutating on purpose: it returns a copy for sending, so the
+      // breakdown a filmmaker has open and saved is never altered by
+      // asking for a schedule.
+      function slateBreakdownForSchedule(bd) {
+        if (!bd || !Array.isArray(bd.scenes)) return bd;
+        return Object.assign({}, bd, {
+          scenes: bd.scenes.map(function (s) {
+            var beats = Array.isArray(s && s.montage_beats) ? s.montage_beats : [];
+            if (!beats.length) return s;
+            return Object.assign({}, s, {
+              montage_setups: beats.map(function (b, i) {
+                var text = String(b == null ? '' : b).trim();
+                var p = slateParseHeading(text) || {};
+
+                // ── Is this beat a PLACE, or a line of prose? ──
+                //
+                // Both appear under a montage. "INT. OJA TUNTUN MARKET —
+                // MORNING" is somewhere a unit drives to; "she remembers
+                // the rain" is the writer describing an image.
+                //
+                // slateParseHeading will hand back a location for either,
+                // because it is built to read a slug line and was never
+                // asked this question. Left unguarded it produced a
+                // location called "she remembers the rain", which would
+                // become its own location group and send a day's unit
+                // somewhere that does not exist. Found by feeding the
+                // probe a prose beat.
+                //
+                // A beat is a place if the reader found an INT/EXT on it,
+                // or if it is written as a heading — opening word in
+                // capitals. Not capitals ALONE: IRIRI writes real headings
+                // as "Daylight/interior/…", and demanding capitals
+                // everywhere is the mistake that blinded the reader to
+                // them once already.
+                var opener = slateOpeningWord(text);
+                var looksLikeHeading = !!p.int_ext
+                  || (!!opener && !/\p{Ll}/u.test(opener));
+
+                return {
+                  n: i + 1,
+                  text: text,
+                  // Empty where the beat is prose rather than a place. A
+                  // setup with no location is not dropped — it travels
+                  // with its montage, the same rule as a scene the script
+                  // never placed.
+                  location: (looksLikeHeading && p.location) ? slateTitleCase(p.location) : '',
+                  set: (looksLikeHeading && p.set) ? slateTitleCase(p.set) : '',
+                  int_ext: looksLikeHeading ? (p.int_ext || '') : '',
+                  time_of_day: looksLikeHeading ? (p.time_of_day || '') : ''
+                };
+              })
+            });
+          })
+        });
+      }
+
       // ── Whose story day is this, ours or the writer's? ──
       //
       // A script supervisor has to be able to tell the difference. One is
@@ -6047,7 +6123,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              breakdown: slateBreakdown, start_date: startDate, shoot_days: shootDays,
+              breakdown: slateBreakdownForSchedule(slateBreakdown), start_date: startDate, shoot_days: shootDays,
               user_email: user.email, user_id: user.id
             })
           });
@@ -6121,8 +6197,29 @@
           return d.day === slateCallsheet.shoot_day;
         })[0];
         if (!day) return true;   // the day itself no longer exists
+        // ── DISTINCT scene indexes, because a montage is several rows ──
+        //
+        // A montage's setups are scheduled separately now, so a day holding
+        // two beats of scene 4 lists scene_index 5 twice. The call sheet
+        // lists that montage ONCE, which is right — it is one scene of the
+        // screenplay, with today's setups named underneath.
+        //
+        // Comparing the raw lists made "5,5,6" and "5,6" disagree, so every
+        // day containing a split montage reported its call sheet as out of
+        // date and refused to export it. Found by rendering the three
+        // documents and watching the export refuse a sheet that was
+        // perfectly current.
+        //
+        // What this guard is actually for is "does the sheet describe the
+        // same scenes as the day", and that is a question about the set.
         var ids = function (list) {
-          return (list || []).map(function (s) { return s.scene_index; })
+          var seen = {};
+          (list || []).forEach(function (s) {
+            if (s && s.scene_index !== undefined && s.scene_index !== null) {
+              seen[s.scene_index] = true;
+            }
+          });
+          return Object.keys(seen).map(Number)
             .sort(function (a, b) { return a - b; }).join(',');
         };
         return ids(day.scenes) !== ids(slateCallsheet.scenes_today);
@@ -6167,7 +6264,10 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              breakdown: slateBreakdown,
+              // The same enrichment as the first build. A scene moved by
+              // hand must not quietly re-collapse a montage back into one
+              // row, which is what sending the bare breakdown here would do.
+              breakdown: slateBreakdownForSchedule(slateBreakdown),
               start_date: (document.getElementById('wsStartDate') || {}).value || '',
               day_assignment: assignment,
               user_email: user.email, user_id: user.id
@@ -6251,8 +6351,19 @@
             + '<span>Scenes:</span>'
             + (d.scenes || []).map(function(s) {
                 var label = (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number;
+                // A montage setup is one beat of its scene, so the chip
+                // says which — "4·2" reads as scene 4, setup 2, and a
+                // filmmaker seeing 4·1 on Tuesday and 4·3 on Friday can
+                // tell at a glance that the montage is spread.
+                if (s.montage_setup && s.montage_setups) {
+                  label = label + '·' + s.montage_setup;
+                }
                 return '<button type="button" class="ws-scene-chip" data-idx="' + s.scene_index + '" data-label="' + label + '" data-day="' + d.day + '"'
-                  + ' title="Move scene ' + label + ' to another day"'
+                  + ' title="' + (s.montage_setup
+                      ? 'Setup ' + s.montage_setup + ' of ' + s.montage_setups
+                        + (s.montage_beat ? ': ' + slateEscapeHtml(s.montage_beat) : '')
+                        + ' — moving it moves the whole montage'
+                      : 'Move scene ' + label + ' to another day') + '"'
                   // 44px is Apple's minimum touch target and Android asks
                   // for 48dp. Three quarters of our filmmakers are on a
                   // phone, often on set with one hand full.
@@ -6586,7 +6697,20 @@
               var sd = sdText
                 ? '<span style="font-family:monospace;font-size:12px;color:#4A463D">&nbsp; SD ' + slateEscapeHtml(sdText) + '</span>'
                 : '';
-              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + sd + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
+              // The montage setups being shot TODAY, on the screen copy as
+              // well as the PDF. A crew reading all four when two are on
+              // Friday prepares for places the unit is not going.
+              var csUnits = Array.isArray(s.montage_setups_today) ? s.montage_setups_today : [];
+              var setups = csUnits.length
+                ? '<div style="font-size:12px;color:#4A463D;margin-top:4px;font-family:monospace">'
+                  + csUnits.length + ' of ' + (csUnits[0].of || csUnits.length) + ' setups today: '
+                  + csUnits.map(function (u) {
+                      return slateEscapeHtml(String(u.n)) + '. '
+                        + slateEscapeHtml(u.beat || '(no beat line)');
+                    }).join('  ·  ')
+                  + '</div>'
+                : '';
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + sd + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + setups + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
           + cast.map(function(c) {
               return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
@@ -7481,9 +7605,31 @@
             var schE = Number(sc.eighths) || 0;
             var schLen = schE ? ('   ' + Math.floor(schE / 8) + ' ' + (schE % 8) + '/8') : '';
             var schSd = slateStoryDay(sc.story_day);
+            // A montage's setups are scheduled where they actually are, so
+            // a row may be one beat of it. Said plainly: a 1st AD reading
+            // "4" has to know whether today is the whole montage or a
+            // quarter of it.
+            var schSetup = (sc.montage_setup && sc.montage_setups)
+              ? '   setup ' + sc.montage_setup + ' of ' + sc.montage_setups : '';
             pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen
               + (schSd ? '   SD ' + schSd : '')
+              + schSetup
               + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
+            // No separate line for the beat text. Two reasons, and the
+            // first was found by rendering this page and looking at it:
+            // slugline() draws at y+4 without advancing y, so a
+            // labelledList after it printed "BEAT:" through the scene
+            // numeral.
+            //
+            // The second is that it earned nothing. The row already reads
+            // "EXT · D  Market  0 3/8  SD 2  setup 2 of 4", and the beat
+            // line says "EXT. OJA TUNTUN MARKET — MORNING". The slugline
+            // is built from the beat, so printing both is the same fact
+            // twice on a document where ink is attention.
+            //
+            // The call sheet is different and does print it: there the
+            // question is which setups are today's, and the beat text is
+            // the answer.
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -7936,9 +8082,30 @@
           // listed a cast of one.
           var csBg = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
           if (csBg && csBg !== 'null') pdf.labelledList('Background', [csBg]);
-          // And the setups inside a montage. One row, four places: without
-          // these an AD schedules one setup and meets four on the day.
-          if (s.montage_beats && s.montage_beats.length) {
+          // And the setups inside a montage — but only the ones being shot
+          // TODAY, now that a montage's beats are scheduled where they
+          // actually are. A call sheet listing all four when two are on
+          // Friday has the unit prepare for places it is not going.
+          //
+          // The full list still belongs on the breakdown, where a reader is
+          // planning the film rather than the morning.
+          var csSetups = Array.isArray(s.montage_setups_today) ? s.montage_setups_today : [];
+          if (csSetups.length) {
+            // A SHORT label. labelledList draws its values at x+26, so
+            // "2 of 4 setups today" printed straight through the first
+            // beat line — the same fault Report 5 had, found the same
+            // way, by rendering the page and reading it.
+            //
+            // The count moves onto each line, where it reads better
+            // anyway: "2 of 4" beside the beat says which setup this is,
+            // not just how many there are.
+            pdf.labelledList('Setups', csSetups.map(function (u) {
+                return u.n + ' of ' + (u.of || csSetups.length) + '  \u2014  '
+                  + (u.beat || '(no beat line)');
+              }), 15);
+          } else if (s.montage_beats && s.montage_beats.length) {
+            // A call sheet built before the setups were scheduled
+            // separately. Shows what it always showed.
             pdf.labelledList(s.montage_beats.length + ' setups', s.montage_beats, 15);
           }
           // Departments on the day they are needed. A stunt or an animal

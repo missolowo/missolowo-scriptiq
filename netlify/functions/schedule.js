@@ -182,8 +182,19 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       // Count by identity, not by number. Counting by scene_number collapsed
       // every unnumbered scene into a single "null" entry, so a script with
       // five unnumbered scenes reported four fewer than it has.
+      //
+      // Counted by SCENE, not by unit of work. A montage split into four
+      // setups is still one scene of the filmmaker's screenplay, and a
+      // total_scenes three higher than their breakdown would read as the
+      // schedule inventing scenes — the exact complaint the run stamp and
+      // the continuation count were added to prevent.
       var uniqueScenes = {};
       slimScenes.forEach(function (s) { uniqueScenes[String(s.idx)] = true; });
+      // Units of work, which is what a day is packed with and what
+      // conservation is asserted on. One per scene, or one per montage
+      // setup.
+      var uniqueUnits = {};
+      slimScenes.forEach(function (s) { uniqueUnits[String(s.key || s.idx)] = true; });
       // Warn when a day carries more locations than a crew could realistically
       // move between. We do not silently produce an impossible day.
       var crowdedDays = days.filter(function (d) { return d.locations.length > 3; }).length;
@@ -278,6 +289,17 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
+                // A montage setup is not the whole montage. Said on the row
+                // so a 1st AD reading "4" knows they are shooting one beat
+                // of it today and where the others went.
+                montage_setup: s.beat || 0,
+                montage_setups: s.beats || 0,
+                montage_beat: s.beat_text || '',
+                // The unit of work this row is, which is what conservation
+                // counts and what a move should address. Emitted so the
+                // workspace can move ONE setup later; today it moves a
+                // montage whole, and the validator accepts either.
+                unit: s.key || String(s.idx),
                 scene_number: s.n,
                 int_ext: s.ie,
                 time_of_day: s.tod,
@@ -315,6 +337,9 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         unscheduled_scenes: slateUnplaced.map(function (s) {
           return {
             scene_index: s.idx,
+            montage_setup: s.beat || 0,
+            montage_setups: s.beats || 0,
+            montage_beat: s.beat_text || '',
             scene_number: s.n,
             int_ext: s.ie,
             time_of_day: s.tod,
@@ -649,14 +674,27 @@ function slateAssignDays(slatePlaced, dayCount) {
       // A STABLE sort on the light rank alone, so the location clustering
       // the grouping worked for survives inside each block. Sorting by
       // anything else here would undo the whole point of grouping.
-      days.forEach(function (d) {
-        d.scenes = d.scenes
-          .map(function (s, i) { return { s: s, i: i, r: slateLightRank(s.tod) }; })
-          .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
-          .map(function (x) { return x.s; });
-      });
+      slateOrderDaysByLight(days);
 
       return days;
+}
+
+// A day runs dawn, day, dusk, night, whoever built it — the packer or a
+// filmmaker moving scenes by hand. It lived inside slateAssignDays at
+// first, so a hand-moved day came back in whatever order the assignment
+// happened to iterate.
+//
+// A STABLE sort on the light alone, so the location clustering survives
+// inside each block. Sorting by anything else undoes the grouping.
+function slateOrderDaysByLight(days) {
+  (days || []).forEach(function (d) {
+    if (!d || !Array.isArray(d.scenes)) return;
+    d.scenes = d.scenes
+      .map(function (s, i) { return { s: s, i: i, r: slateLightRank(s && s.tod) }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (x) { return x.s; });
+  });
+  return days;
 }
 
 // ── Taking an assignment from the filmmaker ──
@@ -691,15 +729,37 @@ function slateDaysFromAssignment(slatePlaced, assignment) {
   // schedule entirely; one we do not recognise means the workspace and
   // the breakdown disagree about what this production contains, and
   // choosing which of them is right is not ours to do.
+  //
+  // A montage's setups are separate units of work, so each needs a day.
+  // The workspace currently addresses a montage by its scene index, which
+  // means "move the whole montage" — a reasonable thing to ask for, and it
+  // must not fail validation. So a unit is looked up by its own key first
+  // and falls back to its scene's: a unit key moves one setup, a scene
+  // index moves all of them together.
+  //
+  // Without the fallback, dragging a four-beat montage sent one key for
+  // four units and the filmmaker got "these scenes were left out".
+  var dayFor = function (s) {
+    var byUnit = want[String(s.key || s.idx)];
+    return byUnit === undefined ? want[String(s.idx)] : byUnit;
+  };
   var missing = [];
   slatePlaced.forEach(function (s) {
-    if (want[String(s.idx)] === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
+    if (dayFor(s) === undefined) missing.push(s.n == null ? '(unnumbered)' : s.n);
   });
   if (missing.length) {
     return { error: 'These scenes were left out of the assignment: ' + missing.join(', ') + '.' };
   }
+  //
+  // Both forms are legitimate: the scene index ("move the whole montage")
+  // and the unit key ("move setup 2"). Keying this on the index alone
+  // rejected every unit-level assignment as referring to a scene the
+  // breakdown does not have.
   var known = {};
-  slatePlaced.forEach(function (s) { known[String(s.idx)] = true; });
+  slatePlaced.forEach(function (s) {
+    known[String(s.idx)] = true;
+    if (s.key) known[String(s.key)] = true;
+  });
   var unknown = keys.filter(function (key) { return !known[key]; });
   if (unknown.length) {
     return { error: 'The assignment refers to scenes this breakdown does not have: ' + unknown.join(', ') + '.' };
@@ -711,7 +771,8 @@ function slateDaysFromAssignment(slatePlaced, assignment) {
   // it.
   var days = [];
   for (var d = 0; d < maxDay; d++) days.push({ scenes: [], locations: [] });
-  slatePlaced.forEach(function (s) { days[want[String(s.idx)] - 1].scenes.push(s); });
+  slatePlaced.forEach(function (s) { days[dayFor(s) - 1].scenes.push(s); });
+  slateOrderDaysByLight(days);
   return { days: days };
 }
 
@@ -789,25 +850,60 @@ exports.handler = async function(event, context) {
     // ── STEP 4: Slim the scenes ──
     // Scheduling only needs scene identity, location, timing and cast.
     // Sending full descriptions/props/costume blew the function timeout.
-       const slimScenes = (breakdown.scenes || []).map(function (s, i) {
-      return {
+      // ── A montage is one scene, and several units of work ──
+      //
+      // The breakdown keeps it as one scene: the writer wrote one scene and
+      // the page is the authority. The SCHEDULE cannot, because its setups
+      // are in different places. Four beats across a workshop, a market, an
+      // office and a compound used to come through as one row at whichever
+      // location won, and no unit travels to four places to shoot a
+      // montage — they pick up the market beat on the market day.
+      //
+      // So a beat is a schedulable unit here, and only here. Each carries
+      // the montage it belongs to, so the call sheet can say "scene 4,
+      // setup 2 of 4" rather than implying the whole montage is being shot.
+      //
+      // `key` is the identity everything downstream counts on: the scene
+      // index for an ordinary scene, index:beat for a setup. Conservation
+      // is asserted on it, which makes the guarantee STRONGER than before —
+      // a montage was previously one row with its four setups unaccounted
+      // for anywhere.
+      function slateSlimOne(s, i, setup) {
+        var idx = s.scene_index || (i + 1);
+        return {
         // Permanent identity — carried through so the call sheet can match
         // scenes by identity instead of by number. Falls back to array
         // position for breakdowns saved before scene_index existed.
-        idx: s.scene_index || (i + 1),
+        idx: idx,
+        // The unit of work. One per scene, or one per montage setup.
+        key: setup ? (idx + ':' + setup.n) : String(idx),
+        beat: setup ? setup.n : 0,
+        beats: setup ? (s.montage_setups || []).length : 0,
+        beat_text: setup ? setup.text : '',
         n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
         // Never invented. A montage has no interior or exterior, and
         // defaulting a blank to INT printed "INT" beside "Various
         // Locations" on a shooting schedule — a statement about how the
         // scene shoots that the script never makes.
-        ie: s.int_ext || '',
-        tod: s.time_of_day || 'DAY',
-        loc: s.location || s.set_location || '',
-        set: s.set || '',
+        //
+        // A SETUP does have one, because its beat line is a slug line: the
+        // montage says nothing about interior or exterior, but "EXT. OJA
+        // TUNTUN MARKET — MORNING" says plenty.
+        ie: setup ? (setup.int_ext || '') : (s.int_ext || ''),
+        tod: setup ? (setup.time_of_day || s.time_of_day || 'DAY') : (s.time_of_day || 'DAY'),
+        loc: setup ? (setup.location || '') : (s.location || s.set_location || ''),
+        set: setup ? (setup.set || setup.location || '') : (s.set || ''),
         // Page length, measured off the script at split time. A day's total
         // is how a production manager judges whether the day is achievable,
         // so it has to travel with the scene.
-        eighths: Number(s.slate_eighths) || 0,
+        //
+        // A montage's eighths are divided across its setups rather than
+        // counted once per beat: the writer wrote one scene of that length,
+        // and charging the whole montage to every beat would make a
+        // four-beat montage four times its real page count.
+        eighths: setup
+          ? Math.max(1, Math.round((Number(s.slate_eighths) || 0) / Math.max(1, (s.montage_setups || []).length)))
+          : (Number(s.slate_eighths) || 0),
         // The story day, carried verbatim. It was normalised once at merge
         // time and is never re-read here — a second reader is a second
         // opinion, and continuity is the last place that helps.
@@ -817,11 +913,27 @@ exports.handler = async function(event, context) {
         // shoot days, and wardrobe can only plan for that if the schedule
         // says so.
         sd: s.story_day || '',
+        // Every setup carries the montage's full cast. A call sheet for a
+        // day holding one beat still has to call the people in it, and the
+        // breakdown does not say which beat each performer appears in.
         cast: (s.cast || []).slice(0, 8),
         // Flagged, never counted — how many is a producer decision.
         bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
-      };
-    });
+        };
+      }
+
+       const slimScenes = [];
+       (breakdown.scenes || []).forEach(function (s, i) {
+         var setups = Array.isArray(s && s.montage_setups) ? s.montage_setups : [];
+         // One setup is not worth splitting: it is a montage with a single
+         // beat, which schedules exactly like a scene.
+         if (setups.length > 1) {
+           setups.forEach(function (u) { slimScenes.push(slateSlimOne(s, i, u)); });
+         } else {
+           slimScenes.push(slateSlimOne(s, i, null));
+         }
+       });
+
 
     // ── STEP 5: Build the schedule in CODE — deterministic, instant, no timeout ──
     // The AI only adds production notes afterwards. Grouping scenes by
@@ -988,3 +1100,4 @@ module.exports.slateDeriveSchedule = slateDeriveSchedule;
 module.exports.slateAssignDays = slateAssignDays;
 module.exports.slateAddUnplacedToDays = slateAddUnplacedToDays;
 module.exports.slateDaysFromAssignment = slateDaysFromAssignment;
+module.exports.slateOrderDaysByLight = slateOrderDaysByLight;
