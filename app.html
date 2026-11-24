@@ -7312,6 +7312,21 @@
             y += 10;
           }
           header();
+          // ── Carrying a group's name onto the next page ──
+          //
+          // A column marked `carry` names a group on its first row only, so
+          // the eye groups the rows without a heading that can collide with
+          // them. That breaks down when the group outlives the page: on
+          // Report 5, story day 1 of THE HILLS BETWEEN US holds 32 scenes
+          // and runs over three pages, and on pages two and three the
+          // Story Day column was empty on every row. A script supervisor
+          // turning the page saw scene numbers with nothing saying which day
+          // they have to match.
+          //
+          // Found by rendering a real feature-length breakdown and reading
+          // it. The six-scene fixture the renderers had always been driven
+          // with cannot produce a group that spans a page.
+          var carried = {};
           rows.forEach(function (row, ri) {
             var heights = cols.map(function (c, i) {
               doc.setFontSize(9);
@@ -7319,7 +7334,8 @@
             });
             var lines = Math.max.apply(null, heights);
              var rowH = Math.max(9, lines * 4.5 + 4);
-            if (y + rowH > 278) { newPage(); header(); }
+            var broke = false;
+            if (y + rowH > 278) { newPage(); header(); broke = true; }
             if (ri % 2 === 0) {
               doc.setFillColor(249, 248, 245);
              doc.rect(x0, y - 4, 180, rowH, 'F');
@@ -7327,6 +7343,15 @@
             var cx = x0 + 2;
             cols.forEach(function (c, i) {
               var val = String(row[i] == null ? '' : row[i]);
+              if (c.carry) {
+                // Only the group's own name is carried, not whatever
+                // detail followed it in brackets — the count belongs to
+                // the group, not to the part of it on this page, and a
+                // short label cannot wrap and so cannot change the row
+                // height already measured above.
+                if (val) carried[i] = val.split('  (')[0];
+                else if (broke && carried[i]) val = carried[i] + '  (cont.)';
+              }
               if (c.bold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_INK); }
               else if (c.gold) { doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, SLATE_GOLD); }
               else { doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, SLATE_INK); }
@@ -7610,7 +7635,7 @@
             });
           });
           pdf.table(
-            [{ label: 'Story Day', width: 32, bold: true },
+            [{ label: 'Story Day', width: 32, bold: true, carry: true },
              { label: 'Scene', width: 18, gold: true },
              { label: 'Costume & Makeup, as the script describes it', width: 95 },
              { label: 'Shoot Day', width: 35, align: 'right' }],
