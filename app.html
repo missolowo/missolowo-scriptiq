@@ -7451,7 +7451,31 @@
           // with cannot produce a group that spans a page.
           var carried = {};
           rows.forEach(function (row, ri) {
+            // ── A day break on the board ──
+            //
+            // The convention marks a day with a black separator strip, and
+            // a board without them is one continuous list of scenes with
+            // no shape. Drawn as a row of its own so table() keeps owning
+            // the page break.
+            if (row && row.sep) {
+              check(12);
+              doc.setFillColor(38, 36, 32);
+              doc.rect(x0, y - 3, 180, 6.4, 'F');
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(7.5);
+              doc.setFont('helvetica', 'bold');
+              doc.text(String(row.sep).toUpperCase(), x0 + 2, y + 1.2);
+              y += 10;
+              return;
+            }
             var heights = cols.map(function (c, i) {
+              // A strip column carries a colour key, never text, so
+              // measuring it as text asks how many lines "INT|D" takes in a
+              // 2mm column. The answer is six, and every row on the board
+              // came out 31mm tall — seven scenes to a page where a board
+              // should hold thirty. Found by measuring the rendered page
+              // rather than reading the row loop.
+              if (c.strip) return 1;
               doc.setFontSize(9);
               return doc.splitTextToSize(String(row[i] == null ? '' : row[i]), c.width - 4).length;
             });
@@ -7466,6 +7490,23 @@
             var cx = x0 + 2;
             cols.forEach(function (c, i) {
               var val = String(row[i] == null ? '' : row[i]);
+              // A strip column holds a colour key, not text: the whole
+              // point of a board is that this column is read without
+              // reading. Drawn the height of the row so a run of nights
+              // reads as a band rather than a row of dots.
+              if (c.strip) {
+                doc.setDrawColor(150, 146, 136);
+                doc.setLineWidth(0.2);
+                var sfill = SLATE_STRIP[val];
+                if (sfill) {
+                  doc.setFillColor(sfill[0], sfill[1], sfill[2]);
+                  doc.rect(cx, y - 3, 3, rowH - 1.5, 'FD');
+                } else {
+                  doc.rect(cx, y - 3, 3, rowH - 1.5, 'D');
+                }
+                cx += c.width;
+                return;
+              }
               if (c.carry) {
                 // Only the group's own name is carried, not whatever
                 // detail followed it in brackets — the count belongs to
@@ -7507,6 +7548,7 @@
           slugline: slugline,
           stripBar: stripBar,
           stripLegend: stripLegend,
+          stripKeyOf: stripKey,
           body: body,
           annotation: annotation,
           labelledList: labelledList,
@@ -7858,6 +7900,97 @@
 
         pdf.gap(4);
         pdf.stripLegend();
+
+        // ══ THE BOARD ══
+        //
+        // Professional practice has TWO documents, and Slate only had one.
+        // The detailed day-by-day below carries description, cast,
+        // background and props — what a department reads the night before.
+        // The board is the other one: one line per scene, the whole film,
+        // read across a room. An AD sees four yellows in a row and knows
+        // that day dies in the rain; a block of blue is a night that crews
+        // differently.
+        //
+        // It is ADDED rather than replacing. Compressing the day-by-day
+        // into strips would have thrown away the detail a crew works from
+        // to gain density nobody asked for.
+        var slateCastNo = {};
+        ((slateBreakdown && slateBreakdown.character_breakdown) || []).forEach(function (c) {
+          var k = slateCastKey(c.character);
+          if (k) slateCastNo[k] = c.cast_number;
+        });
+        // The SAME numbering as Report 2. A board whose cast numbers
+        // disagreed with the character breakdown would have an AD calling
+        // the wrong actor from the wrong document.
+        // CONTINUOUS is 21.3mm and would break mid-word as "CONTINUOU / S".
+        // Abbreviated with a stop so it reads as shorthand rather than a
+        // typo — the full words are on the detailed row below, and the
+        // standard codes D, N, DAWN and DUSK are never touched.
+        function slateBoardCode(tod) {
+          var c = String(slateDayNightCode(tod) || '');
+          return c.length > 8 ? c.slice(0, 4) + '.' : c;
+        }
+        function slateBoardCast(sc) {
+          var names = sc.cast_required || sc.cast || [];
+          if (!Array.isArray(names)) names = [names];
+          var nums = [];
+          names.forEach(function (n) {
+            var no = slateCastNo[slateCastKey(n)];
+            if (no && nums.indexOf(no) === -1) nums.push(no);
+          });
+          return nums.sort(function (a, b) { return a - b; }).join(', ');
+        }
+
+        if (days.length) {
+          pdf.sectionHeader('The Board');
+          pdf.annotation('One line per scene, in shooting order, the whole film. '
+            + 'The detail for each day — cast, background, props and description — '
+            + 'is in the day-by-day section that follows.', 15, 175);
+          pdf.gap(4);
+
+          var slateBoardRows = [];
+          days.forEach(function (day, di) {
+            var slateBoardPages = slateDayEighths(day);
+            slateBoardRows.push({ sep: 'Day ' + String(day.day || di + 1).padStart(2, '0')
+              + ' of ' + String(days.length).padStart(2, '0')
+              + (day.date ? '  ·  ' + day.date : '')
+              + '  ·  ' + (day.location || 'No location set')
+              + (slateBoardPages ? '  ·  ' + slateBoardPages : '') });
+            (day.scenes || []).forEach(function (sc) {
+              var bE = Number(sc.eighths) || 0;
+              var bSet = sc.set || sc.location || sc.set_location || '';
+              if (!bSet || bSet === 'null' || bSet === 'undefined') bSet = '\u2014';
+              slateBoardRows.push([
+                pdf.stripKeyOf(sc.int_ext, sc.time_of_day),
+                sc.scene_label || (sc.scene_number == null ? '\u2014' : String(sc.scene_number)),
+                sc.int_ext || '\u2014',
+                slateBoardCode(sc.time_of_day),
+                bSet,
+                bE ? (Math.floor(bE / 8) + ' ' + (bE % 8) + '/8') : '',
+                slateStoryDay(sc.story_day) || '',
+                slateBoardCast(sc)
+              ]);
+            });
+          });
+          pdf.table(
+            [{ label: '', width: 6, strip: true },
+             { label: 'Sc', width: 16, gold: true },
+             { label: 'I/E', width: 12 },
+             // Measured, not guessed: EVENING is 14.2mm at 9pt helvetica and
+             // needs 18.2 with the cell padding. At 14 it broke as
+             // "EVENI / NG" and at 18 as "EVENIN / G" — a fifth of a
+             // millimetre short, which is what comes of sizing a column by
+             // eye twice in a row.
+             { label: 'D/N', width: 20 },
+             { label: 'Set', width: 56 },
+             { label: 'Pages', width: 18, align: 'right' },
+             { label: 'SD', width: 12 },
+             { label: 'Cast', width: 40 }],
+            slateBoardRows);
+          pdf.gap(2);
+          pdf.annotation('Cast numbers are the ones in Report 2 of the breakdown. '
+            + 'A blank Cast column means the script names nobody in that scene.', 15, 175);
+        }
 
         // A day's page count is how a production manager judges whether the
         // day is achievable at all — four pages is a normal day, twelve is
