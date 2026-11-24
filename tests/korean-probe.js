@@ -317,6 +317,154 @@ The scene was quiet.`;
 }
 
 // ══════════════════════════════════════════════════
+// A LINE OF PROSE IS NOT A BROKEN HEADING.
+//
+// On 19 November a production manager's health panel told him two of his
+// scene headings could not be read, and named them:
+//
+//   "out there. I think I just forgot that I could"
+//   "Outside, the evening insects begin their familiar chorus."
+//
+// The first is the second half of a line of dialogue. The second is an
+// action line two lines BELOW a heading we read perfectly. The scan that
+// hunts for headings our reader missed opens with INT|EXT|INN|OUT, ran
+// case-insensitively, and had no word boundary: "out there" matched OUT
+// and then passed the second gate because "there." reads as a separator
+// before a place, and "Outside," matched the front of a longer word and
+// passed because the sentence contains "evening".
+//
+// It cost him twenty points of health score on a red panel, and it is
+// the worst kind of fault we can ship: telling a filmmaker their
+// screenplay is broken when the fault is entirely ours.
+console.log('\nProse is never reported as a broken heading');
+{
+  const misreadIn = (text) => {
+    const f = (check(text).findings || []).find(x => /could not read/.test(x.title));
+    return f ? f.detail : null;
+  };
+
+  // Real headings our reader finds, with the two offending lines in the
+  // positions they actually occupy in his script.
+  const real = `1. INT. ADEYEMI DINING ROOM — EVENING
+
+OMOWON
+What about you? Do you ever regret leaving
+Imole?
+
+AKIN
+I don't regret leaving. I needed to see what was
+out there. I think I just forgot that I could
+always come back.
+
+2. INT. ADEYEMI HOUSE — EVENING
+
+The remains of dinner sit on the table.
+Outside, the evening insects begin their familiar chorus.
+MRS ADEYEMI gathers the plates.`;
+
+  ok('NEITHER of his lines is called a broken heading',
+     misreadIn(real) === null, misreadIn(real));
+
+  // The same two gates, with every word that opens the alternation. All
+  // lower case, all ordinary prose, none of them a heading.
+  const everyday = `1. INT. KITCHEN — DAY
+
+She stands at the window.
+out there. I think I just forgot that I could
+Outside, the evening insects begin their chorus.
+Inns along that road close before midnight.
+Interesting. She turns away slowly.
+extra chairs were brought in later that evening.
+internal doors were locked by morning.`;
+  ok('  ...nor is any other line of prose that opens with those letters',
+     misreadIn(everyday) === null, misreadIn(everyday));
+
+  // And the other half: a misspelling a writer really made must still be
+  // caught, or this fix has simply blinded the check.
+  const broken = `1. INT. KITCHEN — DAY
+
+She stands at the window.
+
+2. INTRIOR/DAYLIGHT/KITCHEN
+
+He walks through.
+
+3. EXTRIOR. MARKET — DAY
+
+She returns.`;
+  const got = misreadIn(broken);
+  ok('a MISSPELLED heading is still caught', got !== null, 'nothing was flagged');
+  ok('  ...and it names INTRIOR', got && /INTRIOR/.test(got), got);
+  ok('  ...and EXTRIOR', got && /EXTRIOR/.test(got), got);
+
+  // The limit of this scan, asserted so nobody widens it by accident.
+  // "ITERIOR" does not begin with a heading word, and with the number
+  // folded onto the same line the number-anchored scan cannot reach it
+  // either, so it goes unwarned. Widening the vocabulary to any
+  // capitalised I/E word was measured on five real screenplays and told
+  // one writer his EPISODE titles were misspellings of INTERIOR.
+  const unreachable = `1. INT. KITCHEN — DAY
+
+She stands at the window.
+
+2. ITERIOR. MARKET — DAY
+
+He walks through.`;
+  ok('a misspelling that does not START with a heading word is left alone',
+     misreadIn(unreachable) === null,
+     'a missing warning is cheap; a wrong one is not');
+
+  // The second pass is anchored to a scene NUMBER: the writer wrote
+  // "SCENE 5", so the next line was meant to be its heading. It had the
+  // same case-insensitivity, so a numbered scene that went straight into
+  // action was accused too.
+  const numberedThenAction = `SCENE 1
+INT. KITCHEN — DAY
+
+She stands at the window.
+
+SCENE 2
+Everything was quiet that evening, and no one spoke.
+
+SCENE 3
+Interesting. She turns away slowly in the morning light.`;
+  ok('a numbered scene that goes straight into action is not accused',
+     misreadIn(numberedThenAction) === null, misreadIn(numberedThenAction));
+
+  const numberedThenBroken = `SCENE 1
+INT. KITCHEN — DAY
+
+She stands at the window.
+
+SCENE 2
+ITERIOR. MARKET — DAY
+
+He walks through.`;
+  ok('  ...but a CAPITALISED misspelling under a number still is',
+     /ITERIOR/.test(misreadIn(numberedThenBroken) || ''),
+     misreadIn(numberedThenBroken));
+
+  // Slug-line STRUCTURE needs no capitals. This is a real heading from
+  // IRIRI, written in title case with the time in front. Requiring
+  // capitals of every test blinded it, and no prose is laid out this way.
+  const titleCaseSlashes = `SCENE 1
+INT. KITCHEN — DAY
+
+She stands at the window.
+
+SCENE 2
+Daylight/interior/Owolabi living room.
+
+He sits down.`;
+  ok('a title-case slash heading is still caught',
+     /Daylight/.test(misreadIn(titleCaseSlashes) || ''),
+     misreadIn(titleCaseSlashes));
+  ok('  ...and is reported as the time coming first',
+     /time comes before/.test(misreadIn(titleCaseSlashes) || ''),
+     misreadIn(titleCaseSlashes));
+}
+
+// ══════════════════════════════════════════════════
 console.log('\nThe vocabulary is where both halves can see it');
 {
   ok('S# is in SLATE_NUM', /S#/.test(stmt('var SLATE_NUM  =')), stmt('var SLATE_NUM  ='));

@@ -254,5 +254,79 @@ console.log('\nThe panel and the labels answer to one definition');
      'otherwise two hundred dashes print where #1..#200 would have helped');
 }
 
+// ══════════════════════════════════════════════════
+// D OR N, AND THE FULL WORDS WHEN IT IS NEITHER.
+//
+// The day/night code on the schedule and the call sheet was the first
+// LETTER of the time of day. That gives D for DAY and N for NIGHT and
+// nonsense for everything else: a montage reading "ONE YEAR PASSING"
+// printed as "O", EARLY MORNING as "E", MORNING as "M".
+//
+// A 1st AD cannot light from "O". Worse, a code that is wrong some of
+// the time stops the right ones being trusted either.
+console.log('\nThe day/night code means something');
+{
+  const code = new Function(block('function slateDayNightCode')
+    + '; return slateDayNightCode;')();
+
+  ok('DAY is D', code('DAY') === 'D');
+  ok('NIGHT is N', code('NIGHT') === 'N');
+  ok('MORNING is a day scene', code('MORNING') === 'D', code('MORNING'));
+  ok('  ...and so is EARLY MORNING', code('EARLY MORNING') === 'D', code('EARLY MORNING'));
+  ok('  ...and LATE AFTERNOON', code('LATE AFTERNOON') === 'D', code('LATE AFTERNOON'));
+  ok('DAWN and DUSK keep their own names, because they are not D or N',
+     code('DAWN') === 'DAWN' && code('SUNSET') === 'DUSK',
+     code('DAWN') + ' / ' + code('SUNSET'));
+
+  // The one that started it.
+  ok('"ONE YEAR PASSING" is said in full, not shortened to "O"',
+     code('ONE YEAR PASSING') === 'ONE YEAR PASSING', code('ONE YEAR PASSING'));
+  ok('  ...and nothing returns a single meaningless letter',
+     ['ONE YEAR PASSING', 'MONTHS PASSING', 'CONTINUOUS', 'LATER']
+       .every(t => code(t).length > 1), 'a one-letter code must mean D or N');
+  ok('nothing at all is a dash, not a blank',
+     code('') === '\u2014' && code(null) === '\u2014');
+}
+
+// ══════════════════════════════════════════════════
+// WHAT THE DOCUMENT THE FLOOR CARRIES HAS TO SAY.
+//
+// Reviewed as a 1st AD on 23 November, holding the three PDFs for a
+// script they knew. Background was on the breakdown and on the schedule
+// and missing from the call sheet — so the one page a 2nd AD works from
+// did not say to book the extras. Scene 2 of THE WEAVER'S DAUGHTER needs
+// traders, a woman selling oranges, schoolboys and a driver; the call
+// sheet listed a cast of one.
+//
+// And a montage is one row with its setups in four places. Without them
+// an AD schedules one setup and meets four on the day — two of them at
+// locations the unit has already wrapped.
+console.log('\nThe call sheet carries what the floor needs');
+{
+  const callSheet = APP.slice(APP.indexOf("pdf.sectionHeader(\"Today's Scene Schedule\")"),
+                              APP.indexOf("pdf.sectionHeader('Cast')",
+                                APP.indexOf("pdf.sectionHeader(\"Today's Scene Schedule\")")));
+  ok('the call sheet scene row lists Background',
+     /labelledList\('Background'/.test(callSheet),
+     'the extras are booked from this page or not at all');
+  ok('  ...and the setups inside a montage',
+     /montage_beats/.test(callSheet),
+     'one row, four places, and the AD finds out on the day');
+  ok('  ...and still lists the departments',
+     ['Cast', 'Stunts', 'Vehicles', 'Animals', 'SFX', 'Makeup/Hair']
+       .every(d => callSheet.indexOf("'" + d + "'") >= 0),
+     'the fix must not have cost anything that was already there');
+}
+
+console.log('\nAnd so does the breakdown');
+{
+  const report1 = APP.slice(APP.indexOf("pdf.sectionHeader('Report 1 — Scene Breakdown')"),
+                            APP.indexOf("pdf.sectionHeader('Report 2"));
+  ok('the breakdown PDF carries the montage setups',
+     /montage_beats/.test(report1),
+     'they were on the screen and not on the copy that goes to a production');
+  ok('  ...and Background', /labelledList\('Background'/.test(report1));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

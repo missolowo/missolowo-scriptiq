@@ -148,6 +148,23 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         var dayPart = d.scenes.filter(function (s) { return !slateIsNight(s); });
         var nightPart = d.scenes.filter(slateIsNight);
         d.scenes = slateOrderBlock(dayPart).concat(slateOrderBlock(nightPart));
+        // A scene with no location NEVER leads a day.
+        //
+        // This is the whole of what went wrong before. Such scenes all
+        // share the empty place key, so they formed one large group, and
+        // "largest group first" — right for real locations — sorted it to
+        // the front. LORI NKAN MI's day 1 call sheet opened with nine
+        // scenes that had no location, no set and mostly no cast.
+        //
+        // The answer then was to take them out of the days altogether,
+        // which meant they could never reach a call sheet at all. They are
+        // scenes in the film; somebody still has to shoot them. So they go
+        // last, where they read as what they are: work to place.
+        var slateHasPlace = function (sc) {
+          return !!String(sc.loc || sc.set || '').trim();
+        };
+        d.scenes = d.scenes.filter(slateHasPlace)
+          .concat(d.scenes.filter(function (sc) { return !slateHasPlace(sc); }));
       });
 
       // Dates
@@ -173,6 +190,15 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       
       var schedule = {
         title: breakdown.title || 'Untitled Production',
+        // ── Which breakdown run this schedule was built from ──
+        // Echoed, never minted here. A schedule has no identity of its own:
+        // it is a reading of one breakdown, and the only useful thing it can
+        // say about itself is which breakdown that was. The call sheet then
+        // checks this against the breakdown it is handed, which is the
+        // comparison nothing was doing when a call sheet from one run was
+        // printed beside a schedule from another.
+        slate_run_id: breakdown.slate_run_id || '',
+        slate_run_at: breakdown.slate_run_at || '',
         total_shoot_days: days.length,
         total_scenes: Object.keys(uniqueScenes).length,
         schedule_warning: crowdedDays
@@ -229,6 +255,26 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             company_move: d.locations.length > 1,
             // Opportunities, not instructions. Nothing above has moved.
             compromise_shoots: compromises,
+            // ── Which story days this shoot day touches ──
+            //
+            // A shoot day is assembled by location, so it routinely holds
+            // scenes from several different days of the STORY. That is
+            // normal and not a fault — but it is exactly when wardrobe and
+            // hair have to plan a change mid-day, and nothing told them.
+            //
+            // Distinct values in the order they appear on the day, so a
+            // reader sees both how many changes the day needs and which
+            // way round they run. Reported; nothing is reordered.
+            story_days: (function () {
+              var seen = {}, out = [];
+              d.scenes.forEach(function (s) {
+                var sd = String(s.sd || '').trim();
+                if (!sd || seen[sd]) return;
+                seen[sd] = true;
+                out.push(sd);
+              });
+              return out;
+            })(),
            scenes: d.scenes.map(function (s) {
               return {
                 scene_index: s.idx,
@@ -244,6 +290,7 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
                 location: s.loc || '',
                 description: '',
                 eighths: s.eighths || 0,
+                story_day: s.sd || '',
                 cast_required: s.cast || [],
                 background: s.bg || '',
                 props: []
@@ -259,8 +306,11 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         // this list always equals total_scenes, and the cover prints that sum
         // so a shorter schedule never reads as missing scenes.
         scenes_scheduled: slatePlaced.length,
+        // These scenes ARE on a shoot day and on its call sheet — listed
+        // here as well because a producer needs to chase the writer for a
+        // location before the day arrives, not discover it on the morning.
         unscheduled_reason: slateUnplaced.length
-          ? 'The screenplay never states a location for these scenes, so they cannot be placed on a shoot day yet.'
+          ? 'The screenplay never states a location for these scenes. They are scheduled at the end of their day so nothing is lost, but each one needs a location confirmed before that day is shot.'
           : '',
         unscheduled_scenes: slateUnplaced.map(function (s) {
           return {
@@ -268,6 +318,7 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
             scene_number: s.n,
             int_ext: s.ie,
             time_of_day: s.tod,
+            story_day: s.sd || '',
             cast_required: s.cast || [],
             background: s.bg || ''
           };
@@ -341,6 +392,33 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
 // does not — that an actor is only free on Thursday. Both hand the same
 // shape to slateDeriveSchedule, which is what stops a hand-moved scene
 // and a generated one being described by different rules.
+// ── Every scene in the breakdown reaches a shoot day ──
+//
+// A scene the screenplay never gave a location used to leave the day
+// structure entirely, and a call sheet is built from a day — so it could
+// never appear on one. The breakdown knew about it, the schedule
+// reported it in a list of its own, and the document the crew actually
+// carries did not have it. That is a scene nobody shoots.
+//
+// It goes on the day its neighbours are on, so it travels with the part
+// of the film it belongs to, and last within that day.
+function slateAddUnplacedToDays(days, unplaced) {
+  if (!days.length || !unplaced.length) return;
+  var dayOf = {};
+  days.forEach(function (d, i) {
+    (d.scenes || []).forEach(function (s) { dayOf[Number(s.idx)] = i; });
+  });
+  var known = Object.keys(dayOf).map(Number).sort(function (a, b) { return a - b; });
+  unplaced.forEach(function (s) {
+    var idx = Number(s.idx);
+    var target = days.length - 1;
+    for (var i = 0; i < known.length; i++) {
+      if (known[i] < idx) target = dayOf[known[i]]; else break;
+    }
+    days[target].scenes.push(s);
+  });
+}
+
 function slateAssignDays(slatePlaced, dayCount) {
       const normKey = slateKey;
       // Group scenes by location, keeping day and night separate
@@ -566,7 +644,11 @@ exports.handler = async function(event, context) {
         // position for breakdowns saved before scene_index existed.
         idx: s.scene_index || (i + 1),
         n: (s.scene_number === null || s.scene_number === undefined || s.scene_number === 'null') ? null : s.scene_number,
-        ie: s.int_ext || 'INT',
+        // Never invented. A montage has no interior or exterior, and
+        // defaulting a blank to INT printed "INT" beside "Various
+        // Locations" on a shooting schedule — a statement about how the
+        // scene shoots that the script never makes.
+        ie: s.int_ext || '',
         tod: s.time_of_day || 'DAY',
         loc: s.location || s.set_location || '',
         set: s.set || '',
@@ -574,6 +656,15 @@ exports.handler = async function(event, context) {
         // is how a production manager judges whether the day is achievable,
         // so it has to travel with the scene.
         eighths: Number(s.slate_eighths) || 0,
+        // The story day, carried verbatim. It was normalised once at merge
+        // time and is never re-read here — a second reader is a second
+        // opinion, and continuity is the last place that helps.
+        //
+        // It travels because a shoot day is assembled out of script order:
+        // the scenes of one story morning can land on three different
+        // shoot days, and wardrobe can only plan for that if the schedule
+        // says so.
+        sd: s.story_day || '',
         cast: (s.cast || []).slice(0, 8),
         // Flagged, never counted — how many is a producer decision.
         bg: Array.isArray(s.background) ? s.background.join(', ') : (s.background || '')
@@ -628,6 +719,9 @@ exports.handler = async function(event, context) {
       } else {
         days = slateAssignDays(slatePlaced, dayCount);
       }
+      // After the days exist, never before: an unplaced scene has no
+      // location to group on, so it joins the day its neighbours landed on.
+      slateAddUnplacedToDays(days, slateUnplaced);
 
       // Everything from here follows from the day assignment above, and is
       // derived in one place so that a hand-moved scene and a generated one
@@ -740,4 +834,5 @@ exports.handler = async function(event, context) {
 module.exports.slateDeriveSchedule = slateDeriveSchedule;
 
 module.exports.slateAssignDays = slateAssignDays;
+module.exports.slateAddUnplacedToDays = slateAddUnplacedToDays;
 module.exports.slateDaysFromAssignment = slateDaysFromAssignment;

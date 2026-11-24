@@ -308,6 +308,7 @@ A new scene begins ONLY at a scene heading (slug line). A slug line contains INT
 - NEVER start a new scene because the mood changes, a new character speaks, an argument begins, or a long scene feels like two.
 - A scene that runs for pages and covers several emotional beats is still ONE scene.
 - NEVER invent a time of day. Copy it from the heading. If two parts of one scene appear to differ, you have wrongly split a single scene.
+- A MONTAGE or SERIES OF SHOTS is ONE scene, however many beats are listed beneath it. The writer numbered it once. Return a single scene for the montage heading and do NOT return a scene for each dashed beat line under it.
 - The number of scenes you return must equal the number of slug lines in the text.
 IGNORE FRONT MATTER:
 A script may open with a title page, episode title, writer credits, a cast list, or an episode synopsis. NONE of these are scenes. Extraction begins at the first slug line and nothing before it.
@@ -356,17 +357,21 @@ COSTUME, PROPS AND EQUIPMENT — record only what the script actually specifies:
 - Never write a placeholder. "Costume for Adewale", "Adewale's outfit" or "regular clothes" say nothing a costume department can act on, and they make a breakdown look padded.
 - If the script does not describe what a character wears, leave costume empty. An empty field is honest; a filler entry wastes a department's time.
 - Props and equipment: list every object the script mentions by name — "phone", "makeshift stall", "15,000 naira". Only avoid entries that name no object, such as "props for the scene".
-DEPARTMENT CATEGORIES — the same rule, applied harder. These five book crew, hire suppliers and trigger insurance, so a wrong entry costs real money and a missing one is found on the day:
+DEPARTMENT CATEGORIES — the same rule, applied harder. These nine book crew, hire suppliers and trigger insurance, so a wrong entry costs real money and a missing one is found on the day:
 - stunts: a fight, a fall, a chase, a crash — anything a performer could be hurt doing. "Shina shoves Kunle against the wall" is a stunt. Two people arguing is not.
 - vehicles: a vehicle the script puts on screen — "danfo bus", "black Hilux", "okada". Not a vehicle merely mentioned in dialogue.
 - animals: an animal that appears — "goat", "two chickens". Not an animal mentioned in dialogue or in a proverb.
 - special_effects: a practical effect the script calls for — rain, smoke, fire, a gunshot, breaking glass. Not an edit or a camera move.
 - makeup_hair: special makeup or hair only — blood, a scar, bruising, ageing, a wig the script names. Everyday grooming is not a breakdown item.
+- set_dressing: furniture and fittings that BELONG to the space and stay in it — a sofa, a floor loom, curtains, a wall clock, market stalls, a shrine. The test is whether a character picks it up: a thing they handle is a prop, a thing that dresses the room is set dressing. The same object can be neither in one scene and dressing in another, so judge it by what the script has it doing.
+- visual_effects: something that CANNOT be photographed on the day and has to be added afterwards — a composited screen or phone display, a set extension, a creature, a removed wire or rig, a crowd multiplied, a sky replaced. Rain, smoke, fire, a gunshot and breaking glass are practical and belong in special_effects, never here. If a crew could do it in front of the camera, it is not a visual effect.
+- sound: a sound requirement the day has to be prepared for — playback a character sings, dances or mimes to, a radio or television heard in the scene, a phone call heard live, a crowd or a market that has to be recorded wild. That dialogue is recorded is true of every scene and is not an entry.
+- music: a music cue the script names — a song playing, a band or singer performing on camera, a hymn sung, a specific track the writer calls for. Name it as the script names it, because a named song has to be cleared and that takes weeks.
 - Leave every one of these empty unless the script says so on the page. Inventing a stunt books a stunt coordinator nobody needs; missing one puts a performer at risk. An empty list is the correct answer for most scenes.
 SCREENPLAY:
 ${script.trim()}
 
-REMINDER: write every description, location, set, prop, costume, equipment, stunt, vehicle, animal, effect and makeup value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written.
+REMINDER: write every description, location, set, prop, costume, equipment, stunt, vehicle, animal, effect, makeup, set dressing, visual effect and sound value in ENGLISH, even though the screenplay above may be in another language. Character names stay exactly as written. A music cue keeps the title the script gives it, the way a character name does — a song is identified by its own title and cannot be translated without naming a different song.
 
 Return ONLY valid JSON:
 {
@@ -394,6 +399,10 @@ Return ONLY valid JSON:
       "animals": ["animal named in the script, in English"],
       "special_effects": ["practical effect the script calls for, in English"],
       "makeup_hair": ["special makeup or hair the script calls for, in English"],
+      "set_dressing": ["furniture or fitting that dresses the space, in English"],
+      "visual_effects": ["shot the script needs added after photography, in English"],
+      "sound": ["sound the day must be prepared for, in English"],
+      "music": ["music cue the script names, in English"],
       "production_notes": "Notes, in English"
     }
   ],

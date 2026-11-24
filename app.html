@@ -2142,6 +2142,20 @@
       // words present in the heading, because the location is what the two
       // genuinely share — the model rewrites a slug line but it does not
       // invent the place.
+      // Is this a sequence scene matched to a sequence heading?
+      //
+      // Both halves must say so. The heading is the page's word and the
+      // scene's type is the model's, and requiring both means an ordinary
+      // scene with a missing location never lands on a montage heading.
+      function slateSequencePair(scene, headText) {
+        var seqRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+        if (!seqRe.test(String(headText == null ? '' : headText))) return false;
+        var says = [(scene && scene.scene_type) || '',
+                    (scene && scene.int_ext) || '',
+                    (scene && scene.time_of_day) || ''].join(' ');
+        return seqRe.test(says);
+      }
+
       // wantTokens and haveTokens are an optional fast path for the
       // aligner, which compares every scene against every heading and would
       // otherwise tokenise the same heading once per scene — forty thousand
@@ -2151,7 +2165,23 @@
         if (!headText) return 0;
         var want = wantTokens || slateSceneMatchTokens(
           (scene && (scene.location || scene.set || '')) || '');
-        if (!want.length) return 0;
+
+        // ── A montage has no single location, and that is not a defect ──
+        //
+        // Asked for a montage as ONE scene, the model returns exactly that
+        // and leaves the location empty, because "VARIOUS LOCATIONS" is not
+        // a place. With nothing to match on, it scored zero against every
+        // heading, took no number and carried none of its beats: one empty
+        // field knocked out the whole feature. Observed on THE WEAVER'S
+        // DAUGHTER, 23 November — the montage came back as "#4" with its
+        // four setups nowhere.
+        //
+        // So when there is no location, ask what the page says instead. We
+        // already know which headings are montages, from the script rather
+        // than from the model, and a scene the model itself typed MONTAGE
+        // belongs to one of them. Scored below a real location match, so a
+        // montage that DOES carry a location still wins on its words.
+        if (!want.length) return slateSequencePair(scene, headText) ? 0.8 : 0;
         var have = haveTokens || slateSceneMatchTokens(headText);
         if (!have.length) return 0;
         var hit = 0;
@@ -2374,13 +2404,32 @@
             inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
-          // A beat inside a montage. A setup of its own, with no number of
-          // its own — and counting it is what keeps this list the same
-          // length as the model's, so the numbers above survive the merge.
+          // A beat belongs TO the montage above it, not beside it.
+          //
+          // It used to be pushed as a scene of its own, for two reasons.
+          // The first was production sense: ten beats in ten places are ten
+          // setups, and an AD must see all ten. That still holds, and is
+          // why each beat keeps its own text and location here — they are
+          // carried on the scene, not thrown away.
+          //
+          // The second was mechanical: "counting it is what keeps this list
+          // the same length as the model's, so the numbers survive the
+          // merge". That stopped being true on 22 November, when the merge
+          // started matching the two lists by heading instead of requiring
+          // them to be the same length. Nothing needs the lengths to agree
+          // any more.
+          //
+          // So the writer's own arithmetic wins: they numbered the montage
+          // once, and it is one scene. Attached rather than pushed, which
+          // also means the row range below runs from the montage heading
+          // past all its beats to the next real heading — the page count
+          // still adds up, with no separate accounting.
           var beat = slateMontageBeat(raw[i], inSeq);
           if (beat) {
-            out.push({ number: null, type: slateSceneTypeFrom(beat.text),
-                       beat: true, at: i, head: beat.text });
+            var slateOwner = out.length ? out[out.length - 1] : null;
+            if (slateOwner) {
+              (slateOwner.beats = slateOwner.beats || []).push(beat.text);
+            }
             continue;
           }
           if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
@@ -2447,6 +2496,8 @@
           '^[ \\t]*(?:(?:' + SLATE_NUM + ')[ \\t]*)?([0-9][0-9A-Za-z.\\-]*)[.)]?[ \\t]*(?:' + SLATE_HEAD + ')'
           + '|^[ \\t]*(?:' + SLATE_NUM + ')[ \\t]*([0-9][0-9A-Za-z.\\-]*)[.):]?', 'i');
         var out = [], numbered = 0, unnumbered = 0, beats = 0, unreadable = [], inSeq = false;
+        // Headings that are the same scene printed again after a page break.
+        var continuations = 0;
         for (var i = 0; i < raw.length; i++) {
           var nb = slateNextNonBlank(raw, i + 1);
           var m = slateLoneSceneNumber(raw[i], nb.text);
@@ -2485,17 +2536,37 @@
             inSeq = /MONTAGE|SERIES OF/i.test(mh.text);
             continue;
           }
-          // A montage beat. Counted as a scene, because it is a setup the
-          // crew has to shoot — but NOT counted as one missing its number.
-          // The writer numbered the montage; a beat is not supposed to carry
-          // one, and reporting twenty of them as unnumbered scenes would be
-          // a brand new false accusation on a correctly formatted script.
-          if (slateMontageBeat(raw[i], inSeq)) { out.push(null); beats++; continue; }
+          // A montage beat is part of its montage, not a scene beside it.
+          // Counted so the panel can say how many there are, but never
+          // pushed: it has no number of its own, and the writer numbered
+          // the montage once.
+          if (slateMontageBeat(raw[i], inSeq)) { beats++; continue; }
           if (inSeq && slateEndsSequence(raw[i], headStart)) inSeq = false;
           if (headStart.test(raw[i])) {
             var wn = raw[i].match(withNum);
             var slateN = wn ? slateCleanSceneNumber(wn[1] || wn[2]) : null;
             out.push(slateN);
+
+            // ── A continuation is not another scene ──
+            //
+            // "37. EXT. LAKE PATH — DAWN (CONT'D)" at the top of a new page
+            // is scene 37 again, not a scene 88. The breakdown has always
+            // known this: slateFromPage refuses to rebuild a CONT'D heading,
+            // so the document comes out with the right scenes.
+            //
+            // The COUNT did not know it, and that is the bug. The health
+            // panel told a filmmaker "87 scenes found" and the breakdown
+            // then contained 86. They count, find one fewer, and conclude a
+            // scene went missing — which is the exact complaint we spent 23
+            // November chasing, arriving this time from our own arithmetic
+            // rather than from any scene actually being lost.
+            //
+            // The heading still goes into `out`, untouched. That array is
+            // the splitter's record and the alignment's index, and both are
+            // correct as they stand; removing an entry would shift every
+            // index after it. Only what we TELL the filmmaker changes.
+            if (SLATE_CONTD_RE.test(raw[i])) { continuations++; continue; }
+
             // "Numbered" means we know this scene's number, wherever the
             // writer put it. A BROTHER'S LOVE writes "1.EXT. COMPOUND - DAY"
             // and Better Half "1.00. INT. STUDIO" — the number is ON the
@@ -2505,12 +2576,22 @@
           }
         }
         return { numbers: out, numbered: numbered, unnumbered: unnumbered,
-                 // Beats are in `total` and in `numbers` — they are scenes,
-                 // and the merge counts on this list matching the model's.
-                 // They are NOT in `unnumbered`: a beat is not a scene the
-                 // writer forgot to number.
+                 // Beats are NOT in `total` or in `numbers`. They belong to
+                 // the montage above them, which the writer numbered once,
+                 // and they are carried on that scene so an AD still sees
+                 // every setup. Counted here only so the panel can say how
+                 // many a script has.
                  beats: beats,
-                 unreadable: unreadable, total: out.length };
+                 // Reported so the panel can explain itself rather than
+                 // just showing a smaller number than the page appears to
+                 // hold. A filmmaker who counts headings by eye gets the
+                 // larger figure, and has every right to ask why.
+                 continuations: continuations,
+                 unreadable: unreadable,
+                 // SCENES, not headings. `numbers` above still carries one
+                 // entry per heading, continuations included, because it is
+                 // the splitter's record and the alignment's index.
+                 total: out.length - continuations };
       }
 
       // Kept as the splitter's interface — same input, same output, one
@@ -2536,6 +2617,15 @@
           window.slateChunkHeads = marks.map(function (list) {
             return list.map(function (m) { return m.head || ''; });
           });
+          // The beats of a montage, read off the page rather than asked
+          // for. The model is told a montage is ONE scene, so it does not
+          // return them — and it never needed to: "— INT. LAGOS ART
+          // GALLERY — EVENING" is already parsed exactly here. Reading them
+          // ourselves means they are right whatever the model does, and an
+          // AD still sees every setup inside the montage.
+          window.slateChunkBeats = marks.map(function (list) {
+            return list.map(function (m) { return m.beats || null; });
+          });
           // Measured off the script at the only point it is still in hand.
           window.slateChunkEighths = marks.map(function (list) {
             return list.map(function (m) { return m.eighths; });
@@ -2556,7 +2646,7 @@
         } catch (e) {
           window.slateChunkNumbers = null; window.slateChunkTypes = null;
           window.slateChunkEighths = null; window.slateChunkPages = null;
-          window.slateChunkHeads = null;
+          window.slateChunkHeads = null; window.slateChunkBeats = null;
         }
         return chunks;
       }
@@ -2684,7 +2774,79 @@
           }
         }
         if (currentChunk.trim()) chunks.push(currentChunk.trim());
-        return slateRecordNumbers(chunks.length > 0 ? chunks : [text.substring(0, maxChunkSize)]);
+
+        // ── Oversize sections, without breaking the promise above ──
+        //
+        // This used to live in the caller, as "never reject — slice": any
+        // section over twice the limit was cut every maxChunkSize
+        // CHARACTERS, mid-sentence. It undid the one invariant this
+        // function exists to keep, from outside, and the comment above
+        // already says what that costs — "a chunk boundary inside a scene
+        // makes the model see two half-scenes and report them as two,
+        // which is where phantom scenes come from".
+        //
+        // Measured on THE HILLS BETWEEN US: four sections ran over, of
+        // 6323, 6582, 6258 and 8698 characters, and every one of them held
+        // exactly ONE scene. Slicing turned those four into twelve, of
+        // which eight began nowhere near a heading. The run returned 110
+        // scenes for 104 headings and 11 scenes with no location at all.
+        // iRANTI, IRIRI, LORI NKAN MI and WHEN LOVE FINDS YOU never run
+        // over, and none of them has this problem.
+        //
+        // A section that is one long scene is already bounded by that
+        // scene, and it asks the model for ONE scene's worth of output —
+        // less than an ordinary four-scene section, not more. 8698
+        // characters is about 2200 tokens. So it goes whole.
+        //
+        // It also ran AFTER this function returned, so slateRecordNumbers
+        // recorded 68 sections while 76 were sent: window.slateChunkHeads
+        // and the model's sections stopped describing the same text.
+        var slateSized = [];
+        for (var sz = 0; sz < chunks.length; sz++) {
+          slateSized = slateSized.concat(slateSplitOversize(chunks[sz], maxChunkSize));
+        }
+        return slateRecordNumbers(slateSized.length > 0 ? slateSized : [text.substring(0, maxChunkSize)]);
+      }
+
+      // Cut an oversize section at its scene headings, or not at all.
+      function slateSplitOversize(chunk, maxChunkSize) {
+        if (chunk.length <= maxChunkSize * 2) return [chunk];
+        var boundary = new RegExp('\n(?=[ \t]*' + slateHeadingSrc + ')', 'i');
+        var parts = chunk.split(boundary);
+
+        // One scene, however long. Send it whole: there is no boundary
+        // inside it that is not a lie.
+        if (parts.length <= 1) {
+          // Unless it is pathological. Nothing we have seen comes close to
+          // this — the longest real scene is 8698 characters — but a
+          // corrupted upload or a script with no headings at all should
+          // degrade rather than fail. Cut at LINE breaks, never inside a
+          // line, so the model is at least given whole sentences.
+          if (chunk.length <= maxChunkSize * 8) return [chunk];
+          var lines = chunk.split('\n'), out = [], buf = '';
+          for (var li = 0; li < lines.length; li++) {
+            if (buf && (buf + '\n' + lines[li]).length > maxChunkSize) {
+              out.push(buf); buf = lines[li];
+            } else {
+              buf += (buf ? '\n' : '') + lines[li];
+            }
+          }
+          if (buf) out.push(buf);
+          return out.length ? out : [chunk];
+        }
+
+        // Several scenes in one oversize section: the headings are real
+        // boundaries, so cutting there costs nothing.
+        var pieces = [], current = '';
+        for (var pi = 0; pi < parts.length; pi++) {
+          if (current && (current + '\n' + parts[pi]).length > maxChunkSize) {
+            pieces.push(current.trim()); current = parts[pi];
+          } else {
+            current += (current ? '\n' : '') + parts[pi];
+          }
+        }
+        if (current.trim()) pieces.push(current.trim());
+        return pieces.length ? pieces : [chunk];
       }
 
       function splitBySize(text, maxChunkSize) {
@@ -3112,6 +3274,167 @@
       // chosen it and this leaves it alone. Scripts without letter case —
       // Korean, Japanese, Chinese — have no uppercase to find, so they are
       // never altered.
+      // D or N, the way a call sheet carries it — and the full words when
+      // it is neither.
+      //
+      // This was the first LETTER of the time of day, which gives D for
+      // DAY and N for NIGHT and nonsense for everything else: a montage
+      // reading "ONE YEAR PASSING" printed as "O", EARLY MORNING as "E",
+      // MORNING as "M". A 1st AD cannot light from "O", and a code that is
+      // wrong some of the time is worse than no code, because the right
+      // ones stop being trusted too.
+      function slateDayNightCode(tod) {
+        var t = String(tod == null ? '' : tod).toUpperCase().trim();
+        if (!t) return '\u2014';
+        if (/\bNIGHT\b/.test(t)) return 'N';
+        if (/\bDAWN\b/.test(t)) return 'DAWN';
+        if (/\bDUSK\b|\bSUNSET\b|\bSUNDOWN\b/.test(t)) return 'DUSK';
+        if (/\bDAY\b|\bMORNING\b|\bAFTERNOON\b|\bDAYLIGHT\b/.test(t)) return 'D';
+        // Anything else is said in full rather than abbreviated into a
+        // letter that means nothing.
+        return t;
+      }
+
+      // ── The story day, read once and displayed everywhere ──
+      //
+      // Which day of the STORY a scene happens on — not which day of the
+      // shoot. It is what wardrobe and hair work from: scenes 12 and 48 may
+      // be shot three weeks apart and still have to match, because in the
+      // film they are the same morning.
+      //
+      // The breakdown prompt has asked the model for it all along and the
+      // model answers. Until now the value was cleaned of stray characters
+      // at merge time and then read by nothing: no renderer, no PDF, no
+      // schedule row, no call sheet. We paid for the field on every run and
+      // deleted it.
+      //
+      // ONE definition of what a story day IS, here, for the same reason
+      // slateDayNightCode exists: five renderers deciding separately how to
+      // read "(DAY 1)" is five chances to disagree on a continuity document.
+      // What each document CALLS it is the renderer's business — a slugline
+      // says "Story Day 1", a schedule strip says "SD1" — but they all read
+      // the same answer out of here.
+      function slateStoryDay(value) {
+        var raw = String(value == null ? '' : value).trim();
+        if (!raw) return '';
+        var up = raw.toUpperCase();
+        if (up === 'NULL' || up === 'UNDEFINED' || up === 'N/A' || up === 'TBD') return '';
+
+        // A bare time of day is NOT a story day, and this is the mistake the
+        // model actually makes: asked for a story day on a scene whose
+        // heading says DAY, it answers "DAY". Printing that as the story day
+        // would tell wardrobe that every daylight scene in the film matches
+        // every other one.
+        if (/^\(?\s*(?:DAY|NIGHT|MORNING|AFTERNOON|EVENING|DAWN|DUSK|CONTINUOUS|LATER|MOMENTS LATER|SAME)\s*\)?$/.test(up)) {
+          return '';
+        }
+
+        // The number is the story day, however it was written: "1",
+        // "DAY 1", "(DAY 1)", "Story Day 1", "D1". A range stays a range —
+        // "DAY 2-3" is a scene the writer spread over two days and a
+        // production needs to see that, not a tidied "2".
+        var range = up.match(/(\d+)\s*(?:-|–|—|\s+TO\s+)\s*(\d+)/);
+        if (range) return range[1] + '–' + range[2];
+        var one = up.match(/\d+/);
+        if (one) return one[0];
+
+        // No number anywhere. Something like "Flashback" or "Wedding day"
+        // is the writer's own way of grouping scenes, so it is kept as
+        // written rather than thrown away for not being a numeral.
+        return raw;
+      }
+
+      // ── Scenes grouped by the day of the STORY they happen on ──
+      //
+      // The one thing a breakdown can tell a script supervisor that a
+      // reading of the script in order cannot: which scenes have to match
+      // each other. Scenes 12 and 48 may shoot three weeks apart and still
+      // be the same story morning, so the costume, the hair and the state
+      // of an injury have to agree across them.
+      //
+      // Deterministic and free. No model call, no credit: every value here
+      // was already read and paid for, and this is a grouping over it. The
+      // model pass that looks for actual contradictions is a separate
+      // thing, built on top of these groups, and this renders without it.
+      //
+      // A scene with no story day is left OUT rather than collected into a
+      // group of its own. "Scenes we cannot place in story time" is a
+      // different report for a different reader, and putting them here
+      // would bury the groups that matter under the ones that do not.
+      //
+      // dayOfScene is optional: the shoot day each scene landed on, which
+      // only exists once a schedule does. Without it the grouping still
+      // works — it simply cannot say that a story day is split.
+      function slateContinuityGroups(scenes, dayOfScene) {
+        var map = {}, order = [];
+        (scenes || []).forEach(function (s) {
+          var sd = slateStoryDay(s && s.story_day);
+          if (!sd) return;
+          if (!map[sd]) { map[sd] = { story_day: sd, scenes: [] }; order.push(sd); }
+          map[sd].scenes.push(s);
+        });
+
+        return order.map(function (sd) {
+          var g = map[sd];
+          // Script order inside a group. A script supervisor reads these as
+          // the story runs, not as the schedule happens to have packed them.
+          var inOrder = g.scenes.slice().sort(function (a, b) {
+            return (Number(a.scene_index) || 0) - (Number(b.scene_index) || 0);
+          });
+          var days = [], seenDay = {};
+          inOrder.forEach(function (s) {
+            var d = dayOfScene ? dayOfScene[Number(s.scene_index)] : undefined;
+            if (d === undefined || d === null || seenDay[d]) return;
+            seenDay[d] = true;
+            days.push(d);
+          });
+          days.sort(function (a, b) { return a - b; });
+          return {
+            story_day: sd,
+            scenes: inOrder,
+            shoot_days: days,
+            // The expensive case, named rather than left to be noticed. One
+            // story morning shot across three weeks is where continuity is
+            // actually lost, and it is invisible in a schedule ordered by
+            // location.
+            split: days.length > 1,
+            // How many of these scenes the script actually describes. A
+            // group where nothing is described has nothing to match and is
+            // not worth a reader's time; a group where one scene is
+            // described and five are not is a question for the writer.
+            described: inOrder.filter(function (s) {
+              return (s.costume || []).length || (s.makeup_hair || []).length;
+            }).length
+          };
+        }).filter(function (g) {
+          // One scene on its own has nothing to agree with.
+          return g.scenes.length > 1;
+        }).sort(function (a, b) {
+          // Numeric story days in story order; anything the writer named in
+          // words after them, alphabetically. "2" before "10", which a
+          // string sort gets wrong, and "Wedding day" last.
+          var an = /^\d+$/.test(a.story_day) ? Number(a.story_day) : Infinity;
+          var bn = /^\d+$/.test(b.story_day) ? Number(b.story_day) : Infinity;
+          if (an !== bn) return an - bn;
+          return String(a.story_day).localeCompare(String(b.story_day));
+        });
+      }
+
+      // The shoot day each scene landed on, from a schedule. Returns null
+      // when there is no schedule yet, which the grouping above treats as
+      // "shoot days unknown" rather than "all on one day".
+      function slateDayOfScene(schedule) {
+        if (!schedule || !Array.isArray(schedule.schedule)) return null;
+        var out = {};
+        schedule.schedule.forEach(function (d) {
+          (d.scenes || []).forEach(function (s) {
+            var i = Number(s.scene_index);
+            if (i) out[i] = Number(d.day);
+          });
+        });
+        return out;
+      }
+
       function slateTitleCase(name) {
         var str = String(name || '');
         if (!str) return str;
@@ -3154,7 +3477,12 @@
           production_elements: {
             all_cast: [], all_props: [], all_costume: [],
             all_equipment: [], all_stunts: [], all_vehicles: [], all_animals: [],
-            all_special_effects: [], all_makeup_hair: [], special_requirements: []
+            all_special_effects: [], all_makeup_hair: [],
+            // The four categories a breakdown sheet carries that we did not
+            // ask for until 23 November. Set dressing was landing in props,
+            // and the other three were landing nowhere at all.
+            all_set_dressing: [], all_visual_effects: [], all_sound: [], all_music: [],
+            special_requirements: []
           }
         };
                let sceneOffset = 0;
@@ -3190,6 +3518,7 @@
         var slateAllTypes = slateFlat('slateChunkTypes');
         var slateAllEighths = slateFlat('slateChunkEighths');
         var slateAllPages = slateFlat('slateChunkPages');
+        var slateAllBeats = slateFlat('slateChunkBeats');
         var slateHaveRecord = !!(window.slateChunkNumbers && slateAllNums.length);
 
         var slateAllScenes = [];
@@ -3292,10 +3621,67 @@
               var recType = slateAllTypes[slateHeadIdx];
               if (recType === 'RETURN') scene.slate_returns_to_present = true;
               else if (recType) scene.scene_type = recType;
+              // The page's word on whether this is a montage.
+              //
+              // Scene 5 of THE WEAVER'S DAUGHTER came back typed MONTAGE.
+              // It is "INT. ADUKE'S WORKSHOP — NIGHT", an ordinary scene
+              // sitting directly after a montage, and the tag had simply
+              // run on in the model's own answer. An AD reading MONTAGE on
+              // a two-hander at a loom is being told something false about
+              // how it shoots.
+              //
+              // Only SEQUENCE types are checked this way, because a montage
+              // IS a heading form — if the page does not say it, it is not
+              // one. FLASHBACK and DREAM are left alone: those are read
+              // from the content, and a writer need not mark them.
+              else if (scene.scene_type) {
+                var slateSeqRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+                if (slateSeqRe.test(String(scene.scene_type))
+                    && !slateSeqRe.test(String(slateAllHeads[slateHeadIdx] || ''))) {
+                  scene.scene_type = null;
+                }
+              }
               // The page length we measured off the script, carried onto the
               // scene. Gated the same way the number is: if we cannot tell
               // which scene this is, a wrong length is worse than falling
               // back to the estimate.
+              // A montage's beats, from our own reading of the page. They
+              // are what makes "one scene" honest: the writer numbered the
+              // montage once, and an AD still needs all ten setups.
+              var slateB = slateAllBeats[slateHeadIdx];
+              if (slateB && slateB.length) scene.montage_beats = slateB;
+              // ── THE PAGE NAMES THE PLACE, NOT THE MODEL ──
+              //
+              // The script says "1. INT. ADUKE'S WORKSHOP - EARLY
+              // MORNING". The breakdown said "Aduke's House", while scene
+              // 5 of the same script said "Aduke's Workshop" — so one room
+              // became two locations, listed twice in the location report
+              // and grouped apart in the schedule. On more than one shoot
+              // day that is a company move to an address that does not
+              // exist, and a call sheet a driver cannot follow.
+              //
+              // This is the rule we already apply to scene numbers: the
+              // page is the authority and the model is a reader of it. We
+              // have the heading in hand, matched to this very scene, so
+              // the location, the set and the interior/exterior come off
+              // it. The model keeps what the page cannot say — who is in
+              // the scene, and what it needs.
+              //
+              // The trade: where a heading says only "KITCHEN" and the
+              // model inferred "Mama Bola's Kitchen", we now print
+              // KITCHEN. That is what an AD finds when they look the scene
+              // up in the script they are holding, which is the test that
+              // matters.
+              var slatePageHead = slateAllHeads[slateHeadIdx];
+              if (slatePageHead) {
+                var slateOnPage = slateParseHeading(slatePageHead);
+                if (slateOnPage.location) {
+                  scene.location = slateTitleCase(slateOnPage.location);
+                  if (slateOnPage.set) scene.set = slateTitleCase(slateOnPage.set);
+                }
+                if (slateOnPage.int_ext) scene.int_ext = slateOnPage.int_ext;
+                if (slateOnPage.time_of_day) scene.time_of_day = slateOnPage.time_of_day;
+              }
               var slateE = slateAllEighths[slateHeadIdx];
               if (slateE) scene.slate_eighths = slateE;
               var slateP = slateAllPages[slateHeadIdx];
@@ -3340,6 +3726,18 @@
               }
             });
 
+            // The story day, read ONCE — here, where the model's answer
+            // arrives — and normalised in place. Everything downstream only
+            // displays it: the schedule and the call sheet pass the field
+            // through verbatim and never interpret it.
+            //
+            // That is deliberate. A reader in app.html, another in
+            // schedule.js and a third in callsheet.js is the duplicate
+            // source of truth that every bug this evening came from. One
+            // reader at the boundary leaves nothing for the other two to
+            // disagree about.
+            scene.story_day = slateStoryDay(scene.story_day);
+
             merged.scenes.push({
               ...scene,
               scene_number: label,
@@ -3365,6 +3763,105 @@
           const pe = chunk.production_elements || {};
           merged.production_elements.special_requirements = slateMergeElements(merged.production_elements.special_requirements, pe.special_requirements);
         }
+
+        // ── NO SCENE IN THE SCRIPT IS LEFT OUT OF THE BREAKDOWN ──
+        //
+        // The model sometimes returns fewer scenes than the script has. On
+        // THE WEAVER'S DAUGHTER it merged "3A. INT. LAGOS OFFICE —
+        // CORRIDOR — CONTINUOUS" into the scene above and returned five
+        // scenes for a six-scene script.
+        //
+        // Warning about it was the first answer and it was not good
+        // enough. A warning asks a production manager to go and find what
+        // we lost. The scene is not actually lost — we read its heading
+        // off the page, we know its number, its page and its eighths, and
+        // for a montage we have its setups. Everything except what the
+        // model would have added.
+        //
+        // So it goes back, in its own place in the script, carrying what
+        // the page says and marked for what it lacks. A breakdown with a
+        // scene in it that has no cast listed is a scene an AD can see and
+        // ask about. A breakdown missing that scene is a day nobody books.
+        //
+        // The pass is monotonic: walk the scenes in order, and before each
+        // one, emit any heading the matcher never claimed that sits before
+        // it. A (CONT'D) heading is skipped — that is a page break, not a
+        // scene, and restoring it would invent a duplicate.
+        if (slateHaveRecord && slateAllHeads.length) {
+          var slateClaimed = {};
+          slateMatch.forEach(function (h) { if (h >= 0) slateClaimed[h] = true; });
+
+          var slateFromPage = function (hi) {
+            var headTxt = String(slateAllHeads[hi] || '');
+            if (!headTxt || SLATE_CONTD_RE.test(headTxt)) return null;
+            var parsed = slateParseHeading(headTxt);
+            var out = {
+              scene_number: slateAllNums[hi] || null,
+              int_ext: parsed.int_ext,
+              // The place travelled to, and the room lit — kept apart, as
+              // on every other scene. Putting the location in both made a
+              // restored scene group under a set nobody lights.
+              location: parsed.location,
+              set: parsed.set || '',
+              time_of_day: parsed.time_of_day,
+              description: '',
+              cast: [], props: [], costume: [], equipment: [], stunts: [],
+              vehicles: [], animals: [], special_effects: [], makeup_hair: [],
+              // Empty for a restored scene, and honestly so: this scene was
+              // built from its heading because the model never returned it,
+              // so nobody has read its action. An empty list here means "not
+              // read", which is why the restoration note tells the filmmaker
+              // to check these scenes themselves.
+              set_dressing: [], visual_effects: [], sound: [], music: [],
+              background: '',
+              // What the document says about itself. Read from the page;
+              // the elements are not here because they never arrived.
+              slate_from_page: true
+            };
+            if (slateAllTypes[hi] && slateAllTypes[hi] !== 'RETURN') {
+              out.scene_type = slateAllTypes[hi];
+            }
+            if (slateAllEighths[hi]) out.slate_eighths = slateAllEighths[hi];
+            if (slateAllPages[hi]) out.slate_page = slateAllPages[hi];
+            if (slateAllBeats[hi] && slateAllBeats[hi].length) {
+              out.montage_beats = slateAllBeats[hi];
+            }
+            return out;
+          };
+
+          var slateOrdered = [], slateOrderedMatch = [], slateRestored = [];
+          var slateHeadCursor = 0;
+          var slateEmitUpTo = function (limit) {
+            for (; slateHeadCursor < limit; slateHeadCursor++) {
+              if (slateClaimed[slateHeadCursor]) continue;
+              var made = slateFromPage(slateHeadCursor);
+              if (!made) continue;
+              slateOrdered.push(made);
+              slateOrderedMatch.push(slateHeadCursor);
+              slateRestored.push({ number: made.scene_number, head: slateAllHeads[slateHeadCursor] });
+            }
+          };
+          for (var so = 0; so < merged.scenes.length; so++) {
+            var slateH = slateMatch[so];
+            if (slateH >= 0) { slateEmitUpTo(slateH); slateHeadCursor = slateH + 1; }
+            slateOrdered.push(merged.scenes[so]);
+            slateOrderedMatch.push(slateH);
+          }
+          slateEmitUpTo(slateAllHeads.length);
+
+          if (slateRestored.length) {
+            merged.scenes = slateOrdered;
+            slateMatch = slateOrderedMatch;
+            merged.slate_restored = slateRestored;
+            // scene_index is a scene's position in the assembled script,
+            // and the schedule and call sheet look scenes up by it. A
+            // restored scene changes those positions, so they are rewritten
+            // here rather than left pointing at the wrong rows.
+            merged.scenes.forEach(function (sc, i) { sc.scene_index = i + 1; });
+            merged.total_scenes = merged.scenes.length;
+          }
+        }
+
          // ── Rebuild the indexes from the assembled scenes ──
         // These were previously merged per chunk, but a chunk only ever
         // sees its own scenes, so its counts were local. That is where
@@ -3512,7 +4009,36 @@
         //
         // Every note says which of those two it is, so a reader can always
         // tell what the script stated from what we inferred.
+        var slateSpanStats = {};
         (function () {
+          var slateSeqSpanRe = new RegExp('\\b(?:' + SLATE_SEQUENCE + ')\\b', 'i');
+
+          // ── What the MODEL said, before we extend anything ──
+          //
+          // A scene_type opens a span that runs forward until the next type
+          // or a marked return, and with no return in the script, to the
+          // end of the film. iRANTI came back with 111 of 117 scenes shown
+          // as another time while only 37 carried a sequence type: the rest
+          // is span inheritance.
+          //
+          // Whether that is right turns on one fact nobody here knows: does
+          // the model type EVERY scene inside a flashback, or only the
+          // first? If every scene, spans are unnecessary and the mechanism
+          // itself is the fault. If only the first, spans are needed and
+          // merely need an ending.
+          //
+          // Stored breakdowns cannot answer it, because by the time one is
+          // saved the span has already overwritten the model's own answer.
+          // So it is counted here, before that happens, and one real run
+          // settles it. Counts only — no titles, no locations.
+          var slateModelTyped = 0, slateModelReturns = 0;
+          merged.scenes.forEach(function (s) {
+            if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') slateModelTyped++;
+            if (s.slate_returns_to_present || s.scene_type === 'BACK TO PRESENT') {
+              slateModelReturns++;
+            }
+          });
+
           var spans = [];
           var open = null;
           merged.scenes.forEach(function (s, i) {
@@ -3532,6 +4058,21 @@
               }
               return;
             }
+            // ── A montage is one scene, so it opens nothing ──
+            //
+            // A scene_type opens a span that runs forward until the next
+            // type or a marked return — and with no return in the script,
+            // to the end of the film. That is right for a FLASHBACK, which
+            // really does run across scenes. It is wrong for a MONTAGE,
+            // which IS one scene by definition.
+            //
+            // Measured on real runs before this: HILLS had 96 of its 110
+            // scenes tagged MONTAGE and 104 of them shown as another time;
+            // a producer's 117-scene script had 82 shown as another time.
+            // An AD reading that is told two thirds of the film needs
+            // flashback continuity — different costume, hair and makeup —
+            // when it does not.
+            if (slateSeqSpanRe.test(String(s.scene_type || ''))) return;
             if (s.scene_type && s.scene_type !== 'BACK TO PRESENT') {
               // A span can end three ways, and which one it was has to be
               // recorded here or the note below guesses. Closing the previous
@@ -3555,6 +4096,15 @@
             for (var i = sp.from; i < sp.endsBefore; i++) inSpan[i] = sp;
           });
 
+          // Handed out to the reading record below, which is built after
+          // this runs. It says plainly how much of a breakdown is the
+          // model's own answer and how much is ours extending it.
+          slateSpanStats.scene_types_from_model = slateModelTyped;
+          slateSpanStats.returns_marked = slateModelReturns;
+          slateSpanStats.spans_opened = spans.length;
+          slateSpanStats.spans_running_to_end =
+            spans.filter(function (sp) { return sp.endedBy === 'end'; }).length;
+
           merged.scenes.forEach(function (s, i) {
             var sp = inSpan[i];
             if (s.slate_returns_to_present) {
@@ -3574,6 +4124,10 @@
               return;
             }
             if (!sp) return;
+            // A montage inside someone else's flashback keeps its own word.
+            // Inheriting the span's type here would lose the montage, which
+            // is the one thing on this scene an AD schedules differently.
+            if (slateSeqSpanRe.test(String(s.scene_type || ''))) return;
             s.scene_type = sp.type;
             s.slate_time_frame = 'other';
             var slateKind = sp.type.toLowerCase();
@@ -3741,6 +4295,19 @@
         // slateMergeElements rather than a Set, for the reason the old code
         // gave: a Set only merges byte-identical strings, which is how ALL
         // PROPS carried the same item twice.
+        // How many scenes carry anything at all in a given category.
+        // Deliberately not a count of items: a scene listing nine dressing
+        // entries and a scene listing one are both one scene the model
+        // actually read.
+        function slateCountScenesWith(field) {
+          var n = 0;
+          merged.scenes.forEach(function (s) {
+            var v = s[field];
+            if (Array.isArray(v) ? v.length : (v ? String(v).trim() : '')) n++;
+          });
+          return n;
+        }
+
         function slateCollectElement(field) {
           var out = [];
           merged.scenes.forEach(function (s) {
@@ -3767,6 +4334,99 @@
         merged.production_elements.all_animals         = slateCollectElement('animals');
         merged.production_elements.all_special_effects = slateCollectElement('special_effects');
         merged.production_elements.all_makeup_hair     = slateCollectElement('makeup_hair');
+        merged.production_elements.all_set_dressing    = slateCollectElement('set_dressing');
+        merged.production_elements.all_visual_effects  = slateCollectElement('visual_effects');
+        merged.production_elements.all_sound           = slateCollectElement('sound');
+        merged.production_elements.all_music           = slateCollectElement('music');
+
+        // ── How the reading went, in numbers ──
+        //
+        // Counts only. No line of anyone's screenplay, no location, no
+        // name: we do not keep scripts and this does not start.
+        //
+        // It exists because of a question we could not answer on 22
+        // November. A producer's breakdown came back with 117 scenes for a
+        // script whose numbers run to 71, and the two possible causes need
+        // opposite fixes — either WE found 117 headings on his pages, or
+        // the MODEL returned 37 scenes his script does not have. Nothing
+        // stored could tell them apart, and since we keep no screenplays
+        // there was no way to find out after the fact. Asking him to send
+        // his script is the one thing we promise never to do.
+        //
+        // headings_read against model_scenes answers it in one line, for
+        // any script, without us ever seeing a word of it. Nothing renders
+        // these: every document reads production_elements by name.
+        merged.production_elements.slate_reading = {
+          headings_read: slateAllHeads.length,
+          scenes_restored_from_page: (merged.slate_restored || []).length,
+          scene_types_from_model: slateSpanStats.scene_types_from_model,
+          returns_marked: slateSpanStats.returns_marked,
+          spans_opened: slateSpanStats.spans_opened,
+          spans_running_to_end: slateSpanStats.spans_running_to_end,
+          numbers_read: slateAllNums.filter(function (n) { return !!n; }).length,
+          model_scenes: slateAllScenes.length,
+          scenes_placed: slateMatch.filter(function (i) { return i >= 0; }).length,
+          every_section_agreed: !!slateEveryChunkAgrees,
+          sections: chunks.length,
+          // ── How often the model filled the four new categories ──
+          //
+          // Added with the categories themselves, on 23 November, because
+          // the one risk they carry cannot be measured without the model.
+          // The A/B harness compares two readings of a script; it says
+          // nothing about how the model answers a changed prompt, and a
+          // prompt change is what caused both regressions this evening.
+          //
+          // So the first real run reports on itself. These are the numbers
+          // that distinguish the two ways this can go wrong, and they are
+          // opposite:
+          //
+          //   near the scene count  -> the model is padding, inventing a
+          //                            sofa for every room, and the lists
+          //                            are noise a department will stop
+          //                            reading
+          //   zero on a script that -> the model is not reading them at
+          //   plainly has them         all and the categories are decoration
+          //
+          // Counts of SCENES carrying each, not of items, because a scene
+          // with nine dressing entries and a scene with one are both one
+          // scene that was read. Counts only, like everything else here —
+          // no screenplay text, nothing renders them.
+          scenes_with_set_dressing: slateCountScenesWith('set_dressing'),
+          scenes_with_visual_effects: slateCountScenesWith('visual_effects'),
+          scenes_with_sound: slateCountScenesWith('sound'),
+          scenes_with_music: slateCountScenesWith('music'),
+          // The five that were already there, for comparison on the same
+          // run. Without them the four above have nothing to be judged
+          // against: "set dressing on 40 scenes" means one thing beside
+          // "props on 44" and another beside "props on 6".
+          scenes_with_props: slateCountScenesWith('props'),
+          scenes_with_stunts: slateCountScenesWith('stunts'),
+          scenes_with_special_effects: slateCountScenesWith('special_effects'),
+          // ── How much story day the model actually gives us ──
+          //
+          // The field has been asked for since the prompt was written and
+          // was read by nothing until tonight, so NOBODY KNOWS how often
+          // the model fills it. Every answer about continuity depends on
+          // this number, and I have never seen it.
+          //
+          // Both halves matter. The count says whether the field arrives
+          // at all; the distinct count says whether it discriminates — a
+          // script where every scene is story day 1 has a field that is
+          // present and useless, and that looks identical to a good
+          // result if you only count the scenes.
+          scenes_with_story_day: slateCountScenesWith('story_day'),
+          distinct_story_days: (function () {
+            var seen = {}, n = 0;
+            merged.scenes.forEach(function (s) {
+              var v = String(s.story_day || '').trim();
+              if (!v || seen[v]) return;
+              seen[v] = true;
+              n++;
+            });
+            return n;
+          })(),
+          scenes_total: merged.scenes.length
+        };
 
         return merged;
       }
@@ -3813,6 +4473,27 @@
       //
       // Returns null when there is nothing to explain, so a cleanly numbered
       // script gets no clutter.
+
+      // Screenplay text, safe to put in HTML.
+      //
+      // Written for the montage beats, which are the first thing to go onto
+      // the page straight from a line of someone's script. The wider
+      // problem is older and bigger than this helper: every renderer in
+      // this file interpolates script-derived text raw — descriptions,
+      // locations, character names — so a screenplay containing a script
+      // tag runs in the filmmaker's browser. Mostly that is a filmmaker
+      // attacking themselves, which is nobody's emergency, but these
+      // scripts are not always the reader's own: a production manager is
+      // sent a script by a writer, and a breakdown gets shared. Retrofit
+      // of the rest is its own task; new code uses this.
+      function slateEscapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
 
       // What a scene shows when we could not match it to a number of the
       // script's own. ONE definition: the scene list, the character report,
@@ -3955,6 +4636,113 @@
           + 'worse mistake.</div>';
       }
 
+      // A slug line, broken into the three things a breakdown row needs.
+      //
+      // Written so that a scene the model never returned can still be put
+      // on the document from the page alone. Everything here comes off the
+      // heading we already read; nothing is inferred.
+      function slateParseHeading(headText) {
+        // The margin number FIRST, and before whitespace is collapsed: a
+        // shooting script separates it with a run of spaces, and
+        // collapsing them to one removes the only thing that distinguishes
+        // "EXT. WOODS – SUNDOWN   1" from a time of day called "SUNDOWN 1".
+        var line = String(headText == null ? '' : headText)
+          .replace(/[ \t]+$/, '')
+          .replace(/[ \t]{2,}[0-9]{1,4}[A-Za-z]?[.):]?$/, '')
+          .replace(/\s+/g, ' ').trim();
+
+        // A scene number folded onto the front, including an A-scene. The
+        // space after it is OPTIONAL when a heading word follows: HILLS
+        // writes "28EXT. VILLAGE SQUARE — DAY" with nothing between them,
+        // and requiring the space left the number stuck to the location.
+        line = line
+          .replace(new RegExp('^(?:(?:' + SLATE_NUM + ')[ \t]*)?[0-9]{1,4}[A-Za-z]?[.):]?'
+                              + '(?:[ \t]+|(?=(?:' + SLATE_HEAD + ')))', 'i'), '');
+
+        // The heading word itself, from the ONE vocabulary that defines
+        // them. Writing a second list here is how the Turkish and Korean
+        // bugs were made: a script saying 실내 or İÇ is a heading in one
+        // place and not in the other, and the two drift apart silently.
+        // MONTAGE and its relatives open a heading the same way INT does,
+        // and they are no more a location than INT is. Left in, "63.
+        // MONTAGE - VARIOUS LOCATIONS - MONTHS PASSING" makes "Montage"
+        // the place a unit travels to, and it turns up in the location
+        // report as somewhere to drive. The scene TYPE is carried
+        // separately, from the page, so nothing is lost by removing it.
+        //
+        // Tested BEFORE the heading word, because INTERCUT begins with INT
+        // and the other order left the location reading "ERCUT".
+        var seq = line.match(new RegExp('^(?:' + SLATE_SEQUENCE + ')\\b[ \\t]*[—–:-]?[ \\t]*', 'i'));
+        if (seq) line = line.slice(seq[0].length);
+
+        // The same guard the main reader uses, for the same reason: without
+        // it INT matches the front of INTERIOR'S, INTERCUT and any other
+        // word that merely starts that way. One rule, written once.
+        var ie = '';
+        if (!seq) {
+          var m = line.match(new RegExp(
+            '^(' + SLATE_HEAD + ')(?![А-Яа-яA-Za-zİıŞşĞğÇçÖöÜü])[.\\s]*', 'i'));
+          if (m) { ie = m[1].toUpperCase().replace(/\.$/, ''); line = line.slice(m[0].length); }
+        }
+
+        // The time of day is the last dash-separated part, and only when it
+        // reads like one. "INT. MAMA BOLA HOUSE - KITCHEN" has no time, and
+        // calling "KITCHEN" the time would put it in the wrong column.
+        var tod = '';
+        var parts = line.split(/\s[—–-]\s|\s{2,}/);
+        if (parts.length > 1) {
+          var tail = parts[parts.length - 1].trim();
+          if (/^(?:LATE |EARLY |CONTINUOUS|MOMENTS |SAME |LATER)?\s*(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|SUNSET|SUNDOWN|SUNRISE|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME|MOMENTS LATER|MONTHS PASSING|ONE YEAR PASSING)\b/i.test(tail)
+              || /PASSING$/i.test(tail)) {
+            tod = tail.replace(/[.\s]+$/, '');
+            parts.pop();
+          }
+        }
+        // The LOCATION is the place a unit travels to; the SET is the room
+        // it lights. "INT. LAGOS OFFICE - CORRIDOR" is one journey and two
+        // setups, and a call sheet that collapses them sends a driver to
+        // "Lagos Office - Corridor".
+        var place = parts.shift() || '';
+        return { int_ext: ie, location: place.trim(),
+                 set: parts.join(' - ').trim(), time_of_day: tod };
+      }
+
+      // Said plainly, and named. These scenes ARE on the document — that is
+      // the point of restoring them — but they carry no cast or elements,
+      // and a reader must not mistake an empty row for an empty scene.
+      // "Some scenes may be incomplete" is a sentence nobody can act on;
+      // "scene 3A came from your script" is one a production manager
+      // checks against the page in ten seconds.
+      function slateRestoredNote(restored) {
+        var list = (restored || []);
+        if (!list.length) return null;
+        var named = list.map(function (m) {
+          if (m.number) return 'scene ' + m.number;
+          var head = String(m.head || '').replace(/\s+/g, ' ').trim();
+          return head ? '\u201c' + head.slice(0, 44) + '\u201d' : 'one heading';
+        });
+        // Six is enough to act on; a longer list means something else is
+        // wrong and the count is the useful part.
+        var shown = named.slice(0, 6).join(', ')
+          + (named.length > 6 ? ' and ' + (named.length - 6) + ' more' : '');
+        var one = list.length === 1;
+        return '<strong>' + list.length + ' scene' + (one ? '' : 's')
+          + ' here ' + (one ? 'was' : 'were') + ' read from your script, not from the '
+          + 'breakdown</strong>: ' + shown + '. ' + (one ? 'It is' : 'They are')
+          + ' in the list with ' + (one ? 'its' : 'their') + ' number, page and '
+          + 'location, but no cast or elements came back for '
+          + (one ? 'it' : 'them') + '. Check '
+          + (one ? 'it' : 'them') + ' against your pages before you schedule.';
+      }
+
+      function slateRestoredNoteHtml(restored) {
+        var note = slateRestoredNote(restored);
+        if (!note) return '';
+        return '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;'
+          + 'line-height:1.5;border:1px solid var(--warn,#C97E3D);color:var(--warn,#C97E3D)">'
+          + note + '</div>';
+      }
+
       function slateNumberingNoteHtml(scenes) {
         var note = slateNumberingNote(scenes);
         if (!note) return '';
@@ -3973,7 +4761,13 @@
         var chars = data.character_breakdown || [];
         var locs = data.outline_schedule || [];
         var pe = data.production_elements || {};
-        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + txt + '</span>'; }
+        // Escaped here, at the one place every chip is made, rather than at
+        // the fourteen call sites that make them. Every value passing
+        // through is script-derived — a prop, a costume item, a character
+        // name — which means it is data, and a location called
+        // "Mama's <b>Shop" rendered as markup today. Nothing passes HTML to
+        // this deliberately, so escaping changes no correct output.
+        function chip(txt) { return '<span style="display:inline-block;padding:4px 10px;margin:3px;border:1px solid var(--line-1,#2E323A);border-radius:6px;font-size:12px;color:var(--paper,#F4EFE6)">' + slateEscapeHtml(txt) + '</span>'; }
         var html = '';
         if (partial) {
           // "Retry" used to mean the whole screenplay again, from section
@@ -4010,12 +4804,41 @@
             // makeup, and the scenes usually shoot together — an AD needs to
             // see it on the breakdown, not work it out from the script.
             + (s.scene_type ? '<span style="margin-left:10px;padding:2px 8px;border:1px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:999px;font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + ';vertical-align:middle">' + s.scene_type + '</span>' : '')
+            // The story day. Not a warning and not a badge about this scene's
+            // own nature — a key that ties this scene to every other scene
+            // wardrobe has to match it to, so it is shown plainly.
+            + (slateStoryDay(s.story_day)
+                ? '<span style="margin-left:10px;padding:2px 8px;border:1px solid var(--line-1,#2E323A);'
+                  + 'border-radius:999px;font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;'
+                  + 'color:var(--text-2,#B5AFA3);vertical-align:middle">SD '
+                  + slateEscapeHtml(slateStoryDay(s.story_day)) + '</span>'
+                : '')
             + '</div>'
             // Said in words, not just a badge. A reader should never have to
             // work out whether they are inside a flashback by counting back
             // through the script.
             + (s.scene_continuity ? '<div style="margin-top:6px;padding:7px 10px;background:' + (slateOther ? 'rgba(139,125,216,0.09)' : 'rgba(127,174,126,0.08)') + ';border-left:2px solid ' + (slateOther ? 'rgba(139,125,216,0.5)' : 'rgba(127,174,126,0.4)') + ';border-radius:3px;font-size:12px;color:' + (slateOther ? '#A396E0' : 'var(--ok,#7FAE7E)') + '">' + s.scene_continuity + '</div>' : '')
             + (s.description ? '<div style="color:var(--text-2,#B5AFA3);font-size:13px;margin-top:6px">' + s.description + '</div>' : '')
+            // ── The setups inside a montage ──
+            //
+            // The writer numbered the montage once, so it is one scene and
+            // one row. But ten beats in ten places are ten setups, ten
+            // company moves and ten lighting calls, and an AD scheduling
+            // from a document that hides them loses a day finding out.
+            //
+            // So the count follows the script and the detail stays on the
+            // page. Read off the script, not asked of the model.
+            + (s.montage_beats && s.montage_beats.length
+                ? '<div style="margin-top:8px;padding-left:10px;border-left:2px solid var(--line-1,#2E323A)">'
+                  + '<div style="font-family:var(--font-data);font-size:10px;letter-spacing:0.12em;'
+                  + 'text-transform:uppercase;color:var(--text-2,#B5AFA3);margin-bottom:4px">'
+                  + s.montage_beats.length + ' setups in this montage</div>'
+                  + s.montage_beats.map(function (b) {
+                      return '<div style="font-size:12px;color:var(--text-2,#B5AFA3);'
+                           + 'padding:2px 0">\u2022 ' + slateEscapeHtml(b) + '</div>';
+                    }).join('')
+                  + '</div>'
+                : '')
             + (s.cast && s.cast.length ? '<div style="margin-top:8px">' + s.cast.map(chip).join(' ') + '</div>' : '')
             // Background is extracted by the breakdown and was being thrown
             // away here, only to reappear on the schedule two documents
@@ -4040,6 +4863,7 @@
         // Under the report rather than above it: a reader meets the numbers
         // first and the explanation when they need it.
         html += slateCastReviewHtml(chars);
+        html += slateRestoredNoteHtml(data.slate_restored);
         html += slateNumberingNoteHtml(data.scenes);
         html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 3 — Locations</div>';
         html += '<div style="background:var(--ink-2,#1B1D22);border:1px solid var(--line-1,#2E323A);border-radius:8px;overflow:hidden">'
@@ -4054,6 +4878,98 @@
         html += '<div style="margin-bottom:8px;color:var(--text-2,#B5AFA3);font-size:12px">Cast</div><div>' + (pe.all_cast || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Props</div><div>' + (pe.all_props || []).map(chip).join('') + '</div>'
           + '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">Costume</div><div>' + (pe.all_costume || []).map(chip).join('') + '</div>';
+        // ── The departments, on screen as well as on the PDF ──
+        //
+        // Report 4 showed Cast, Props and Costume and stopped. The five
+        // department categories were collected, rolled up, printed on the
+        // PDF — and absent from the screen, which is where a filmmaker
+        // decides whether the breakdown is any good before exporting
+        // anything. The four added tonight would have landed in the same
+        // hole, so all nine go in together.
+        //
+        // Shown only when the script called for them, the same rule the PDF
+        // follows: most films have no animals and no effects, and a row of
+        // empty headings suggests we looked and found nothing rather than
+        // that there was nothing to find.
+        [['Equipment', pe.all_equipment],
+         ['Stunts', pe.all_stunts],
+         ['Vehicles', pe.all_vehicles],
+         ['Animals', pe.all_animals],
+         ['Special Effects', pe.all_special_effects],
+         ['Makeup & Hair', pe.all_makeup_hair],
+         ['Set Dressing', pe.all_set_dressing],
+         ['Visual Effects', pe.all_visual_effects],
+         ['Sound', pe.all_sound],
+         ['Music', pe.all_music]].forEach(function (pair) {
+          if (!pair[1] || !pair[1].length) return;
+          html += '<div style="margin:12px 0 8px;color:var(--text-2,#B5AFA3);font-size:12px">'
+            + slateEscapeHtml(pair[0]) + '</div><div>'
+            + pair[1].map(chip).join('') + '</div>';
+        });
+      // ── Report 5 — Continuity by Story Day ──
+        //
+        // Only once the whole script is read. Mid-stream, a story day looks
+        // split simply because the scenes that complete it have not arrived
+        // yet, and a report that cries wolf while the user watches it is
+        // worse than one that appears a moment later.
+        if (!streaming || streaming.complete) {
+          var slateCont = slateContinuityGroups(scenes, slateDayOfScene(slateSchedule));
+          if (slateCont.length) {
+            html += '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin:28px 0 12px">Report 5 — Continuity by Story Day</div>';
+            html += '<div style="color:var(--text-2,#B5AFA3);font-size:12px;margin-bottom:12px">'
+              + 'Scenes that happen on the same day of the story have to match on screen, '
+              + 'however far apart they are shot. Nothing here is a fault — it is what '
+              + 'has to agree.</div>';
+            html += slateCont.map(function (g) {
+              var split = g.split
+                ? '<span style="color:var(--warn,#C97E3D);font-family:var(--font-data);font-size:11px;margin-left:10px">'
+                  + 'shot across days ' + g.shoot_days.join(', ') + '</span>'
+                : (g.shoot_days.length
+                    ? '<span style="color:var(--text-3,#7D786E);font-family:var(--font-data);font-size:11px;margin-left:10px">day '
+                      + g.shoot_days[0] + '</span>'
+                    : '');
+              return '<div style="padding:12px 16px;margin-bottom:8px;background:var(--ink-2,#1B1D22);'
+                + 'border:1px solid var(--line-1,#2E323A);border-radius:8px">'
+                // The separator is not decoration. "Story day 1" beside
+                // "4 scenes" reads as "Story day 14" at a glance, and on a
+                // document whose whole purpose is the number, that is not a
+                // risk worth taking.
+                //
+                // The described count sits here because it is what tells a
+                // script supervisor whether this group is worth their time:
+                // four scenes with two described is a comparison to make,
+                // four with none is a question for the writer.
+                + '<div style="font-family:monospace;color:var(--gold,#D4A64A);font-size:13px;font-weight:600">'
+                + 'Story day ' + slateEscapeHtml(g.story_day)
+                + '<span style="color:var(--text-2,#B5AFA3);font-family:inherit;font-size:12px;margin-left:10px">'
+                + '· ' + g.scenes.length + ' scenes · ' + g.described
+                + ' described</span>' + split + '</div>'
+                + g.scenes.map(function (s) {
+                    // Costume and makeup as the script described them, side
+                    // by side. The comparison is the whole point, so an
+                    // undescribed scene says so rather than showing blank —
+                    // a reader cannot tell a blank from "nothing changes".
+                    var bits = [];
+                    (s.costume || []).forEach(function (v) { bits.push(slateEscapeHtml(v)); });
+                    (s.makeup_hair || []).forEach(function (v) { bits.push(slateEscapeHtml(v)); });
+                    return '<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line-1,#2E323A);font-size:12px">'
+                      + '<span style="font-family:monospace;color:var(--gold,#D4A64A);min-width:38px">'
+                      + slateEscapeHtml(s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)))
+                      + '</span>'
+                      + '<span style="color:var(--text-2,#B5AFA3);flex:1">'
+                      + (bits.length ? bits.join('  ·  ')
+                          : '<span style="color:var(--text-3,#7D786E)">not described in the script</span>')
+                      + '</span></div>';
+                  }).join('')
+                + (g.described === 0
+                    ? '<div style="margin-top:8px;font-size:11px;color:var(--text-3,#7D786E)">'
+                      + 'The script describes no costume or makeup on any of these scenes, so '
+                      + 'there is nothing recorded to match. Worth a look before the day.</div>'
+                    : '')
+                + '</div>';
+            }).join('');
+          }
+        }
       if (streaming && !streaming.complete) {
           html += '<div style="margin-top:32px;padding:14px 16px;border:1px dashed var(--line-1,#2E323A);border-radius:8px;color:var(--text-2,#B5AFA3);font-size:13px">Still reading your screenplay — section ' + streaming.done + ' of ' + streaming.total + '. Scenes appear here as they are analysed.</div>';
         } else {
@@ -4304,6 +5220,79 @@
       // isolation bug wearing a new hat. Length plus a sample from three
       // places is enough to catch a different file or an edited one; it is
       // not a security hash and does not need to be.
+      // ── A run's name, short enough to be compared by eye ──
+      //
+      // Printed in the footer of every document, so the only requirement
+      // that matters is that two of them can be told apart by a person
+      // holding two sheets of paper. Six lowercase hex characters: 16.7
+      // million values, far more than a production will ever generate, and
+      // short enough to read aloud down a phone.
+      //
+      // ── Why all six are random ──
+      //
+      // The first version spent three of the six on the millisecond clock,
+      // so that two stamps would sort into the order they were made. The
+      // reasoning was wrong twice over.
+      //
+      // It was wrong on the requirement. A crew holding two call sheets is
+      // asking "are these the same run", which is equality, not order —
+      // and when they do want to know which is newer, slate_run_at and
+      // slate_built_at carry real timestamps. Nobody decodes a hex prefix.
+      //
+      // It was wrong on the arithmetic, which is the part that mattered.
+      // Three random characters is 4,096 values, so two runs started in
+      // the same few seconds collided about once in four thousand — and
+      // two runs of one script in quick succession is EXACTLY the case
+      // this stamp exists to tell apart. provenance-probe.js drew 4,000
+      // stamps in a loop and got 1,415 collisions. Two runs printed under
+      // one name would be worse than no stamp at all, because the stamp
+      // would be believed.
+      //
+      // crypto.getRandomValues where it exists, Math.random where it does
+      // not. Neither is a security decision; both give the distribution
+      // the arithmetic above needs.
+      function slateRunStamp() {
+        var out = '';
+        try {
+          if (window.crypto && window.crypto.getRandomValues) {
+            var buf = new Uint8Array(3);
+            window.crypto.getRandomValues(buf);
+            for (var i = 0; i < buf.length; i++) {
+              out += ('0' + buf[i].toString(16)).slice(-2);
+            }
+          }
+        } catch (e) { out = ''; }
+        if (out.length !== 6) {
+          out = ('00000' + Math.floor(Math.random() * 0x1000000).toString(16)).slice(-6);
+        }
+        return out.toLowerCase();
+      }
+
+      // ── Lift the stored stamp onto the breakdown, at both boundaries ──
+      //
+      // The stamp is STORED inside production_elements, because that is a
+      // JSON column that survives a save without a database change. It is
+      // READ off the top level, because eight renderers should not each
+      // know where it is kept.
+      //
+      // So it is lifted once at each point a breakdown enters memory —
+      // after a fresh run, and after loading a saved production — and
+      // every reader downstream touches only slate_run_id. Same discipline
+      // as the story day: normalise at the boundary, and leave nothing for
+      // the readers to disagree about.
+      //
+      // A production saved before stamps existed lifts nothing and keeps
+      // an empty id, which every consumer already treats as "unknown"
+      // rather than "mismatched".
+      function slateAdoptRunStamp(bd) {
+        if (!bd) return bd;
+        var run = (bd.production_elements && bd.production_elements.slate_run) || null;
+        bd.slate_run_id = (run && run.id) ? String(run.id) : '';
+        bd.slate_run_at = (run && run.at) ? String(run.at) : '';
+        bd.slate_fingerprint = (run && run.fingerprint) ? String(run.fingerprint) : '';
+        return bd;
+      }
+
       function slateScriptFingerprint(text) {
         var t = String(text || '');
         if (!t) return '';
@@ -4481,19 +5470,11 @@
         document.getElementById('wsResults').style.display = 'none';
         try {
           wsProgress(5, 'Reading screenplay...');
+          // Oversize sections are the splitter's business now, and are
+          // handled before it records what it read. Slicing them out here
+          // cut scenes in half and left the recorded headings describing
+          // 68 sections while 76 were sent.
           const chunks = splitScriptForProcessing(script, CHUNK_SIZE);
-          // Oversize policy (Jul 17 fix): never reject — slice.
-          for (let ci = 0; ci < chunks.length; ci++) {
-            if (chunks[ci].length > CHUNK_SIZE * 2) {
-              const oversized = chunks[ci];
-              const pieces = [];
-              for (let p = 0; p < oversized.length; p += CHUNK_SIZE) {
-                pieces.push(oversized.slice(p, p + CHUNK_SIZE));
-              }
-              chunks.splice(ci, 1, ...pieces);
-              ci += pieces.length - 1;
-            }
-          }
           const totalChunks = chunks.length;
 
           // A resume is only safe if the script splits the same way it did
@@ -4697,6 +5678,46 @@
             s.scene_number = n;
             if (!s.scene_index) s.scene_index = i + 1;
           });
+
+          // ── Which run produced this document ──
+          //
+          // Stamped HERE and nowhere else: this is the one moment a
+          // breakdown run completes. A production reopened from a save
+          // keeps the stamp it was saved with, because the stamp names the
+          // run that produced the documents, not the day someone looked at
+          // them again.
+          //
+          // It exists because of the call sheet Elizabeth found on 23
+          // November. Its scene numbers came from one run and the schedule
+          // beside it came from another, and nothing on either page said
+          // so. That is the worst failure this product has, because it is
+          // silent — a stale call sheet looks exactly like a current one,
+          // and a unit can arrive at the right place on the wrong day's
+          // pages.
+          //
+          // Six characters because a human has to read it off a printed
+          // footer and compare it with another printed footer, possibly on
+          // a phone, possibly at 05:00. A UUID does not get compared.
+          //
+          // It is written INSIDE production_elements, which is already a
+          // JSON column that save.js stores and load.js returns verbatim.
+          // A stamp that did not survive a save would be useless — the
+          // documents it has to identify are the ones a filmmaker comes
+          // back to next week — and a new column on the breakdowns table
+          // is a production database change, which is Elizabeth's to
+          // approve and not mine to make. slate_reading already lives
+          // here for the same reason.
+          slateBreakdown.production_elements = slateBreakdown.production_elements || {};
+          slateBreakdown.production_elements.slate_run = {
+            id: slateRunStamp(),
+            at: new Date().toISOString(),
+            // The script, not the run. Two runs of the same screenplay
+            // share this and differ in id, which is what tells a re-run
+            // apart from a different film — the question still open on
+            // whether a re-run should join the same production.
+            fingerprint: slateScriptFingerprint(extractedScriptText)
+          };
+          slateAdoptRunStamp(slateBreakdown);
             // Persist the ASSEMBLED breakdown. The server only ever sees one
           // chunk at a time, so this is the only point where the complete
           // version exists. Failure here must not lose the user their result,
@@ -4763,7 +5784,11 @@
        // Bridge for the Productions view, which lives in a separate script
       // block and cannot assign to these variables directly.
       window.slateRestoreProduction = function (data) {
-        slateBreakdown = data.breakdown;
+        // The second boundary. A reopened production keeps the stamp of
+        // the run that produced it — it is not re-stamped, because the
+        // stamp names when the documents were made and not when somebody
+        // looked at them again.
+        slateBreakdown = slateAdoptRunStamp(data.breakdown);
         slateSchedule = data.schedule || null;
         slateCallsheet = null;
         if (data.script_text) extractedScriptText = data.script_text;
@@ -4930,6 +5955,17 @@
       // manager to ignore the warning.
       function slateCallsheetOutOfDate() {
         if (!slateCallsheet || !slateSchedule) return false;
+        // A sheet from a different breakdown run is out of date whatever
+        // its scene list says — and it can agree scene for scene while
+        // describing another run of the script, which is how the one
+        // Elizabeth found looked right until a scene was counted.
+        //
+        // Both ids must be present to disagree: a production saved before
+        // stamps existed has neither, and that is unknown, not wrong.
+        if (slateCallsheet.slate_run_id && slateSchedule.slate_run_id
+            && slateCallsheet.slate_run_id !== slateSchedule.slate_run_id) {
+          return true;
+        }
         var day = (slateSchedule.schedule || []).filter(function (d) {
           return d.day === slateCallsheet.shoot_day;
         })[0];
@@ -5079,6 +6115,28 @@
                 if (!bgScenes.length) return '';
                 return '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
                   + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
+                  + '</div>';
+              })()
+           // ── Which story days this shoot day covers ──
+           //
+           // A shoot day is built by location, so it routinely spans
+           // several days of the story. That is not a fault and is not
+           // phrased as one. But a day covering three story days needs
+           // three wardrobe looks standing by, and the only document that
+           // could have said so said nothing.
+           //
+           // One line, in the same register as BG above: a fact, stated.
+           // The count is given because it is the number that costs money.
+           + (function () {
+                var sds = (d.story_days || []).filter(Boolean);
+                if (!sds.length) return '';
+                return '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:6px;font-family:monospace">'
+                  + 'Story day' + (sds.length > 1 ? 's' : '') + ': '
+                  + sds.map(slateEscapeHtml).join('  ·  ')
+                  + (sds.length > 1
+                      ? '<span style="color:var(--text-3,#7D786E)">   — '
+                        + sds.length + ' continuity looks on this day</span>'
+                      : '')
                   + '</div>';
               })()
            + (d.production_notes ? '<div style="color:var(--text-3,#7D786E);font-size:12px;margin-top:6px">' + d.production_notes + '</div>' : '')
@@ -5348,6 +6406,12 @@
           + '<div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Call Sheet · Day ' + (cs.shoot_day || '') + '</div>'
           + '<div style="font-size:20px;font-weight:600;margin-top:6px">' + (cs.title || 'Production') + '</div>'
           + '<div style="font-family:monospace;font-size:12px;margin-top:8px">' + (cs.shoot_date || '') + ' · General call ' + (cs.general_call || '') + ' · First shot ' + (cs.first_shot || '') + ' · Est. wrap ' + (cs.wrap_estimate || '') + '</div>'
+          // On screen as well as in the footer, so the run can be checked
+          // before the PDF is made rather than after it has been sent.
+          + (cs.slate_run_id
+              ? '<div style="font-family:monospace;font-size:11px;margin-top:4px;color:#7A756B">Run '
+                + slateEscapeHtml(cs.slate_run_id) + '</div>'
+              : '')
           + '<div style="font-size:13px;margin-top:10px">' + (cs.location || '')
             + (slateCallsheetAddress(cs)
                 ? ' — ' + slateCallsheetAddress(cs)
@@ -5364,7 +6428,14 @@
               var bg = bgText
                 ? '<div style="font-size:12px;color:#9C7A2F;margin-top:4px;font-family:monospace">BG: ' + bgText + (s.background_count ? ' (' + s.background_count + ')' : '') + '</div>'
                 : '';
-              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
+              // Story day on the row. Hair and wardrobe read this document
+              // on the morning, so the key they match against belongs on
+              // the line, not in a panel somewhere else.
+              var sdText = slateStoryDay(s.story_day);
+              var sd = sdText
+                ? '<span style="font-family:monospace;font-size:12px;color:#4A463D">&nbsp; SD ' + slateEscapeHtml(sdText) + '</span>'
+                : '';
+              return '<div style="padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><strong style="font-family:monospace">' + (s.scene_label || (s.scene_number == null ? '—' : s.scene_number)) + '</strong> &nbsp;' + (s.int_ext || '') + '. ' + setName + ' — ' + (s.time_of_day || '') + sd + '<div style="font-size:12px;color:#4A463D">' + (s.description || '') + '</div>' + bg + '</div>';                                         }).join('')
           + '<div style="margin-top:18px;font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--doc-gold,#9C7A2F)">Cast Call Times</div>'
           + cast.map(function(c) {
               return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--doc-line,#C9C2B4);font-size:13px"><span>' + (c.character || '') + '</span><span style="font-family:monospace">Call ' + (c.call_time || '') + ' · On set ' + (c.on_set || '') + '</span></div>';
@@ -5530,7 +6601,12 @@
         return b64 ? script : null;
       }
  
-     function slateDoc(documentLabel) {
+     // documentStamp is the run that produced the data on these pages —
+     // passed in, never read from a global, so a document cannot be built
+     // carrying a stamp from something else that happens to be in memory.
+     // Blank for a production saved before run stamps existed, and the
+     // footer then prints what it always printed.
+     function slateDoc(documentLabel, documentStamp) {
               if (!window.jspdf || !window.jspdf.jsPDF) {
           alert('The PDF library is still loading, or your connection blocked it. Please check your network and try again in a moment.');
           throw new Error('jsPDF unavailable');
@@ -5632,7 +6708,17 @@
           doc.setFontSize(7);
           doc.setFont(slateBodyFont, 'normal');
           doc.text('MISSOLOWO SLATE  ·  ' + documentLabel + '  ·  Built by a Filmmaker. For Filmmakers.', 15, 291);
-          doc.text('Page ' + pg, 195, 291, { align: 'right' });
+          // ── Which run produced this page ──
+          //
+          // On every page, not only the cover, because a call sheet reaches
+          // set as a photograph of one page in somebody's camera roll.
+          //
+          // It sits next to the page number because that is where a reader
+          // already looks to check they are holding the whole document, and
+          // "is this the current version" is the same kind of question.
+          var stamp = String(documentStamp || '');
+          doc.text('Page ' + pg + (stamp ? '  ·  Run ' + stamp : ''),
+                   195, 291, { align: 'right' });
         }
         function newPage() { doc.addPage(); paintPage(); footer(); y = 24; }
         function check(n) { if (y + (n || 20) > 278) newPage(); }
@@ -5876,6 +6962,19 @@
         pdf.gap(4);
       }
 
+      // This matters most on the PDF, because that is the copy that goes to
+      // a production. Same sentence, same plain-text rules.
+      function slatePdfRestoredNote(pdf, restored) {
+        var note = slateRestoredNote(restored);
+        if (!note) return;
+        var plain = note.replace(/<[^>]+>/g, '')
+          .replace(/—/g, '-').replace(/’/g, "'")
+          .replace(/[“”]/g, '"');
+        pdf.gap(2);
+        pdf.annotation(plain);
+        pdf.gap(4);
+      }
+
       // ── DOCUMENT: SCRIPT BREAKDOWN ──
       async function slateExportBreakdown() {
         if (!slateBreakdown) { alert('Run a scene breakdown first.'); return; }
@@ -5885,7 +6984,7 @@
         var chars = d.character_breakdown || [];
         var locs = d.outline_schedule || [];
         var pe = d.production_elements || {};
-        var pdf = slateDoc('Script Breakdown');
+        var pdf = slateDoc('Script Breakdown', d.slate_run_id);
 
          pdf.cover((slateBreakdown && slateBreakdown.title) || 'Untitled Production', [
           ['Scenes', scenes.length],
@@ -5907,8 +7006,14 @@
           // omitted rather than guessed when we could not match the scene to
           // its place on the page.
           var bdE = Number(s.slate_eighths) || 0;
+          // The story day, on the line a department head reads first. This
+          // is the one piece of continuity information on a breakdown
+          // sheet: scenes sharing a story day have to match on screen
+          // however far apart they are shot.
+          var bdSd = slateStoryDay(s.story_day);
           var bdMeta = (s.slate_page ? '   p.' + s.slate_page : '')
-            + (bdE ? '   ' + Math.floor(bdE / 8) + ' ' + (bdE % 8) + '/8' : '');
+            + (bdE ? '   ' + Math.floor(bdE / 8) + ' ' + (bdE % 8) + '/8' : '')
+            + (bdSd ? '   Story Day ' + bdSd : '');
           pdf.slugline((s.int_ext || '—') + '. ' + (s.location || 'Location not specified in script') + ' — ' + (s.time_of_day || '—')
             + bdMeta
             + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
@@ -5921,6 +7026,21 @@
           if (s.scene_continuity) { pdf.annotation(s.scene_continuity, 34, 152); pdf.gap(3); }
           if (s.description) pdf.body(s.description, 34, 158);
           pdf.gap(2);
+          // ── The setups inside a montage, on the page that reaches set ──
+          //
+          // A montage is ONE scene and one row, because the writer numbered
+          // it once. But its beats are in four different places, and a 1st
+          // AD reading one line schedules one setup.
+          //
+          // On THE WEAVER'S DAUGHTER those four were Aduke's workshop, the
+          // market, the Lagos office and Aduke's compound at dusk — two of
+          // them places the unit had already wrapped. That is a day lost
+          // and a re-rig, and the information was in the breakdown all
+          // along: it was on the screen and not on the PDF, which is the
+          // copy a production actually carries.
+          if (s.montage_beats && s.montage_beats.length) {
+            pdf.labelledList(s.montage_beats.length + ' setups', s.montage_beats, 15);
+          }
           pdf.labelledList('Cast', s.cast);
           var bgPdf = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
           if (bgPdf && bgPdf !== 'null') pdf.labelledList('Background', [bgPdf]);
@@ -5935,6 +7055,14 @@
           pdf.labelledList('Animals', s.animals);
           pdf.labelledList('SFX', s.special_effects);
           pdf.labelledList('Makeup/Hair', s.makeup_hair);
+          // The four that were missing. Set dressing is listed separately
+          // from props on purpose: a sofa and a wristwatch are two different
+          // departments with two different budgets, and folding them
+          // together is what the art department had been handed until now.
+          pdf.labelledList('Set Dressing', s.set_dressing);
+          pdf.labelledList('VFX', s.visual_effects);
+          pdf.labelledList('Sound', s.sound);
+          pdf.labelledList('Music', s.music);
           pdf.gap(3);
           pdf.rule();
         });
@@ -5956,6 +7084,7 @@
         // The PDF is the copy that reaches set, so the key to the numbering
         // belongs here more than anywhere. Printed only when a # label
         // actually exists — a cleanly numbered script gets no footnote.
+        slatePdfRestoredNote(pdf, d.slate_restored);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 3 — Locations');
@@ -5967,6 +7096,7 @@
             return [l.set_location || '', (l.scenes || []).join(', '), (l.scenes || []).length];
           })
         );
+        slatePdfRestoredNote(pdf, d.slate_restored);
         slatePdfNumberingNote(pdf, scenes);
 
         pdf.sectionHeader('Report 4 — Production Elements');
@@ -5989,11 +7119,84 @@
          ['Vehicles', pe.all_vehicles],
          ['Animals', pe.all_animals],
          ['Special Effects', pe.all_special_effects],
-         ['Makeup & Hair', pe.all_makeup_hair]].forEach(function (pair) {
+         ['Makeup & Hair', pe.all_makeup_hair],
+         ['Set Dressing', pe.all_set_dressing],
+         ['Visual Effects', pe.all_visual_effects],
+         ['Sound', pe.all_sound],
+         ['Music', pe.all_music]].forEach(function (pair) {
           if (!pair[1] || !pair[1].length) return;
           pdf.gap(4);
           pdf.labelledList(pair[0], pair[1], 15);
         });
+
+        // ── Report 5 — Continuity by Story Day ──
+        //
+        // The page a script supervisor takes to set. Everything on it was
+        // already read and paid for; this is a grouping over it, so it
+        // costs nothing to produce and no credit to the filmmaker.
+        //
+        // Printed only when there is something to compare — a story day
+        // with one scene has nothing to agree with, and slateContinuityGroups
+        // has already dropped those. A script the model gave no story days
+        // prints no report at all rather than an empty heading, which would
+        // claim we looked and found nothing.
+        var slateContDays = slateDayOfScene(slateSchedule);
+        var slatePdfCont = slateContinuityGroups(scenes, slateContDays);
+        if (slatePdfCont.length) {
+          pdf.sectionHeader('Report 5 — Continuity by Story Day');
+          pdf.annotation('Scenes on the same day of the story have to match on screen, '
+            + 'however far apart they are shot. Nothing here is a fault — it is what has '
+            + 'to agree. Costume and makeup are shown as the script described them.', 15, 175);
+          pdf.gap(4);
+
+          // ── A table, not a labelled list ──
+          //
+          // The first version used pdf.labelledList, and the PDF came back
+          // with the group heading printed THROUGH the scenes: labelledList
+          // draws its label at x and the values at x+26, so a label longer
+          // than 26mm overruns into the column it is labelling. "Story day 1
+          // · 4 scenes · 2 described · shot across days 1, 9" is four times
+          // that. Unreadable, and invisible to every assertion — the screen
+          // version of the same data was fine.
+          //
+          // table() wraps per column and breaks pages, which is what a sheet
+          // of rows needs. The shoot day gets a column of its own: a story
+          // day reading 1, 1, 9, 9 down that column IS the split, shown
+          // rather than announced.
+          var slateContRows = [];
+          slatePdfCont.forEach(function (g) {
+            g.scenes.forEach(function (s, i) {
+              var bits = (s.costume || []).concat(s.makeup_hair || []);
+              var d = slateContDays ? slateContDays[Number(s.scene_index)] : undefined;
+              slateContRows.push([
+                // Named once per group, on its first row, so the eye groups
+                // the rows without a heading that can collide with them.
+                i === 0 ? (g.story_day + '  (' + g.described + '/' + g.scenes.length + ')') : '',
+                s.scene_label || (s.scene_number == null ? '—' : String(s.scene_number)),
+                bits.length ? bits.join('  ·  ') : 'not described in the script',
+                (d === undefined || d === null) ? '' : String(d)
+              ]);
+            });
+          });
+          pdf.table(
+            [{ label: 'Story Day', width: 32, bold: true },
+             { label: 'Scene', width: 18, gold: true },
+             { label: 'Costume & Makeup, as the script describes it', width: 95 },
+             { label: 'Shoot Day', width: 35, align: 'right' }],
+            slateContRows);
+
+          // The groups with nothing to match, said once after the table
+          // rather than as a note between every pair of rows.
+          var slateContBare = slatePdfCont.filter(function (g) { return !g.described; })
+            .map(function (g) { return g.story_day; });
+          if (slateContBare.length) {
+            pdf.gap(3);
+            pdf.annotation('The script describes no costume or makeup on any scene of story day'
+              + (slateContBare.length > 1 ? 's ' : ' ') + slateContBare.join(', ')
+              + ', so nothing is recorded to match there. Worth a look before those days.',
+              15, 175);
+          }
+        }
 
         siqTrack('pdf_export', { document_type: 'breakdown', scenes: scenes.length });
         pdf.save((d.title || 'production').replace(/\s+/g, '-').toLowerCase() + '-breakdown.pdf');
@@ -6045,7 +7248,7 @@
           (d.locations && d.locations.length ? d.locations : (d.location ? [d.location] : []))
             .forEach(function (l) { if (l) locations[l] = true; });
         });
-        var pdf = slateDoc('Shooting Schedule');
+        var pdf = slateDoc('Shooting Schedule', s.slate_run_id);
         // Scenes the screenplay never placed are not on a shoot day, so the
         // days hold fewer scenes than the script has. Printing the script
         // total alone made a 31-scene schedule claim 47 and read as scenes
@@ -6074,8 +7277,15 @@
 
         days.forEach(function(day, di) {
           var slateDayPages = slateDayEighths(day);
+          // The story days this shoot day covers, on the header where the
+          // page count already is. Both answer the same question — what
+          // does this day cost — one in pages and one in wardrobe changes.
+          var slateDaySd = (day.story_days || []).filter(Boolean);
           pdf.sectionHeader('Day ' + String(day.day || di + 1).padStart(2, '0') + ' of ' + String(days.length).padStart(2, '0') + '  ·  ' + (day.date || '') + '  ·  ' + (day.location || 'No location set')
-            + (slateDayPages ? '  ·  ' + slateDayPages : ''));
+            + (slateDayPages ? '  ·  ' + slateDayPages : '')
+            + (slateDaySd.length
+                ? '  ·  Story day' + (slateDaySd.length > 1 ? 's ' : ' ') + slateDaySd.join(', ')
+                : ''));
           // A day header naming real places while most of its scenes belong
           // to none of them is how a crew ends up driving somewhere for
           // nothing. Said plainly, directly under the header.
@@ -6108,7 +7318,10 @@
             // pages or nine.
             var schE = Number(sc.eighths) || 0;
             var schLen = schE ? ('   ' + Math.floor(schE / 8) + ' ' + (schE % 8) + '/8') : '';
-            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + ((sc.time_of_day || '\u2014').charAt(0)) + '   ' + schSet + schLen + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
+            var schSd = slateStoryDay(sc.story_day);
+            pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen
+              + (schSd ? '   SD ' + schSd : '')
+              + (sc.scene_type ? '   [' + sc.scene_type + ']' : ''));
             pdf.gap(9);
             if (sc.description) pdf.body(sc.description, 34, 130);
             pdf.gap(1);
@@ -6286,12 +7499,40 @@
             + 'Rebuild it from the new schedule before sending it to anyone.');
           return;
         }
+        // ── A call sheet with no address is not a call sheet ──
+        //
+        // location_address has always been correctly refused rather than
+        // guessed — the comment in callsheet.js says so, and that decision
+        // stands. location_address_required was then set on the response
+        // and nobody acted on it: the sheet rendered, exported and printed
+        // with a blank address line, and the only sign was a small amber
+        // note on screen that does not travel into the PDF.
+        //
+        // The one thing a call sheet has to do is tell a crew where to be.
+        // Everything else on it — times, cast, elements, weather — is
+        // useless to somebody who cannot find the location. So this is
+        // refused at export, which is the last moment before a document
+        // leaves Slate and becomes a thing people act on.
+        //
+        // slateCallsheetAddress, not the server flag: the address may come
+        // from the response OR from a location entered in Production
+        // Details afterwards, and the resolver is the only thing that
+        // knows both. Checking the flag alone would block an export whose
+        // address the filmmaker had already supplied.
+        if (!slateCallsheetAddress(slateCallsheet)) {
+          alert('Day ' + (slateCallsheet.shoot_day || '') + ' has no location address.\n\n'
+            + 'A call sheet has to tell the crew where to be, so this one will not '
+            + 'export without one.\n\n'
+            + 'Add the address under Production Details › Locations, then export '
+            + 'again. Slate never guesses an address.');
+          return;
+        }
         window.slateActiveScript = await slatePrepareFont(slateCallsheet);
         var cs = slateCallsheet;
         var pd = slateProductionDetails || {};
         var scenes = cs.scenes_today || [];
         var cast = cs.cast_call_times || [];
-        var pdf = slateDoc('Call Sheet');
+        var pdf = slateDoc('Call Sheet', cs.slate_run_id);
         var d = pdf.doc;
 
         pdf.cover(cs.title || 'Untitled Production', [
@@ -6334,6 +7575,37 @@
         }
 
         pdf.sectionHeader('Locations');
+
+        // ── The address, printed, before anything else on this page ──
+        //
+        // Found on 23 November by rendering the PDF and reading it. The
+        // locations block below falls through pd.locations, then
+        // cs.locations, then the address — and cs.locations is the day's
+        // location NAMES from the schedule, which almost always exist. So a
+        // filmmaker who typed "7 Awolowo Road, Ikoyi" into the call sheet
+        // form got a printed sheet reading "Location 1: Lagos Office" and
+        // no address anywhere on it.
+        //
+        // The comment below says this block exists to stop "a unit sent to
+        // an address that was never printed on the sheet". It was doing the
+        // opposite.
+        //
+        // Worse because of the guard added the same evening: export now
+        // refuses when no address can be resolved, so a sheet that EXPORTS
+        // is one Slate has confirmed has an address — and it was still
+        // printing without it. A guard that passes while the document stays
+        // addressless is false assurance, which is worse than no guard.
+        //
+        // slateCallsheetAddress, the same resolver the export guard uses, so
+        // the thing checked and the thing printed cannot drift apart.
+        var csAddress = slateCallsheetAddress(cs);
+        if (csAddress) {
+          pdf.check(16);
+          var csAddrY = pdf.getY();
+          var csAddrLines = labelValue('Address', csAddress, 15, 175);
+          pdf.setY(csAddrY + 12 + (csAddrLines - 1) * 4);
+        }
+
         // The day's location arrives from the schedule as ONE string with the
         // places joined by " · ". Wrapping that in a single-element array put
         // all four of a day's locations inside "Location 1". Split it back
@@ -6371,6 +7643,32 @@
             + ' not covered by the addresses above. Add '
             + (csMany ? 'their locations' : 'its location')
             + ' in Production Details before this sheet goes out.', 15, 175);
+          pdf.gap(4);
+        }
+
+        // ── When one shoot day covers several days of the story ──
+        //
+        // Said only when there is more than one, because the scene rows
+        // already carry SD and a sheet that annotates the ordinary case
+        // teaches a crew to skip its annotations.
+        //
+        // Costume and hair are named because they are who this costs. A
+        // day holding story days 1 and 4 needs two looks standing by, and
+        // nobody finds that out at 06:00 if the sheet says it at 21:00.
+        var csSds = (function () {
+          var seen = {}, out = [];
+          scenes.forEach(function (s) {
+            var v = slateStoryDay(s.story_day);
+            if (!v || seen[v]) return;
+            seen[v] = true;
+            out.push(v);
+          });
+          return out;
+        })();
+        if (csSds.length > 1) {
+          pdf.annotation('This day covers story days ' + csSds.join(', ')
+            + '. Costume and hair need ' + csSds.length
+            + ' continuity looks on set, not one.', 15, 175);
           pdf.gap(4);
         }
 
@@ -6451,10 +7749,30 @@
           // a crew reads. Blank is honest; null looks like a fault.
           var csSet = s.set || s.location || '';
           if (!csSet || csSet === 'null' || csSet === 'undefined') csSet = '—';
-          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + ((s.time_of_day || '\u2014').charAt(0)) + '   ' + csSet + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
+          // The story day, on the document hair and wardrobe carry to set.
+          // Short form here because the call sheet row is tight and the
+          // people reading it already know what SD means.
+          var csSd = slateStoryDay(s.story_day);
+          pdf.slugline((s.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(s.time_of_day) + '   ' + csSet
+            + (csSd ? '   SD ' + csSd : '')
+            + (s.scene_type ? '   [' + s.scene_type + ']' : ''));
           pdf.gap(9);
           if (s.description) pdf.body(s.description, 34, 130);
           pdf.labelledList('Cast', s.cast);
+          // Background belongs on the document the floor carries.
+          //
+          // It was on the breakdown and on the schedule, and missing from
+          // here — so the one page a 2nd AD works from did not say to book
+          // the extras. THE WEAVER'S DAUGHTER scene 2 needs traders, a
+          // woman selling oranges, schoolboys and a driver; the call sheet
+          // listed a cast of one.
+          var csBg = Array.isArray(s.background) ? s.background.join(', ') : (s.background || '');
+          if (csBg && csBg !== 'null') pdf.labelledList('Background', [csBg]);
+          // And the setups inside a montage. One row, four places: without
+          // these an AD schedules one setup and meets four on the day.
+          if (s.montage_beats && s.montage_beats.length) {
+            pdf.labelledList(s.montage_beats.length + ' setups', s.montage_beats, 15);
+          }
           // Departments on the day they are needed. A stunt or an animal
           // discovered on the morning is a day lost; on the call sheet the
           // night before it is a phone call. Empty lists print nothing, so an
@@ -6464,6 +7782,14 @@
           pdf.labelledList('Animals', s.animals);
           pdf.labelledList('SFX', s.special_effects);
           pdf.labelledList('Makeup/Hair', s.makeup_hair);
+          // On the call sheet for the same reason the other five are: a
+          // department that finds out on the morning has lost the morning.
+          // Playback nobody prepared stops a dance scene dead, and a VFX
+          // plate nobody flagged is reshot or fixed at ten times the cost.
+          pdf.labelledList('Set Dressing', s.set_dressing);
+          pdf.labelledList('VFX', s.visual_effects);
+          pdf.labelledList('Sound', s.sound);
+          pdf.labelledList('Music', s.music);
           pdf.gap(2);
           pdf.rule();
         });
@@ -6530,7 +7856,7 @@
             d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number), 15, pdf.getY());
             d.setFont('helvetica', 'normal');
             d.setFontSize(8.5);
-            d.text((sc.int_ext || '—') + ' · ' + ((sc.time_of_day || '—').charAt(0))
+            d.text((sc.int_ext || '—') + ' · ' + slateDayNightCode(sc.time_of_day)
               + '   ' + (sc.set || '—')
               + (advE ? '   ' + Math.floor(advE / 8) + ' ' + (advE % 8) + '/8' : ''),
               32, pdf.getY());
@@ -7037,12 +8363,70 @@
         // split correctly, numbered, or scheduled. Silently skipping it is
         // the one thing a health check must not do.
            var misread = [];
+        // The opening word of a line, past a scene number folded onto it.
+        // One definition, because both scans below ask the same question of
+        // it and they answered it differently — the first with a regex on
+        // the heading word, the second not at all.
+        function slateOpeningWord(line) {
+          var m = /^[ \t]*(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?([^\s.,\/:;()—–-]+)/
+            .exec(String(line == null ? '' : line));
+          return m ? m[1] : '';
+        }
+
+        // Is this line WRITTEN as a slug line, whatever it says?
+        //
+        // Screenplays capitalise scene headings, in every format and every
+        // language that has capitals at all. A line whose opening word
+        // carries a lower-case letter is prose: dialogue, action, a
+        // character's thought. Scripts in Korean, Japanese and Chinese have
+        // no case, so nothing there is rejected on this test; Yorùbá and
+        // Russian capitals keep their diacritics and pass.
+        function slateWrittenAsHeading(line) {
+          var word = slateOpeningWord(line);
+          return !!word && !/\p{Ll}/u.test(word);
+        }
+
         lines.forEach(function (line) {
           var t = String(line || '').trim();
           if (!t || t.length > 90) return;
           // Looks like a heading (opens with a scene number or an INT/EXT-ish
           // word) but our reader found nothing on this line.
-           if (!/^(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(t)) return;
+          //
+          // Both guards matter. A production manager's health panel accused
+          // his script of two broken headings:
+          //
+          //   "out there. I think I just forgot that I could"   — dialogue
+          //   "Outside, the evening insects begin their..."     — action
+          //
+          // The list holds OUT and the test ran case-insensitively, so the
+          // first matched on "out" and then passed the gate below because
+          // "there." reads as a separator before a place; the second matched
+          // the front of "Outside" and passed because the sentence contains
+          // the word "evening". Neither is a heading, and it cost him twenty
+          // points of health score.
+          //
+          // The fix cannot be a word boundary after the token, because a
+          // MISSPELLED heading extends it — "INTRIOR" is the whole reason
+          // this scan exists — and \b would stop matching exactly the lines
+          // it is here to find. Case is the discriminator: a slug line is
+          // written in capitals, a line of prose is not.
+           if (!slateWrittenAsHeading(t)) return;
+           // DELIBERATELY NARROW: the opening word must begin with a real
+           // heading word. A misspelling that starts elsewhere — "2.
+           // ITERIOR. MARKET — DAY", with the number folded on, which the
+           // number-anchored scan below cannot reach either — goes
+           // unwarned, and that is the better trade.
+           //
+           // Widening it to any capitalised I/E word of three to ten
+           // letters was tried on 22 November and measured against five
+           // real screenplays. It took HILLS from two false findings to
+           // six, telling the writer that "EPISODE ONE — THE RETURN" and
+           // "ELIZABETH — LATE 20S" were misspellings of INTERIOR, and it
+           // put a first accusation onto LORI NKAN MI, which had none and
+           // was green. A missing warning costs a filmmaker nothing. A
+           // wrong one costs them their trust in every other line of the
+           // panel.
+           if (!/^(?:INT|EXT|INN|OUT|ИНТ|НАТ)/i.test(slateOpeningWord(t))) return;
           // Starting with those letters is not enough — INTERVIEWER is a
           // character cue, not a heading. A real slug line also carries a
           // time of day, or several slash-separated parts, or a separator
@@ -7081,10 +8465,23 @@
             // Heading-shaped means: it names a time of day, or it is
             // slash-separated like INTERIOR/DAYLIGHT/KITCHEN, or it opens
             // with an INT/EXT-ish word even a misspelled one.
+            // Slash-separated structure first, and on its own terms:
+            // "Daylight/interior/Owolabi living room." is a real broken
+            // heading in IRIRI, written in title case with the time in
+            // front, and no prose is laid out like that. Case cannot be
+            // required of it.
+            //
+            // The other two tests DO need capitals, because both run
+            // case-insensitively and so matched ordinary action under a
+            // scene number: "Everything was quiet that evening" names a
+            // time of day and opens with E, and a production manager was
+            // told two lines of his dialogue and action were broken
+            // headings.
             var slateLooksLikeHeading =
-                 /\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(cand)
-              || (cand.match(/\//g) || []).length >= 2
-              || /^[IE][A-Za-z]{2,9}\b/i.test(cand);
+                 (cand.match(/\//g) || []).length >= 2
+              || (slateWrittenAsHeading(cand)
+                  && (/\b(DAY|DAYLIGHT|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|CONTINUOUS|LATER|SAME)\b/i.test(cand)
+                      || /^[IE][A-Z]{2,9}\b/.test(cand)));
             if (!slateLooksLikeHeading) continue;
             // The scan above may already hold this heading with its scene
             // number folded on ("SCENE43 INTRIOR/..."). Same broken heading,
@@ -7275,19 +8672,21 @@
         // scene count made one 47-scene screenplay report as 38.
         // The count comes from the one walk, not from max() of two readers.
         // That max was the reason the panel and the breakdown disagreed.
-        var sceneTotal = scenes.length, numbered = 0, unnumbered = 0;
+        var sceneTotal = scenes.length, numbered = 0, unnumbered = 0, continuations = 0;
         try {
           var slateCount = slateCountScenes(text);
           sceneTotal = slateCount.total;
           numbered = slateCount.numbered;
           unnumbered = slateCount.unnumbered;
+          continuations = slateCount.continuations || 0;
           // Fall back only if this script has no headings our walk can see
           // at all, so a format we cannot read still reports something.
           if (!sceneTotal) sceneTotal = scenes.length;
         } catch (e) {}
         return { score: score, band: band, sceneCount: scenes.length,
                  sceneTotal: sceneTotal, numbered: numbered,
-                 unnumbered: unnumbered, findings: findings };
+                 unnumbered: unnumbered, continuations: continuations,
+                 findings: findings };
      }
       window.slateHealthCheck = slateHealthCheck;
     
@@ -7369,6 +8768,21 @@
                 : (r.sceneTotal || r.sceneCount) + ' scene'
                   + ((r.sceneTotal || r.sceneCount) === 1 ? '' : 's') + ' found'
                   + (r.sceneTotal ? ' · this script numbers no scenes' : ''))
+            // ── Said before they count, not after they complain ──
+            //
+            // A filmmaker scrolling their own script counts the headings
+            // they can see. Where a scene continues over a page break the
+            // heading is printed twice, so their count is higher than ours
+            // by exactly the number of continuations — and the conclusion
+            // they reach is that we lost a scene.
+            //
+            // Naming it here costs one short clause and pre-empts the only
+            // complaint this product has ever actually received.
+            + (r.continuations
+                ? '<span style="color:var(--text-3,#7D786E)"> · ' + r.continuations
+                  + ' heading' + (r.continuations > 1 ? 's' : '')
+                  + ' repeated after a page break, counted once</span>'
+                : '')
           + '</div>'
           + '</div></div>';
 

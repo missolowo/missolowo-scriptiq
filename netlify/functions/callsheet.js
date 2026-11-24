@@ -67,6 +67,42 @@ exports.handler = async function(event, context) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No schedule data provided. Generate a shooting schedule first, then request the call sheet for a specific day.' }) };
     }
 
+    // ── The breakdown and the schedule must be the same run ──
+    //
+    // This is the fault behind the call sheet Elizabeth found on 23
+    // November: it carried scene numbers from one breakdown run while the
+    // schedule beside it had been built from another, and nothing checked.
+    // The sheet generated happily and said nothing, which is why it took a
+    // human noticing a scene was missing to find it.
+    //
+    // Refused, not repaired. There is no correct way to blend two runs of
+    // the same screenplay — the scene indexes are the identity everything
+    // downstream matches on, and if the two disagree about those, every
+    // cast list and every element list on the sheet is suspect.
+    //
+    // An ABSENT id is not a mismatch. Productions saved before this field
+    // existed have no stamp on either document, and locking a filmmaker
+    // out of a film they saved last week would be a worse bug than the one
+    // being fixed. Unknown is unknown; only two ids that are both present
+    // and different are a refusal.
+    const slateBdRun = String(breakdown.slate_run_id || '');
+    const slateSchRun = String(schedule.slate_run_id || '');
+    if (slateBdRun && slateSchRun && slateBdRun !== slateSchRun) {
+      return {
+        statusCode: 409,
+        headers,
+        body: JSON.stringify({
+          error: 'This schedule was built from a different breakdown run ('
+            + slateSchRun + ') than the one open now (' + slateBdRun + '). '
+            + 'Regenerate the shooting schedule from the current breakdown, '
+            + 'then build the call sheet from it. A call sheet mixing two runs '
+            + 'can list scenes the breakdown no longer has.',
+          slate_breakdown_run: slateBdRun,
+          slate_schedule_run: slateSchRun
+        })
+      };
+    }
+
     const targetDay = Number(schedule_day) || 1;
     const dayData = schedule.schedule.find(d => Number(d.day) === targetDay);
 
@@ -184,6 +220,10 @@ exports.handler = async function(event, context) {
         // split have no set field, so fall back to the location.
         set: s.set || s.location || '',
         description: s.description || '',
+        // Passed through, never re-read. Normalised once at merge time.
+        // A call sheet is the document hair and wardrobe actually carry, so
+        // of the three this is the one that most needed it.
+        story_day: s.story_day || '',
         cast: s.cast || [],
         // The model returns this as a string or an array depending on the
         // scene. Accept both — an array would render as raw JSON on a
@@ -200,7 +240,15 @@ exports.handler = async function(event, context) {
         vehicles: s.vehicles || [],
         animals: s.animals || [],
         special_effects: s.special_effects || [],
-        makeup_hair: s.makeup_hair || []
+        makeup_hair: s.makeup_hair || [],
+        // The four added on 23 November. Defaulted to empty for the same
+        // reason the five above are: a breakdown made before these existed
+        // has no such field, and a call sheet for an old production must
+        // still build rather than throw.
+        set_dressing: s.set_dressing || [],
+        visual_effects: s.visual_effects || [],
+        sound: s.sound || [],
+        music: s.music || []
       };
     });
     // Character identity, and the readable spelling to display. Both are
@@ -373,7 +421,8 @@ Return ONLY valid JSON:
             int_ext: sc.int_ext,
             time_of_day: sc.time_of_day,
             set: sc.set || '',
-            eighths: sc.eighths || 0
+            eighths: sc.eighths || 0,
+            story_day: sc.story_day || ''
           };
         }),
         cast: who
@@ -383,6 +432,17 @@ Return ONLY valid JSON:
     // ── STEP 6: Assemble. Every fact here comes from data. ──
     const callsheet = {
       title: breakdown.title || 'Untitled Production',
+      // Echoed from the breakdown, having just been checked against the
+      // schedule. Printed in the footer so a PDF forwarded through three
+      // phones can still be identified, which is the state most call
+      // sheets are actually read in.
+      slate_run_id: slateBdRun,
+      slate_run_at: breakdown.slate_run_at || '',
+      // When this particular sheet was built. Distinct from the run: a day
+      // 4 call sheet rebuilt after a scene moved is a new sheet from the
+      // same run, and a crew comparing two of them needs to see which is
+      // the later one.
+      slate_built_at: new Date().toISOString(),
       shoot_day: targetDay,
       shoot_date: shoot_date || dayData.date || '',
       general_call: general_call || '07:00',
