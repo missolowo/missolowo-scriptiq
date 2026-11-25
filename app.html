@@ -3625,6 +3625,40 @@
       // as Slate failing to read the page, and the honest version of this
       // feature has to say which it is. Said once per document, from one
       // derivation, rather than beside every dash.
+      // ── Background on a shoot day ──
+      //
+      // Collected once per SCENE. A montage is several scheduling units —
+      // one per part — and every one carries its scene's background, so
+      // the day line printed it once per part. A casting call for four
+      // neighbours is one call however many parts the montage needs.
+      //
+      // Keyed on the scene alone, not on the scene plus the text: the same
+      // scene's background reaching two units as "Neighbours" and
+      // "neighbours" is one call, and a key built from the text would book
+      // it twice. Two DIFFERENT scenes that each need neighbours are two
+      // calls and both are kept — the opposite mistake, and the one a
+      // dedup by text makes.
+      //
+      // It also normalises what the other two background renderers already
+      // did and this one did not: an array joined, the strings "null" and
+      // "undefined" dropped, because both reach this field as text.
+      function slateDayBackgrounds(scenes) {
+        var seen = {}, out = [];
+        (scenes || []).forEach(function (s) {
+          if (!s) return;
+          var text = Array.isArray(s.background)
+            ? s.background.filter(Boolean).join(', ')
+            : String(s.background == null ? '' : s.background);
+          text = text.trim();
+          if (!text || text === 'null' || text === 'undefined') return;
+          var k = String(s.scene_index != null ? s.scene_index : s.scene_number);
+          if (seen[k]) return;
+          seen[k] = true;
+          out.push({ scene: s.scene_number, text: text });
+        });
+        return out;
+      }
+
       function slateUnnumberedNote(scenes) {
         var n = 0;
         (scenes || []).forEach(function (s) {
@@ -6518,7 +6552,7 @@
         var out = document.getElementById('wsScheduleOut');
         if (!out) return;
         var days = sched.schedule || [];
-        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + ' days</div>';
+        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + (days.length === 1 ? ' day' : ' days') + '</div>';
 
         // ── Say that this can be changed, and why it looks like this ──
         // No other tool a production manager has used lets them do this, so
@@ -6575,17 +6609,13 @@
                 var hasParts = (d.scenes || []).some(function (s) { return !!slatePartLabel(s); });
                 var key = hasParts
                   ? '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:6px">' + SLATE_PART_KEY + '</div>' : '';
-                var seenBg = {};
-                var bgScenes = (d.scenes || []).filter(function (s) {
-                  if (!s.background) return false;
-                  var k = s.scene_number + '\u0000' + s.background;
-                  if (seenBg[k]) return false;
-                  seenBg[k] = true;
-                  return true;
-                });
+                var bgScenes = slateDayBackgrounds(d.scenes);
                 if (!bgScenes.length) return key;
                 return key + '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
-                  + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
+                  + bgScenes.map(function (b) {
+                      return slateEscapeHtml(String(b.scene)) + ' ('
+                           + slateEscapeHtml(b.text) + ')';
+                    }).join('  ·  ')
                   + '</div>';
               })()
            // ── Which story days this shoot day covers ──

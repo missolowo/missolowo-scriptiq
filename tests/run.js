@@ -36,6 +36,7 @@ const PROBES = [
   'montage-schedule-probe', // a montage is one scene and several units of work
   'logistics-probe',   // what a unit needs to find the day
   'department-probe',  // what each department brings, and on which day
+  'background-probe',  // once per scene, not once per montage part
   'unnumbered-probe',  // a scene the script never numbered, and why
   'stripboard-probe',  // the colour a crew already knows, and what has none
   'funnel-probe',      // where the 233 who did not get a breakdown went
