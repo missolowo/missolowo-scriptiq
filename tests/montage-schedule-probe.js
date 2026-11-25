@@ -52,6 +52,8 @@ function block(src, needle) {
 // nothing: the whole point is that slateParseHeading reads a beat line.
 const enrich = new Function(
   block(APP, 'function slateTitleCase') + '\n'
+  + block(APP, 'function slateKey') + '\n'
+  + block(APP, 'function slateSplitWorthIt') + '\n'
   + ['var SLATE_HEAD =', 'var SLATE_NUM  =', 'var SLATE_SEQUENCE'].map(function (n) {
       const i = APP.indexOf(n); return APP.slice(i, APP.indexOf(';', i) + 1);
     }).join('\n') + '\n'
@@ -121,10 +123,43 @@ console.log('\nAn ordinary scene is untouched');
      bd.scenes[0].location === 'Workshop');
 }
 
+console.log('\nA montage is only split when splitting buys something');
+{
+  // THE HILLS BETWEEN US scene 30A: seven beats, none of them a place.
+  // They have nowhere to be scheduled to, so they always travel together,
+  // and splitting them put seven rows on the board, seven part labels and
+  // seven lines on a call sheet for one piece of work. A part is a
+  // location visit; where there is no location there is no part.
+  const prose = enrich({ scenes: [{ scene_index: 9, scene_number: '30A',
+    montage_beats: ['she remembers the rain', 'the loom stands still',
+                    'a letter goes unopened'] }]});
+  ok('prose beats do not split the scene',
+     prose.scenes[0].montage_setups === undefined,
+     JSON.stringify(prose.scenes[0].montage_setups));
+
+  const onePlace = enrich({ scenes: [{ scene_index: 9, montage_beats: [
+    'INT. KITCHEN — DAY', 'INT. KITCHEN — NIGHT' ]}]});
+  ok('one place does not split it either',
+     onePlace.scenes[0].montage_setups === undefined,
+     'the unit makes one trip, so there is nothing for a part label to '
+     + 'tell a production manager apart');
+
+  const spread = enrich({ scenes: [{ scene_index: 9, montage_beats: [
+    'INT. KITCHEN — DAY', 'EXT. ROAD — DUSK' ]}]});
+  ok('two places do split it',
+     (spread.scenes[0].montage_setups || []).length === 2,
+     'scene 63 of THE HILLS BETWEEN US visits ten real locations, and a '
+     + '1st AD has to know which visit shoots when');
+}
+
 console.log('\nA beat with no readable heading still travels');
 {
+  // Written as the splitter actually emits them: the dash prefix this
+  // fixture used is not something the product produces, and with it no
+  // beat parses as a place — so the montage collapsed and the assertion
+  // below was testing the fixture rather than the code.
   const bd = enrich({ scenes: [{ scene_index: 9, montage_beats: [
-    '— INT. KITCHEN — DAY', '— she remembers the rain', '— EXT. ROAD — DUSK'
+    'INT. KITCHEN — DAY', 'she remembers the rain', 'EXT. ROAD — DUSK'
   ]}]});
   const setups = bd.scenes[0].montage_setups;
   ok('every beat still becomes a setup', setups.length === 3, String(setups.length));
