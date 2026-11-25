@@ -973,6 +973,17 @@ exports.handler = async function(event, context) {
       // is asserted on it, which makes the guarantee STRONGER than before —
       // a montage was previously one row with its four setups unaccounted
       // for anywhere.
+      // Part `which` (1-based) of `parts`, sharing `total` eighths exactly:
+      // every part's share summed is the scene's own length, which is the
+      // property the breakdown and the schedule disagreed about.
+      function slateShareEighths(total, parts, which) {
+        var n = Math.max(1, parts || 1);
+        var t = Math.max(0, total || 0);
+        var base = Math.floor(t / n);
+        var extra = t - base * n;
+        return base + ((which || 1) <= extra ? 1 : 0);
+      }
+
       function slateSlimOne(s, i, setup) {
         var idx = s.scene_index || (i + 1);
         return {
@@ -1006,8 +1017,22 @@ exports.handler = async function(event, context) {
         // counted once per beat: the writer wrote one scene of that length,
         // and charging the whole montage to every beat would make a
         // four-beat montage four times its real page count.
+        // The floor of 1 here is what broke it. Dividing is right; refusing
+        // to let a part read zero puts the inflation straight back whenever
+        // there are more parts than eighths. THE WEAVER'S DAUGHTER: scene 4
+        // is 2/8 split four ways and printed 1/8 four times, so the
+        // schedule said the film was 2 1/8 pages while the breakdown said
+        // 1 7/8. Page count is the budget the packer assigns days against,
+        // so on a ten-part montage this manufactures a shoot day.
+        //
+        // Divided exactly now, remainder to the earliest parts, and a part
+        // that works out to nothing carries nothing. A quarter of an eighth
+        // IS less than an eighth, and a day's total has to add up to the
+        // film.
         eighths: setup
-          ? Math.max(1, Math.round((Number(s.slate_eighths) || 0) / Math.max(1, (s.montage_setups || []).length)))
+          ? slateShareEighths(Number(s.slate_eighths) || 0,
+                              (s.montage_setups || []).length,
+                              Number(setup.n) || 1)
           : (Number(s.slate_eighths) || 0),
         // The story day, carried verbatim. It was normalised once at merge
         // time and is never re-read here — a second reader is a second

@@ -316,13 +316,35 @@ console.log('\nA montage’s page count is not multiplied by its beats');
   // to every beat would make a four-beat montage four times its real page
   // count, and the day budget is now pages.
   const slim = block(SCHED, 'function slateSlimOne');
-  ok('the eighths are divided across the setups',
-     /Number\(s\.slate_eighths\) \|\| 0\) \/ Math\.max\(1, \(s\.montage_setups \|\| \[\]\)\.length\)/
-       .test(slim),
-     'four beats of a 12/8 montage is 12/8 of work, not 48/8');
-  ok('  ...and a setup still costs at least one eighth',
-     /Math\.max\(1, Math\.round/.test(slim),
-     'a free setup lets a day absorb any number of them');
+  ok('the eighths are shared across the parts',
+     /slateShareEighths\(Number\(s\.slate_eighths\) \|\| 0,/.test(slim),
+     'four parts of a 12/8 montage is 12/8 of work, not 48/8');
+
+  // The shares have to SUM to the scene, which the old floor of one eighth
+  // did not. THE WEAVER'S DAUGHTER: scene 4 is 2/8 split four ways, printed
+  // 1/8 four times, so the schedule said the film was 2 1/8 pages and the
+  // breakdown said 1 7/8. Page count is the budget days are assigned
+  // against, so on a ten-part montage that invents a shoot day.
+  const share = new Function(block(SCHED, 'function slateShareEighths')
+    + '; return slateShareEighths;')();
+  [[2, 4], [4, 10], [8, 4], [15, 4], [0, 3], [1, 1], [7, 2]].forEach(function (c) {
+    var parts = [];
+    for (var i = 1; i <= c[1]; i++) parts.push(share(c[0], c[1], i));
+    var sum = parts.reduce(function (a, b) { return a + b; }, 0);
+    ok('  ' + c[0] + '/8 over ' + c[1] + ' parts sums to ' + c[0],
+       sum === c[0], parts.join(',') + ' = ' + sum);
+  });
+  ok('  ...the remainder going to the earliest parts',
+     share(2, 4, 1) === 1 && share(2, 4, 4) === 0,
+     'a part that works out to nothing carries nothing: a quarter of an '
+     + 'eighth IS less than an eighth, and the day has to add up to the film');
+
+  // The old assertion here said a free part lets a day absorb any number of
+  // them. It cannot: the packer carries two ceilings, and a zero-page part
+  // still fills a scene slot in the first.
+  ok('a part with no pages is still capped by the scene-count budget',
+     /current\.scenes\.length \+ p\.scenes\.length > perDay/.test(SCHED),
+     'pages is the real budget, but it is not the only one');
 }
 
 console.log('\nOne beat is not worth splitting');
