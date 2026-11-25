@@ -30,8 +30,8 @@ const PROBES = [
   'callsheet-guard-probe', // what stops a bad call sheet leaving Slate
   'continuity-probe',  // which scenes have to match each other
   'storyday-pass-probe', // the one place we infer, and how it is contained
-  'dayorder-probe',
-  'calltime-probe',    // nobody is called after the scene they open the day with    // the order a day is actually shot in: light forward, one trip per location
+  'dayorder-probe',    // the order a day is shot in: light forward, one trip per location
+  'calltime-probe',    // nobody is called after the scene they open the day with
   'packer-probe',      // how a shoot day is built: pages, light, conservation
   'montage-schedule-probe', // a montage is one scene and several units of work
   'logistics-probe',   // what a unit needs to find the day
