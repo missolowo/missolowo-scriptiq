@@ -7489,7 +7489,21 @@
         }
         // Reusable table — used by Breakdown, Schedule and Call Sheet.
         // cols: [{ label, width, align }]  rows: [[cell, cell, ...]]
-        function table(cols, rows) {
+        // `key` is a short line printed under the column headers — and so
+        // on EVERY page, because header() runs again after each break.
+        //
+        // Elizabeth put two pages of the same board side by side: page 1,
+        // which carries the colour key and says what the document is for,
+        // and page 4, which carries neither and leaves a filmmaker holding
+        // "0 3/8" and "1, 3, 4" with no way to decode either. She was
+        // right that the first one teaches and the second intimidates.
+        // The answer is not to choose between them.
+        //
+        // This is the same fault as a story day that does not survive a
+        // page break, fixed on Report 5 last night and not then looked for
+        // anywhere else — which is the second time in two days that a fix
+        // was made where it was found and nowhere else.
+        function table(cols, rows, key) {
           var x0 = 15;
           function header() {
             check(14);
@@ -7505,6 +7519,14 @@
               cx += c.width;
             });
             y += 10;
+            if (key) {
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(7);
+              doc.setTextColor.apply(doc, SLATE_MUTED);
+              var klines = doc.splitTextToSize(key, 180);
+              klines.forEach(function (ln) { doc.text(ln, x0, y - 2); y += 3.6; });
+              y += 2.5;
+            }
           }
           header();
           // ── Carrying a group's name onto the next page ──
@@ -8060,7 +8082,12 @@
              { label: 'Pages', width: 18, align: 'right' },
              { label: 'SD', width: 12 },
              { label: 'Cast', width: 40 }],
-            slateBoardRows);
+            slateBoardRows,
+            'Pages are in eighths: 0 3/8 is three eighths of a script page.   '
+            + 'Cast numbers are the ones in Report 2.   '
+            + '"4 pt 3" is part 3 of a montage, shot at its own location.   '
+            + 'Colour: white INT day, yellow EXT day, blue INT night, '
+            + 'green EXT night; dawn and dusk unfilled.');
           pdf.gap(2);
           pdf.annotation('Cast numbers are the ones in Report 2 of the breakdown. '
             + 'A blank Cast column means the script names nobody in that scene.', 15, 175);
