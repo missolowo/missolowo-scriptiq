@@ -33,6 +33,7 @@ const staleSrc = block('function slateCallsheetOutOfDate');
 const schedSrc = block('function slateBreakdownForSchedule');
 const headSrc  = block('function slateParseHeading');
 const titleSrc = block('function slateTitleCase');
+const unitSrc  = block('function slateUnitOf');
 
 function harness(opts) {
   opts = opts || {};
@@ -64,6 +65,7 @@ function harness(opts) {
         renderWorkspaceSchedule = deps.renderWorkspaceSchedule, slateSave = deps.slateSave,
         window = deps.window, slateFetch = deps.slateFetch;
     ${titleSrc}
+    ${unitSrc}
     ${headSrc}
     ${schedSrc}
     ${staleSrc}
@@ -212,8 +214,10 @@ const day = (n, scenes, note) => ({ day: n, production_notes: note || '', scenes
   ok('the scope is chosen before the day',
      APP.indexOf('Take with it') > 0 && APP.indexOf('Take with it') < APP.indexOf('To which day'),
      'take=' + APP.indexOf('Take with it') + ' day=' + APP.indexOf('To which day'));
-  ok('scope defaults to just this scene',
-     /label: 'Just this scene', ids: \[idx\]/.test(APP));
+  // A montage part says "part", and moves alone unless the filmmaker
+  // chooses to take the rest — the default is still the one unit tapped.
+  ok('scope defaults to just this scene (or just this part)',
+     /groups = \[\{ label: isPart \? 'Just this part' : 'Just this scene', ids: \[unit\] \}\]/.test(APP));
   ok('at most two cast options, so a phone is not a wall of buttons',
      /\.slice\(0, 2\)/.test(APP));
   ok('the day button reads the chosen scope rather than one scene',
@@ -222,6 +226,25 @@ const day = (n, scenes, note) => ({ day: n, production_notes: note || '', scenes
      /class="ws-scene-chip" data-idx="' \+ s\.scene_index/.test(APP));
   ok('the click handler is assigned, not stacked on every render',
      /out\.onclick = function/.test(APP) && !/out\.addEventListener\('click'/.test(APP));
+  console.log('\nA montage part moves alone (THE WEAVER\'S DAUGHTER, 25 Nov)');
+  {
+    // Scene 4 is a montage in four parts across three locations. Moving the
+    // market part to day 2 must leave the office and workshop parts on day 1.
+    const part = (b, d) => ({ scene_index: 4, scene_number: '4', unit: '4:' + b, montage_setup: b, montage_setups: 4 });
+    const s1 = sched([{ day: 1, production_notes: '', scenes: [
+        { scene_index: 1, scene_number: '1' }, part(1), part(2), part(3) ] },
+      { day: 2, production_notes: '', scenes: [{ scene_index: 2, scene_number: '2' }, part(4)] }]);
+    const hp = harness({ schedule: s1, reply: s1 });
+    await hp.move(['4:2'], 2);
+    const a = (hp.sent[0] || {}).day_assignment || {};
+    ok('the moved part goes to day 2', a['4:2'] === 2, JSON.stringify(a));
+    ok('  ...and its sibling parts stay where they were',
+       a['4:1'] === 1 && a['4:3'] === 1 && a['4:4'] === 2, JSON.stringify(a));
+    ok('  ...and no bare scene index is sent for the montage', a['4'] === undefined, JSON.stringify(a));
+    ok('the chip carries the unit, and the move row parses it as text, not a number',
+       /data-unit="' \+ slateUnitOf\(s\)/.test(APP) && !/split\(','\)\s*\.map\(Number\)/.test(APP));
+  }
+
   ok('tap targets meet the 44px minimum', /min-height:44px/.test(APP));
   ok('the first-pass note is not dismissible', !/dismiss/i.test(APP.slice(APP.indexOf('This is a first pass'), APP.indexOf('This is a first pass') + 900)));
   ok('a new day can be created from the move row', /\+ Day ' \+ \(days\.length \+ 1\)/.test(APP));

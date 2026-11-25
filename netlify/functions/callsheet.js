@@ -29,6 +29,7 @@ const slateName = (typeof slateTitleCase === 'function') ? slateTitleCase : func
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 
 exports.handler = async function(event, context) {
@@ -327,7 +328,7 @@ ${JSON.stringify(scenesToday.map(function (s) {
 CAST WORKING TODAY (use exactly these names):
 ${JSON.stringify(castToday, null, 2)}
 
-Stagger call times sensibly: cast in the first scenes of the day come in at general call, cast who only appear later can come in later. Write 2 to 4 short production notes covering logistics, moves between sets, night work or continuity.
+The scenes are listed in SHOOTING ORDER, and that order is fixed: never suggest shooting them in a different order. Stagger call times sensibly: cast in the first scene of the day come in at general call, cast who only appear later can come in later. Write 2 to 4 short production notes covering logistics, moves between sets, night work or continuity.
 
 Return ONLY valid JSON:
 {
@@ -345,8 +346,7 @@ Return ONLY valid JSON:
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
+        body: JSON.stringify(slateChatBody({
           max_tokens: 2000,
           temperature: 0.1,
           response_format: { type: 'json_object' },
@@ -357,7 +357,7 @@ Return ONLY valid JSON:
             },
             { role: 'user', content: prompt }
           ]
-        })
+        }))
       });
 
       if (response.ok) {
@@ -404,7 +404,48 @@ Return ONLY valid JSON:
         status: t.status || '',
         scenes: c.scenes
       };
-    }).sort(function (a, b) {
+    });
+
+    // ── Call times follow the shooting order. Checked in code. ──
+    // The model staggers call times, and on THE WEAVER'S DAUGHTER (25 Nov)
+    // it called Mr Balogun and the Receptionist two hours after general
+    // call — for scene 3, the FIRST scene of the day. Nobody acts on a
+    // suggestion like that twice. So two rules, enforced here:
+    //   1. Anyone in the day's first scene is called with the earliest call.
+    //   2. Nobody is called later than someone who works after them.
+    // The model's times are kept wherever they already obey both.
+    (function slateCallOrder() {
+      const firstPos = {};
+      scenesToday.forEach(function (s, i) {
+        (s.cast || []).forEach(function (c) {
+          const k = castKey(String(c || '').trim());
+          if (k && firstPos[k] === undefined) firstPos[k] = i;
+        });
+      });
+      const hm = function (t) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim());
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      };
+      const fmt = function (n) { return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0'); };
+      ['call_time', 'on_set'].forEach(function (field) {
+        const timed = castCallTimes.filter(function (c) { return hm(c[field]) !== null; });
+        if (!timed.length) return;
+        const earliest = Math.min.apply(null, timed.map(function (c) { return hm(c[field]); }));
+        timed.forEach(function (c) { if (firstPos[castKey(c.character)] === 0) c[field] = fmt(earliest); });
+        // Latest first; a runner keeps the earliest time seen so far.
+        const byOrder = timed.slice().sort(function (a, b) {
+          return (firstPos[castKey(b.character)] || 0) - (firstPos[castKey(a.character)] || 0);
+        });
+        let floor = Infinity;
+        byOrder.forEach(function (c) {
+          const t = hm(c[field]);
+          if (t > floor) c[field] = fmt(floor);
+          floor = Math.min(floor, hm(c[field]));
+        });
+      });
+    })();
+
+    castCallTimes.sort(function (a, b) {
       var an = a.cast_number || 9999, bn = b.cast_number || 9999;
       if (an !== bn) return an - bn;
       return String(a.character).localeCompare(String(b.character));
@@ -446,6 +487,8 @@ Return ONLY valid JSON:
           return {
             scene_index: sc.scene_index,
             scene_number: sc.scene_number,
+            montage_setup: sc.montage_setup || 0,
+            montage_setups: sc.montage_setups || 0,
             int_ext: sc.int_ext,
             time_of_day: sc.time_of_day,
             set: sc.set || '',

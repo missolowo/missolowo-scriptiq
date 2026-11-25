@@ -3518,6 +3518,23 @@
       // Non-mutating on purpose: it returns a copy for sending, so the
       // breakdown a filmmaker has open and saved is never altered by
       // asking for a schedule.
+      // ── How a montage part is written, everywhere ──
+      // A montage is one scene shot in parts, one per beat, each at its own
+      // location. "4·3" read as a scene number nobody had seen; "4-3" reads
+      // as a range. "4 pt 3" says what it is, and the key says the rest.
+      function slatePartLabel(s) {
+        return (s && s.montage_setup && s.montage_setups) ? ' pt ' + s.montage_setup : '';
+      }
+      var SLATE_PART_KEY = 'pt = one part of a montage, shot at its own location.';
+      // What a move addresses: the unit of work. For a montage part that is
+      // the part ("5:2"), not the scene — moving the market beat must not
+      // drag the office and workshop beats to the market day with it
+      // (THE WEAVER'S DAUGHTER, 25 Nov). Schedules saved before units were
+      // emitted fall back to the scene index, which moves a montage whole.
+      function slateUnitOf(s) {
+        return String((s && s.unit) || (s && s.scene_index));
+      }
+
       function slateBreakdownForSchedule(bd) {
         if (!bd || !Array.isArray(bd.scenes)) return bd;
         return Object.assign({}, bd, {
@@ -3608,6 +3625,40 @@
       // as Slate failing to read the page, and the honest version of this
       // feature has to say which it is. Said once per document, from one
       // derivation, rather than beside every dash.
+      // ── Background on a shoot day ──
+      //
+      // Collected once per SCENE. A montage is several scheduling units —
+      // one per part — and every one carries its scene's background, so
+      // the day line printed it once per part. A casting call for four
+      // neighbours is one call however many parts the montage needs.
+      //
+      // Keyed on the scene alone, not on the scene plus the text: the same
+      // scene's background reaching two units as "Neighbours" and
+      // "neighbours" is one call, and a key built from the text would book
+      // it twice. Two DIFFERENT scenes that each need neighbours are two
+      // calls and both are kept — the opposite mistake, and the one a
+      // dedup by text makes.
+      //
+      // It also normalises what the other two background renderers already
+      // did and this one did not: an array joined, the strings "null" and
+      // "undefined" dropped, because both reach this field as text.
+      function slateDayBackgrounds(scenes) {
+        var seen = {}, out = [];
+        (scenes || []).forEach(function (s) {
+          if (!s) return;
+          var text = Array.isArray(s.background)
+            ? s.background.filter(Boolean).join(', ')
+            : String(s.background == null ? '' : s.background);
+          text = text.trim();
+          if (!text || text === 'null' || text === 'undefined') return;
+          var k = String(s.scene_index != null ? s.scene_index : s.scene_number);
+          if (seen[k]) return;
+          seen[k] = true;
+          out.push({ scene: s.scene_number, text: text });
+        });
+        return out;
+      }
+
       function slateUnnumberedNote(scenes) {
         var n = 0;
         (scenes || []).forEach(function (s) {
@@ -6421,9 +6472,9 @@
 
         var assignment = {};
         days.forEach(function (d) {
-          (d.scenes || []).forEach(function (s) { assignment[s.scene_index] = d.day; });
+          (d.scenes || []).forEach(function (s) { assignment[slateUnitOf(s)] = d.day; });
         });
-        var moving = [].concat(sceneIndexes).filter(function (i) {
+        var moving = [].concat(sceneIndexes).map(String).filter(function (i) {
           return assignment[i] !== undefined && assignment[i] !== toDay;
         });
         if (!moving.length) return;
@@ -6435,8 +6486,7 @@
         // a note naming the wrong location is worse than no note at all.
         var before = {};
         var sceneKey = function (d) {
-          return (d.scenes || []).map(function (s) { return s.scene_index; })
-            .sort(function (a, b) { return a - b; }).join(',');
+          return (d.scenes || []).map(slateUnitOf).sort().join(',');
         };
         days.forEach(function (d) { before[d.day] = { key: sceneKey(d), note: d.production_notes || '' }; });
 
@@ -6502,7 +6552,7 @@
         var out = document.getElementById('wsScheduleOut');
         if (!out) return;
         var days = sched.schedule || [];
-        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + ' days</div>';
+        var html = '<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold,#D4A64A);margin-bottom:12px">Shooting Schedule — ' + days.length + (days.length === 1 ? ' day' : ' days') + '</div>';
 
         // ── Say that this can be changed, and why it looks like this ──
         // No other tool a production manager has used lets them do this, so
@@ -6535,18 +6585,15 @@
             + '<span>Scenes:</span>'
             + (d.scenes || []).map(function(s) {
                 var label = (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number;
-                // A montage setup is one beat of its scene, so the chip
-                // says which — "4·2" reads as scene 4, setup 2, and a
-                // filmmaker seeing 4·1 on Tuesday and 4·3 on Friday can
-                // tell at a glance that the montage is spread.
-                if (s.montage_setup && s.montage_setups) {
-                  label = label + '·' + s.montage_setup;
-                }
-                return '<button type="button" class="ws-scene-chip" data-idx="' + s.scene_index + '" data-label="' + label + '" data-day="' + d.day + '"'
+                // A montage part is one beat of its scene, so the chip
+                // says which — "4 pt 2" — and a filmmaker seeing 4 pt 1 on
+                // Tuesday and 4 pt 3 on Friday can tell the montage is spread.
+                label = label + slatePartLabel(s);
+                return '<button type="button" class="ws-scene-chip" data-idx="' + s.scene_index + '" data-unit="' + slateUnitOf(s) + '" data-label="' + label + '" data-day="' + d.day + '"'
                   + ' title="' + (s.montage_setup
-                      ? 'Setup ' + s.montage_setup + ' of ' + s.montage_setups
+                      ? 'Part ' + s.montage_setup + ' of ' + s.montage_setups
                         + (s.montage_beat ? ': ' + slateEscapeHtml(s.montage_beat) : '')
-                        + ' — moving it moves the whole montage'
+                        + ' — moves this part only; the move panel offers the rest'
                       : 'Move scene ' + label + ' to another day') + '"'
                   // 44px is Apple's minimum touch target and Android asks
                   // for 48dp. Three quarters of our filmmakers are on a
@@ -6557,10 +6604,18 @@
             + '</div>'
             + '<div class="ws-move-row" data-for="' + d.day + '" style="display:none;margin-top:10px;padding:10px 12px;background:var(--ink-0,#121418);border:1px solid var(--gold-deep,#8A6A2A);border-radius:8px"></div>'
            + (function () {
-                var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
-                if (!bgScenes.length) return '';
-                return '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
-                  + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
+                // Every part of a montage carries the montage's background,
+                // so it printed once per part. Once per scene is what it is.
+                var hasParts = (d.scenes || []).some(function (s) { return !!slatePartLabel(s); });
+                var key = hasParts
+                  ? '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:6px">' + SLATE_PART_KEY + '</div>' : '';
+                var bgScenes = slateDayBackgrounds(d.scenes);
+                if (!bgScenes.length) return key;
+                return key + '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
+                  + bgScenes.map(function (b) {
+                      return slateEscapeHtml(String(b.scene)) + ' ('
+                           + slateEscapeHtml(b.text) + ')';
+                    }).join('  ·  ')
                   + '</div>';
               })()
            // ── Which story days this shoot day covers ──
@@ -6638,6 +6693,7 @@
           var chip = t.closest('.ws-scene-chip');
           if (chip) {
             var idx = Number(chip.getAttribute('data-idx'));
+            var unit = chip.getAttribute('data-unit') || String(idx);
             var label = chip.getAttribute('data-label');
             var from = Number(chip.getAttribute('data-day'));
             closeRows();
@@ -6656,21 +6712,35 @@
             // day for him.
             var all = [];
             days.forEach(function (dd) { (dd.scenes || []).forEach(function (s) { all.push(s); }); });
-            var me = all.filter(function (s) { return s.scene_index === idx; })[0] || {};
+            var me = all.filter(function (s) { return slateUnitOf(s) === unit; })[0] || {};
             var placeKey = function (v) {
               return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
             };
-            var groups = [{ label: 'Just this scene', ids: [idx] }];
+            var isPart = !!slatePartLabel(me);
+            var groups = [{ label: isPart ? 'Just this part' : 'Just this scene', ids: [unit] }];
+
+            // The other parts of the same montage, offered rather than taken.
+            if (isPart) {
+              var siblings = all.filter(function (s) {
+                return s.scene_index === idx && slateUnitOf(s) !== unit;
+              });
+              if (siblings.length) {
+                groups.push({
+                  label: '+ the other ' + siblings.length + ' part' + (siblings.length > 1 ? 's' : '') + ' of scene ' + me.scene_number,
+                  ids: [unit].concat(siblings.map(slateUnitOf))
+                });
+              }
+            }
 
             var mine = placeKey(me.location);
             if (mine) {
               var sameplace = all.filter(function (s) {
-                return s.scene_index !== idx && placeKey(s.location) === mine;
+                return slateUnitOf(s) !== unit && placeKey(s.location) === mine;
               });
               if (sameplace.length) {
                 groups.push({
                   label: '+ ' + sameplace.length + ' more at ' + me.location,
-                  ids: [idx].concat(sameplace.map(function (s) { return s.scene_index; }))
+                  ids: [unit].concat(sameplace.map(slateUnitOf))
                 });
               }
             }
@@ -6680,11 +6750,11 @@
             // are the ones that actually save taps.
             (me.cast_required || []).map(function (ch) {
               var withThem = all.filter(function (s) {
-                return s.scene_index !== idx && (s.cast_required || []).some(function (c) {
+                return slateUnitOf(s) !== unit && (s.cast_required || []).some(function (c) {
                   return placeKey(c) === placeKey(ch);
                 });
               });
-              return { ch: ch, n: withThem.length, ids: [idx].concat(withThem.map(function (s) { return s.scene_index; })) };
+              return { ch: ch, n: withThem.length, ids: [unit].concat(withThem.map(slateUnitOf)) };
             }).filter(function (g) { return g.n > 0; })
               .sort(function (a, b) { return b.n - a.n; })
               .slice(0, 2)
@@ -6703,7 +6773,7 @@
                 + '</div>'
               : '';
 
-            row.setAttribute('data-ids', String(idx));
+            row.setAttribute('data-ids', unit);
             row.innerHTML =
               '<div style="font-size:13px;color:var(--text-2,#B5AFA3);margin-bottom:8px">Moving scene '
               + '<strong style="color:var(--gold,#D4A64A)">' + label + '</strong></div>'
@@ -6740,8 +6810,10 @@
           var to = t.closest('.ws-move-to');
           if (to) {
             var trow = to.closest('.ws-move-row');
+            // Unit keys, not numbers: "5:2" is a montage part and Number()
+            // turned it into NaN and dropped it.
             var ids = ((trow && trow.getAttribute('data-ids')) || '').split(',')
-              .map(Number).filter(function (n) { return !isNaN(n); });
+              .map(function (x) { return x.trim(); }).filter(Boolean);
             closeRows();
             slateMoveScenes(ids, Number(to.getAttribute('data-day')));
             return;
@@ -6887,9 +6959,9 @@
               var csUnits = Array.isArray(s.montage_setups_today) ? s.montage_setups_today : [];
               var setups = csUnits.length
                 ? '<div style="font-size:12px;color:#4A463D;margin-top:4px;font-family:monospace">'
-                  + csUnits.length + ' of ' + (csUnits[0].of || csUnits.length) + ' setups today: '
+                  + csUnits.length + ' of ' + (csUnits[0].of || csUnits.length) + ' montage parts today: '
                   + csUnits.map(function (u) {
-                      return slateEscapeHtml(String(u.n)) + '. '
+                      return 'pt ' + slateEscapeHtml(String(u.n)) + '. '
                         + slateEscapeHtml(u.beat || '(no beat line)');
                     }).join('  ·  ')
                   + '</div>'
@@ -7945,7 +8017,9 @@
           pdf.sectionHeader('The Board');
           pdf.annotation('One line per scene, in shooting order, the whole film. '
             + 'The detail for each day — cast, background, props and description — '
-            + 'is in the day-by-day section that follows.', 15, 175);
+            + 'is in the day-by-day section that follows.'
+            + (days.some(function (dd) { return (dd.scenes || []).some(function (x) { return !!slatePartLabel(x); }); })
+                ? ' ' + SLATE_PART_KEY : ''), 15, 175);
           pdf.gap(4);
 
           var slateBoardRows = [];
@@ -7962,7 +8036,7 @@
               if (!bSet || bSet === 'null' || bSet === 'undefined') bSet = '\u2014';
               slateBoardRows.push([
                 pdf.stripKeyOf(sc.int_ext, sc.time_of_day),
-                sc.scene_label || (sc.scene_number == null ? '\u2014' : String(sc.scene_number)),
+                (sc.scene_label || (sc.scene_number == null ? '\u2014' : String(sc.scene_number))) + slatePartLabel(sc),
                 sc.int_ext || '\u2014',
                 slateBoardCode(sc.time_of_day),
                 bSet,
@@ -8060,7 +8134,7 @@
             // "4" has to know whether today is the whole montage or a
             // quarter of it.
             var schSetup = (sc.montage_setup && sc.montage_setups)
-              ? '   setup ' + sc.montage_setup + ' of ' + sc.montage_setups : '';
+              ? '   part ' + sc.montage_setup + ' of ' + sc.montage_setups : '';
             pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen
               + (schSd ? '   SD ' + schSd : '')
               + schSetup
@@ -8649,8 +8723,8 @@
             // The count moves onto each line, where it reads better
             // anyway: "2 of 4" beside the beat says which setup this is,
             // not just how many there are.
-            pdf.labelledList('Setups', csSetups.map(function (u) {
-                return u.n + ' of ' + (u.of || csSetups.length) + '  \u2014  '
+            pdf.labelledList('Parts', csSetups.map(function (u) {
+                return 'pt ' + u.n + ' of ' + (u.of || csSetups.length) + '  \u2014  '
                   + (u.beat || '(no beat line)');
               }), 15);
           } else if (s.montage_beats && s.montage_beats.length) {
@@ -8773,7 +8847,7 @@
             d.setTextColor.apply(d, SLATE_INK);
             d.setFontSize(9);
             d.setFont('courier', 'normal');
-            d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number), 15, pdf.getY());
+            d.text(String(sc.scene_number == null ? '#' + sc.scene_index : sc.scene_number) + slatePartLabel(sc), 15, pdf.getY());
             d.setFont('helvetica', 'normal');
             d.setFontSize(8.5);
             d.text((sc.int_ext || '—') + ' · ' + slateDayNightCode(sc.time_of_day)
@@ -9042,6 +9116,21 @@
         }
         return true;
       }
+
+      // Lives here, at workspace scope, not inside slateHealthCheck: the
+      // montage setups in schedule generation call it too. Nested in the
+      // health check it was invisible there, and generating a schedule
+      // stopped with "slateOpeningWord is not defined" (25 Nov).
+      // The opening word of a line, past a scene number folded onto it.
+      // One definition, because both scans below ask the same question of
+      // it and they answered it differently — the first with a regex on
+      // the heading word, the second not at all.
+      function slateOpeningWord(line) {
+        var m = /^[ \t]*(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?([^\s.,\/:;()—–-]+)/
+          .exec(String(line == null ? '' : line));
+        return m ? m[1] : '';
+      }
+
       // ── SCRIPT HEALTH CHECK — runs in the browser before processing ──
       // Advisory only. Real scripts legitimately contain 47A/47B scenes and
       // unnumbered montages, so gaps are weighted lightly.
@@ -9296,15 +9385,6 @@
         // split correctly, numbered, or scheduled. Silently skipping it is
         // the one thing a health check must not do.
            var misread = [];
-        // The opening word of a line, past a scene number folded onto it.
-        // One definition, because both scans below ask the same question of
-        // it and they answered it differently — the first with a regex on
-        // the heading word, the second not at all.
-        function slateOpeningWord(line) {
-          var m = /^[ \t]*(?:(?:SCENE|SC|СЦЕНА)[ \t]*[0-9][0-9A-Za-z.\-]*[.):]?[ \t]*)?(?:[0-9]{1,3}[.) ][ \t]*)?([^\s.,\/:;()—–-]+)/
-            .exec(String(line == null ? '' : line));
-          return m ? m[1] : '';
-        }
 
         // Is this line WRITTEN as a slug line, whatever it says?
         //

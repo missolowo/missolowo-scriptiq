@@ -30,16 +30,21 @@ const PROBES = [
   'callsheet-guard-probe', // what stops a bad call sheet leaving Slate
   'continuity-probe',  // which scenes have to match each other
   'storyday-pass-probe', // the one place we infer, and how it is contained
+  'dayorder-probe',
+  'calltime-probe',    // nobody is called after the scene they open the day with    // the order a day is actually shot in: light forward, one trip per location
   'packer-probe',      // how a shoot day is built: pages, light, conservation
   'montage-schedule-probe', // a montage is one scene and several units of work
   'logistics-probe',   // what a unit needs to find the day
   'department-probe',  // what each department brings, and on which day
+  'background-probe',  // once per scene, not once per montage part
   'unnumbered-probe',  // a scene the script never numbered, and why
   'stripboard-probe',  // the colour a crew already knows, and what has none
   'funnel-probe',      // where the 233 who did not get a breakdown went
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken
   'subscribe-probe',   // the signup-to-MailerLite hook, and its isolation
+  'scope-probe',       // a function exists only where it is declared, not where a probe pastes it
+  'model-probe',       // which model reads the script is one setting, and every call obeys it
   'subscribe-run'      // that hook, actually run against a failing provider
 ];
 

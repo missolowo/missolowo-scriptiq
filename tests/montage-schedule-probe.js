@@ -322,8 +322,9 @@ console.log('\nThe labels fit the column they are drawn in');
   // labelledList draws its values at x+26. A longer label prints straight
   // through them, which is how Report 5 came out unreadable and how
   // "2 of 4 setups today" overlapped its first beat line.
+  // 'Parts' since 25 Nov, to match "4 pt 3" — what matters is that it is short.
   ok('the call sheet setup label is short',
-     /pdf\.labelledList\('Setups',/.test(APP),
+     (/pdf\.labelledList\('(\w+)', csSetups/.exec(APP) || [, 'x'.repeat(99)])[1].length <= 6,
      'the count belongs on each line, where it says WHICH setup rather '
      + 'than only how many');
   ok('the schedule does not print the beat on a line of its own',

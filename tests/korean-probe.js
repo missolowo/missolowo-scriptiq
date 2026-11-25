@@ -74,7 +74,10 @@ const HEAD = [
   block('function slateMontageBeat'),
   block('function slateEndsSequence'),
   block('function slateHeadTextAt'),
-  block('function slateNextNonBlank')
+  block('function slateNextNonBlank'),
+  // Workspace scope since 25 Nov (it was nested in the health check, where
+  // schedule generation could not see it) — so it is extracted on its own.
+  block('function slateOpeningWord')
 ].join('\n');
 
 const check = new Function('console',

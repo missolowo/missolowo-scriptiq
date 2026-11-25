@@ -23,6 +23,7 @@ const slateName = (typeof slateTitleCase === 'function') ? slateTitleCase : func
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 
 // ── One key for "is this the same place?" ──
@@ -94,37 +95,73 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
       // bedroom lit, struck, and lit again three times in one day.
       //
       // The rules, from the production side:
-      //   1. Every DAY scene before every NIGHT scene. Nights go at the end.
-      //   2. Inside each block, every scene at one place is shot together —
-      //      one company move per place, not one per scene.
+      //   1. Dawn, then day, then dusk, then night. Nights go at the end.
+      //   2. Inside each band, every scene at one LOCATION is shot together —
+      //      one company move per location, not one per scene — and inside
+      //      a location, every scene on one set together.
       //   3. Order the places so an actor already working carries over to
       //      the next place rather than being released and recalled.
       //   4. Inside a place, ascending scene number.
+      // 25 Nov — two corrections, both found on THE WEAVER'S DAUGHTER:
+      //
+      //  * Light came in two bands here, day and night, so DUSK counted as
+      //    day: the compound's dusk beat was shot before a day exterior on
+      //    Market Street. The packer already orders dawn, day, dusk, night
+      //    (slateLightRank) and this step quietly undid it. Same four bands
+      //    now, from the same function.
+      //
+      //  * Grouping keyed on the SET alone. Scene 3's set is "Office"; a
+      //    montage beat at the same building has no set of its own and
+      //    falls back to "Lagos Office". Same location, two keys, a company
+      //    move between them. The unit travels to a LOCATION and relights a
+      //    SET, so it is now both, in that order: one trip per location,
+      //    and inside it every scene on one set together.
       function slateIsNight(s) {
         return String(s.tod || '').toUpperCase().indexOf('NIGHT') >= 0;
       }
-      // The SET is the room the crew lights; the location is the building.
-      // Grouping on the set is what keeps the bedroom scenes together.
-      function slatePlaceOf(s) {
+      function slateLocOf(s) {
+        return slatePlaceKey(s.loc || s.set || '') || '\u0000noplace';
+      }
+      function slateSetOf(s) {
         return slatePlaceKey(s.set || s.loc || '') || '\u0000noplace';
       }
-      function slateOrderBlock(list) {
-        var byPlace = {}, places = [];
+      function slateCastOf(list) {
+        var c = {};
         list.forEach(function (s) {
-          var k = slatePlaceOf(s);
-          if (!byPlace[k]) { byPlace[k] = { scenes: [], cast: {} }; places.push(byPlace[k]); }
-          byPlace[k].scenes.push(s);
-          (s.cast || []).forEach(function (c) {
-            var ck = normKey(c);
-            if (ck) byPlace[k].cast[ck] = true;
-          });
+          (s.cast || []).forEach(function (x) { var k = normKey(x); if (k) c[k] = true; });
         });
-        places.forEach(function (p) { p.scenes.sort(bySceneNumberField('n')); });
-        // Biggest place first, then repeatedly whichever shares the most cast
-        // with the place just finished — that is "hold the actor to the next
-        // location" expressed as an ordering.
-        var pool = places.slice().sort(function (a, b) { return b.scenes.length - a.scenes.length; });
-        var out = [], cur = pool.shift();
+        return c;
+      }
+      function slateGroup(list, keyOf) {
+        var by = {}, out = [];
+        list.forEach(function (s) {
+          var k = keyOf(s);
+          if (!by[k]) { by[k] = { key: k, scenes: [] }; out.push(by[k]); }
+          by[k].scenes.push(s);
+        });
+        return out;
+      }
+      // One light band. `carry` is the location the previous band ended at:
+      // if this band has work there too, it starts there and nobody moves.
+      function slateOrderBlock(list, carry) {
+        var places = slateGroup(list, slateLocOf);
+        places.forEach(function (p) {
+          p.cast = slateCastOf(p.scenes);
+          // Inside a location: the biggest set first, each set's scenes in
+          // script order.
+          var sets = slateGroup(p.scenes, slateSetOf);
+          sets.forEach(function (g) { g.scenes.sort(bySceneNumberField('n')); });
+          sets.sort(function (x, y) { return y.scenes.length - x.scenes.length; });
+          p.scenes = [].concat.apply([], sets.map(function (g) { return g.scenes; }));
+        });
+        // Biggest location first (or the one we are already standing in),
+        // then repeatedly whichever shares the most cast with the location
+        // just finished — "hold the actor to the next location".
+        var pool = places.slice().sort(function (x, y) { return y.scenes.length - x.scenes.length; });
+        var start = carry ? pool.filter(function (p) { return p.key === carry; })[0] : null;
+        var cur = start || pool[0];
+        if (cur) pool.splice(pool.indexOf(cur), 1);
+        var out = [];
         while (cur) {
           out.push(cur);
           if (!pool.length) break;
@@ -140,14 +177,19 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
           pool.splice(pool.indexOf(best), 1);
           cur = best;
         }
-        var flat = [];
-        out.forEach(function (p) { p.scenes.forEach(function (s) { flat.push(s); }); });
-        return flat;
+        return [].concat.apply([], out.map(function (p) { return p.scenes; }));
       }
       days.forEach(function (d) {
-        var dayPart = d.scenes.filter(function (s) { return !slateIsNight(s); });
-        var nightPart = d.scenes.filter(slateIsNight);
-        d.scenes = slateOrderBlock(dayPart).concat(slateOrderBlock(nightPart));
+        // Dawn, day, dusk, night — the light runs forward through the day.
+        var ordered = [], carry = null;
+        [0, 1, 2, 3].forEach(function (rank) {
+          var band = d.scenes.filter(function (s) { return slateLightRank(s.tod) === rank; });
+          if (!band.length) return;
+          var done = slateOrderBlock(band, carry);
+          carry = slateLocOf(done[done.length - 1]);
+          ordered = ordered.concat(done);
+        });
+        d.scenes = ordered;
         // A scene with no location NEVER leads a day.
         //
         // This is the whole of what went wrong before. Such scenes all
@@ -165,6 +207,20 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         };
         d.scenes = d.scenes.filter(slateHasPlace)
           .concat(d.scenes.filter(function (sc) { return !slateHasPlace(sc); }));
+        // The day header lists locations in the order the unit reaches
+        // them. It was built before the day was put in shooting order, so
+        // Day 1 read "Aduke's Workshop · Lagos Office" while the unit started
+        // at the office (25 Nov). Rebuilt here from the final order.
+        var seenLoc = {}, locsInOrder = [];
+        d.scenes.forEach(function (sc) {
+          var l = String((sc && sc.loc) || '').trim();
+          if (!l || l === 'null' || l === 'undefined' || l === 'Unspecified') return;
+          var k = slatePlaceKey(l);
+          if (seenLoc[k]) return;
+          seenLoc[k] = true;
+          locsInOrder.push(l);
+        });
+        d.locations = locsInOrder;
       });
 
       // Dates
@@ -297,9 +353,12 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
                     // The last scene shot before the unit travels — which is
                     // how an AD says it, because that is the moment the move
                     // actually happens.
-                    after_scene: prevScene && prevScene.label != null
+                    // A montage part names its part: "after scene 4" three
+                    // times over told a unit nothing (25 Nov).
+                    after_scene: (prevScene && prevScene.label != null
                       ? prevScene.label
-                      : (prevScene && prevScene.n != null ? prevScene.n : null),
+                      : (prevScene && prevScene.n != null ? prevScene.n : null))
+                      + (prevScene && prevScene.beat ? ' pt ' + prevScene.beat : ''),
                     after_scene_index: prevScene ? prevScene.idx : null,
                     from: prevLoc,
                     to: here
@@ -1075,13 +1134,12 @@ exports.handler = async function(event, context) {
         const noteRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
+          body: JSON.stringify(slateChatBody({
             max_tokens: 1200,
             temperature: 0.3,
             response_format: { type: 'json_object' },
             messages: [{ role: 'user', content: notePrompt }]
-          })
+          }))
         });
 
         if (noteRes.ok) {

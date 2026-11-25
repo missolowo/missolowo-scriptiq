@@ -53,6 +53,10 @@ The others read source text and need nothing.
 | `cast-probe` | Two performers are merged into one call-sheet row, or a voice credit is billed as a second actor. |
 | `korean-probe` | The panel tells a Korean filmmaker we cannot read their screenplay while the splitter reads it fine. |
 | `funnel-probe` | The steps before a breakdown go silent again, or an event carries somebody's email address. |
+| `model-probe` | A model name creeps back into one function, or switching SLATE_MODEL sends a request the new model rejects (`max_tokens`, `temperature`) and every breakdown fails at once. |
+| `scope-probe` | A helper declared inside one function is called from another; every probe passes because probes paste functions side by side, and the browser says "is not defined" (Generate schedule, 25 Nov). |
+| `dayorder-probe` | The final step re-orders a day on a cruder rule than the packer: a DUSK exterior shot before a DAY one, or one building visited twice because a montage beat has no set of its own (THE WEAVER'S DAUGHTER, 25 Nov). |
+| `calltime-probe` | The model calls an actor two hours after the scene they open the day with (Mr Balogun, THE WEAVER'S DAUGHTER Day 1, 25 Nov). |
 
 ## Things worth knowing before you change them
 
