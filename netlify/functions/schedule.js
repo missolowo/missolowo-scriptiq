@@ -207,6 +207,20 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
         };
         d.scenes = d.scenes.filter(slateHasPlace)
           .concat(d.scenes.filter(function (sc) { return !slateHasPlace(sc); }));
+        // The day header lists locations in the order the unit reaches
+        // them. It was built before the day was put in shooting order, so
+        // Day 1 read "Aduke's Workshop · Lagos Office" while the unit started
+        // at the office (25 Nov). Rebuilt here from the final order.
+        var seenLoc = {}, locsInOrder = [];
+        d.scenes.forEach(function (sc) {
+          var l = String((sc && sc.loc) || '').trim();
+          if (!l || l === 'null' || l === 'undefined' || l === 'Unspecified') return;
+          var k = slatePlaceKey(l);
+          if (seenLoc[k]) return;
+          seenLoc[k] = true;
+          locsInOrder.push(l);
+        });
+        d.locations = locsInOrder;
       });
 
       // Dates
@@ -339,9 +353,12 @@ function slateDeriveSchedule(days, breakdown, slimScenes, slatePlaced, slateUnpl
                     // The last scene shot before the unit travels — which is
                     // how an AD says it, because that is the moment the move
                     // actually happens.
-                    after_scene: prevScene && prevScene.label != null
+                    // A montage part names its part: "after scene 4" three
+                    // times over told a unit nothing (25 Nov).
+                    after_scene: (prevScene && prevScene.label != null
                       ? prevScene.label
-                      : (prevScene && prevScene.n != null ? prevScene.n : null),
+                      : (prevScene && prevScene.n != null ? prevScene.n : null))
+                      + (prevScene && prevScene.beat ? ' pt ' + prevScene.beat : ''),
                     after_scene_index: prevScene ? prevScene.idx : null,
                     from: prevLoc,
                     to: here

@@ -69,6 +69,15 @@ ok('LAGOS OFFICE: scenes 3, 3A and the montage beat are one visit',
 ok("Scene 3 and 3A — same building, Office's set shot before the Corridor's",
    rows.findIndex(s => (s.scene_number || s.n) === '3') < rows.findIndex(s => (s.scene_number || s.n) === '3A'));
 
+console.log('\nThe header and the moves read in the order the unit travels');
+ok('the day header lists locations in shooting order',
+   (day.locations || []).join(' · ') === "LAGOS OFFICE · ADUKE'S WORKSHOP · OJA TUNTUN MARKET · ADUKE'S COMPOUND",
+   (day.locations || []).join(' · '));
+const moves = (day.company_moves || []).map(m => 'after ' + m.after_scene + ': ' + m.from + ' → ' + m.to);
+ok('a move after a montage part names the part, not just "scene 4"',
+   moves.length === 4 && moves[0].indexOf('after 4 pt 3:') === 0 && moves[1].indexOf('after 4 pt 1:') === 0,
+   moves.join(' | '));
+
 console.log('\nNothing lost, nothing added');
 ok('nine units of work in, nine out', rows.length === 9, String(rows.length));
 
