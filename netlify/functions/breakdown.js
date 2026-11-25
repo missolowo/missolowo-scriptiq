@@ -19,6 +19,7 @@ const { SIGNUP_FREE_CREDITS } = require('./lib/slate-pricing');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 // ADMIN_EMAILS was a fifth hardcoded copy of the admin list, sitting right
 // here, while lib/slate-core.js exists BECAUSE that list had been written
@@ -459,8 +460,7 @@ RULES:
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
+      body: JSON.stringify(slateChatBody({
         max_tokens: 16000,
         // Zero on a retry: the first answer broke the one rule that
         // matters, so there is nothing to be gained from variation.
@@ -473,7 +473,7 @@ RULES:
           },
           { role: 'user', content: prompt }
         ]
-      })
+      }))
     });
 
     const aiData = await response.json();

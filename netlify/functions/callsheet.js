@@ -29,6 +29,7 @@ const slateName = (typeof slateTitleCase === 'function') ? slateTitleCase : func
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 
 exports.handler = async function(event, context) {
@@ -345,8 +346,7 @@ Return ONLY valid JSON:
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
+        body: JSON.stringify(slateChatBody({
           max_tokens: 2000,
           temperature: 0.1,
           response_format: { type: 'json_object' },
@@ -357,7 +357,7 @@ Return ONLY valid JSON:
             },
             { role: 'user', content: prompt }
           ]
-        })
+        }))
       });
 
       if (response.ok) {

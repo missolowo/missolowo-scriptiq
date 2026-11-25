@@ -40,6 +40,7 @@ const PROBES = [
   'language-probe',    // one name per language, wherever it is written
   'charge-probe',      // the credit is claimed before it is taken
   'subscribe-probe',   // the signup-to-MailerLite hook, and its isolation
+  'model-probe',       // which model reads the script is one setting, and every call obeys it
   'subscribe-run'      // that hook, actually run against a failing provider
 ];
 

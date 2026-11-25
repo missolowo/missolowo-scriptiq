@@ -23,6 +23,7 @@ const slateName = (typeof slateTitleCase === 'function') ? slateTitleCase : func
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 
 // ── One key for "is this the same place?" ──
@@ -1075,13 +1076,12 @@ exports.handler = async function(event, context) {
         const noteRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
+          body: JSON.stringify(slateChatBody({
             max_tokens: 1200,
             temperature: 0.3,
             response_format: { type: 'json_object' },
             messages: [{ role: 'user', content: notePrompt }]
-          })
+          }))
         });
 
         if (noteRes.ok) {

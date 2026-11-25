@@ -49,6 +49,7 @@ const fetch = (() => {
 })();
 const { checkRateLimit, getClientIP, rateLimitResponse } = require('./rate-limiter');
 
+const { slateChatBody } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
 
@@ -190,8 +191,7 @@ ${list}`;
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
+      body: JSON.stringify(slateChatBody({
         max_tokens: 4000,
         temperature: 0,
         response_format: { type: 'json_object' },
@@ -202,7 +202,7 @@ ${list}`;
           },
           { role: 'user', content: prompt }
         ]
-      })
+      }))
     });
 
     if (!response.ok) {

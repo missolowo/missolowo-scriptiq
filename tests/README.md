@@ -53,6 +53,7 @@ The others read source text and need nothing.
 | `cast-probe` | Two performers are merged into one call-sheet row, or a voice credit is billed as a second actor. |
 | `korean-probe` | The panel tells a Korean filmmaker we cannot read their screenplay while the splitter reads it fine. |
 | `funnel-probe` | The steps before a breakdown go silent again, or an event carries somebody's email address. |
+| `model-probe` | A model name creeps back into one function, or switching SLATE_MODEL sends a request the new model rejects (`max_tokens`, `temperature`) and every breakdown fails at once. |
 
 ## Things worth knowing before you change them
 
