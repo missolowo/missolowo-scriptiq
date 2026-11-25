@@ -248,5 +248,42 @@ console.log('\nCast numbers agree with the breakdown');
      /A blank Cast column means the script names nobody in that scene/.test(APP));
 }
 
+console.log('\nEvery page of the board carries its own key');
+{
+  // Elizabeth put page 1 beside page 4 of the same board. Page 1 has the
+  // colour key and says what the document is for; page 4 has neither, and
+  // leaves a filmmaker holding "0 3/8" and "1, 3, 4" with no way to decode
+  // either. She was right that one teaches and the other intimidates.
+  //
+  // Same fault as a story day that does not survive a page break, fixed on
+  // Report 5 the night before and not then looked for anywhere else.
+  ok('table takes a key', /function table\(cols, rows, key\)/.test(APP));
+  ok('  ...printed inside header(), so it repeats after every break',
+     /function header\(\)[\s\S]{0,900}if \(key\) \{/.test(APP),
+     'printed once before the loop it would appear on the first page only, '
+     + 'which is the bug');
+  ok('  ...and wraps rather than running off the page',
+     /doc\.splitTextToSize\(key, 180\)/.test(APP));
+  ok('the board passes one', /slateBoardRows,\n\s*'Pages are in eighths/.test(APP));
+
+  // The four things on that page a first-time filmmaker cannot decode.
+  ok('it explains eighths', /0 3\/8 is three eighths of a script page/.test(APP),
+     'the deepest jargon on the document: nobody who has not been on a '
+     + 'scheduled set knows a page is divided into eight');
+  ok('it explains the cast numbers',
+     /Cast numbers are the ones in Report 2/.test(APP));
+  ok('it explains a montage part',
+     /"4 pt 3" is part 3 of a montage/.test(APP));
+  ok('it repeats the colours in words',
+     /Colour: white INT day, yellow EXT day, blue INT night/.test(APP),
+     'the swatch legend is on the first page of the schedule and gone by '
+     + 'the third');
+
+  ok('the other tables are unchanged',
+     /pdf\.table\(\n?\s*\[\{ label: 'Story Day'/.test(APP)
+     || /\[\{ label: 'Story Day', width: 32, bold: true, carry: true \}/.test(APP),
+     'Report 5 passes no key and must still render');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
