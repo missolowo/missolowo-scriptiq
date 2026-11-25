@@ -3518,6 +3518,15 @@
       // Non-mutating on purpose: it returns a copy for sending, so the
       // breakdown a filmmaker has open and saved is never altered by
       // asking for a schedule.
+      // ── How a montage part is written, everywhere ──
+      // A montage is one scene shot in parts, one per beat, each at its own
+      // location. "4·3" read as a scene number nobody had seen; "4-3" reads
+      // as a range. "4 pt 3" says what it is, and the key says the rest.
+      function slatePartLabel(s) {
+        return (s && s.montage_setup && s.montage_setups) ? ' pt ' + s.montage_setup : '';
+      }
+      var SLATE_PART_KEY = 'pt = one part of a montage, shot at its own location.';
+
       function slateBreakdownForSchedule(bd) {
         if (!bd || !Array.isArray(bd.scenes)) return bd;
         return Object.assign({}, bd, {
@@ -6535,16 +6544,13 @@
             + '<span>Scenes:</span>'
             + (d.scenes || []).map(function(s) {
                 var label = (s.scene_number == null || s.scene_number === 'null') ? '—' : s.scene_number;
-                // A montage setup is one beat of its scene, so the chip
-                // says which — "4·2" reads as scene 4, setup 2, and a
-                // filmmaker seeing 4·1 on Tuesday and 4·3 on Friday can
-                // tell at a glance that the montage is spread.
-                if (s.montage_setup && s.montage_setups) {
-                  label = label + '·' + s.montage_setup;
-                }
+                // A montage part is one beat of its scene, so the chip
+                // says which — "4 pt 2" — and a filmmaker seeing 4 pt 1 on
+                // Tuesday and 4 pt 3 on Friday can tell the montage is spread.
+                label = label + slatePartLabel(s);
                 return '<button type="button" class="ws-scene-chip" data-idx="' + s.scene_index + '" data-label="' + label + '" data-day="' + d.day + '"'
                   + ' title="' + (s.montage_setup
-                      ? 'Setup ' + s.montage_setup + ' of ' + s.montage_setups
+                      ? 'Part ' + s.montage_setup + ' of ' + s.montage_setups
                         + (s.montage_beat ? ': ' + slateEscapeHtml(s.montage_beat) : '')
                         + ' — moving it moves the whole montage'
                       : 'Move scene ' + label + ' to another day') + '"'
@@ -6557,9 +6563,21 @@
             + '</div>'
             + '<div class="ws-move-row" data-for="' + d.day + '" style="display:none;margin-top:10px;padding:10px 12px;background:var(--ink-0,#121418);border:1px solid var(--gold-deep,#8A6A2A);border-radius:8px"></div>'
            + (function () {
-                var bgScenes = (d.scenes || []).filter(function (s) { return s.background; });
-                if (!bgScenes.length) return '';
-                return '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
+                // Every part of a montage carries the montage's background,
+                // so it printed once per part. Once per scene is what it is.
+                var hasParts = (d.scenes || []).some(function (s) { return !!slatePartLabel(s); });
+                var key = hasParts
+                  ? '<div style="font-size:12px;color:var(--text-2,#B5AFA3);margin-top:6px">' + SLATE_PART_KEY + '</div>' : '';
+                var seenBg = {};
+                var bgScenes = (d.scenes || []).filter(function (s) {
+                  if (!s.background) return false;
+                  var k = s.scene_number + '\u0000' + s.background;
+                  if (seenBg[k]) return false;
+                  seenBg[k] = true;
+                  return true;
+                });
+                if (!bgScenes.length) return key;
+                return key + '<div style="font-size:12px;color:var(--gold,#D4A64A);margin-top:6px;font-family:monospace">BG: '
                   + bgScenes.map(function (s) { return s.scene_number + ' (' + s.background + ')'; }).join('  ·  ')
                   + '</div>';
               })()
@@ -6887,9 +6905,9 @@
               var csUnits = Array.isArray(s.montage_setups_today) ? s.montage_setups_today : [];
               var setups = csUnits.length
                 ? '<div style="font-size:12px;color:#4A463D;margin-top:4px;font-family:monospace">'
-                  + csUnits.length + ' of ' + (csUnits[0].of || csUnits.length) + ' setups today: '
+                  + csUnits.length + ' of ' + (csUnits[0].of || csUnits.length) + ' montage parts today: '
                   + csUnits.map(function (u) {
-                      return slateEscapeHtml(String(u.n)) + '. '
+                      return 'pt ' + slateEscapeHtml(String(u.n)) + '. '
                         + slateEscapeHtml(u.beat || '(no beat line)');
                     }).join('  ·  ')
                   + '</div>'
@@ -7945,7 +7963,9 @@
           pdf.sectionHeader('The Board');
           pdf.annotation('One line per scene, in shooting order, the whole film. '
             + 'The detail for each day — cast, background, props and description — '
-            + 'is in the day-by-day section that follows.', 15, 175);
+            + 'is in the day-by-day section that follows.'
+            + (days.some(function (dd) { return (dd.scenes || []).some(function (x) { return !!slatePartLabel(x); }); })
+                ? ' ' + SLATE_PART_KEY : ''), 15, 175);
           pdf.gap(4);
 
           var slateBoardRows = [];
@@ -7962,7 +7982,7 @@
               if (!bSet || bSet === 'null' || bSet === 'undefined') bSet = '\u2014';
               slateBoardRows.push([
                 pdf.stripKeyOf(sc.int_ext, sc.time_of_day),
-                sc.scene_label || (sc.scene_number == null ? '\u2014' : String(sc.scene_number)),
+                (sc.scene_label || (sc.scene_number == null ? '\u2014' : String(sc.scene_number))) + slatePartLabel(sc),
                 sc.int_ext || '\u2014',
                 slateBoardCode(sc.time_of_day),
                 bSet,
@@ -8060,7 +8080,7 @@
             // "4" has to know whether today is the whole montage or a
             // quarter of it.
             var schSetup = (sc.montage_setup && sc.montage_setups)
-              ? '   setup ' + sc.montage_setup + ' of ' + sc.montage_setups : '';
+              ? '   part ' + sc.montage_setup + ' of ' + sc.montage_setups : '';
             pdf.slugline((sc.int_ext || '\u2014') + ' \u00b7 ' + slateDayNightCode(sc.time_of_day) + '   ' + schSet + schLen
               + (schSd ? '   SD ' + schSd : '')
               + schSetup
@@ -8649,8 +8669,8 @@
             // The count moves onto each line, where it reads better
             // anyway: "2 of 4" beside the beat says which setup this is,
             // not just how many there are.
-            pdf.labelledList('Setups', csSetups.map(function (u) {
-                return u.n + ' of ' + (u.of || csSetups.length) + '  \u2014  '
+            pdf.labelledList('Parts', csSetups.map(function (u) {
+                return 'pt ' + u.n + ' of ' + (u.of || csSetups.length) + '  \u2014  '
                   + (u.beat || '(no beat line)');
               }), 15);
           } else if (s.montage_beats && s.montage_beats.length) {
