@@ -7552,7 +7552,15 @@
             // no shape. Drawn as a row of its own so table() keeps owning
             // the page break.
             if (row && row.sep) {
-              check(12);
+              // check() breaks the page but does not redraw the table's
+              // own header, so a page that STARTED with a day separator
+              // carried no column headings and no key — page 6 of iRANTI's
+              // board, found by rendering all five films and noticing the
+              // board's page numbers ran 2,3,4,5,7.
+              //
+              // The row branch below has always done this correctly. The
+              // separator was added later and did not copy it.
+              if (y + 12 > 278) { newPage(); header(); }
               doc.setFillColor(38, 36, 32);
               doc.rect(x0, y - 3, 180, 6.4, 'F');
               doc.setTextColor(255, 255, 255);
@@ -8024,6 +8032,62 @@
           var c = String(slateDayNightCode(tod) || '');
           return c.length > 8 ? c.slice(0, 4) + '.' : c;
         }
+        // ── A column with a header and nothing under it ──
+        //
+        // THE WEAVER'S DAUGHTER states no story days and the model infers
+        // none, so the board printed an SD heading above eighty blank
+        // cells. A reader does not see "this script has no story days" —
+        // they see software that is broken, and then wonder what else on
+        // the page is broken.
+        //
+        // Done for the class rather than for SD: any column empty on every
+        // row is dropped, so a breakdown that names no cast loses the Cast
+        // column too. The strip and the scene number always stay, even
+        // empty, because they are what a row IS.
+        //
+        // The freed width goes to Set, which is the column that wants it:
+        // the table rules a fixed 180mm under every row, so columns that
+        // no longer sum to it leave a column hanging over the edge.
+        // It drops the column AND the cell, together, because table() pairs
+        // them by position. Dropping only the column shortens the header
+        // list while every row still has its old length, so each cell after
+        // the gap is drawn one column to the left: the story day printed
+        // under CAST, and the cast was not drawn at all. The header said
+        // CAST and the number under it was a story day.
+        //
+        // Found by rendering with story days stripped and reading the page.
+        // Nothing about the source would have shown it, and a reader would
+        // have believed the wrong column.
+        function slateBoardColumns(cols, rows) {
+          var used = {};
+          (rows || []).forEach(function (r) {
+            if (!Array.isArray(r)) return;              // a day separator
+            r.forEach(function (v, i) {
+              if (String(v == null ? '' : v).trim()) used[i] = true;
+            });
+          });
+          var keep = cols.map(function (c, i) {
+            return !!(c.strip || i === 1 || used[i]);
+          });
+          var freed = 0;
+          cols.forEach(function (c, i) { if (!keep[i]) freed += c.width; });
+          var kept = cols.filter(function (c, i) { return keep[i]; });
+          if (freed) {
+            for (var j = 0; j < kept.length; j++) {
+              if (kept[j].label === 'Set') {
+                kept[j] = { label: 'Set', width: kept[j].width + freed };
+                break;
+              }
+            }
+          }
+          // The rows, cut to match, in place — every reader of them is below.
+          (rows || []).forEach(function (r, ri) {
+            if (!Array.isArray(r)) return;
+            rows[ri] = r.filter(function (v, i) { return keep[i]; });
+          });
+          return kept;
+        }
+
         function slateBoardCast(sc) {
           var names = sc.cast_required || sc.cast || [];
           if (!Array.isArray(names)) names = [names];
@@ -8069,7 +8133,7 @@
             });
           });
           pdf.table(
-            [{ label: '', width: 6, strip: true },
+            slateBoardColumns([{ label: '', width: 6, strip: true },
              { label: 'Sc', width: 16, gold: true },
              { label: 'I/E', width: 12 },
              // Measured, not guessed: EVENING is 14.2mm at 9pt helvetica and
@@ -8081,7 +8145,7 @@
              { label: 'Set', width: 56 },
              { label: 'Pages', width: 18, align: 'right' },
              { label: 'SD', width: 12 },
-             { label: 'Cast', width: 40 }],
+             { label: 'Cast', width: 40 }], slateBoardRows),
             slateBoardRows,
             'Pages are in eighths: 0 3/8 is three eighths of a script page.   '
             + 'Cast numbers are the ones in Report 2.   '
