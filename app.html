@@ -4656,7 +4656,25 @@
         // headings_read against model_scenes answers it in one line, for
         // any script, without us ever seeing a word of it. Nothing renders
         // these: every document reads production_elements by name.
+        // Which model read the script, carried for slate_run below. NOT in
+        // slate_reading: every value there is a number or a boolean, so
+        // that no screenplay text can ever reach it, and a guard that gets
+        // an exception stops being a guard. The merge-probe refused this
+        // when it was put there, which is the probe doing its job.
+        merged.slate_model = (function () {
+          var m = '';
+          (chunks || []).forEach(function (c) {
+            if (!m && c && c.slate_model) m = String(c.slate_model);
+          });
+          return m;                        // '' on a resumed or older run
+        })();
         merged.production_elements.slate_reading = {
+          // Which model read the script, straight from the function that
+          // called it. SLATE_MODEL is one setting now, and a setting you
+          // cannot read back is a setting you cannot trust: Netlify only
+          // hands a function new environment values on a deploy, so "I
+          // changed it" and "it is running" are different facts. Recorded
+          // only — nothing renders it.
           headings_read: slateAllHeads.length,
           scenes_restored_from_page: (merged.slate_restored || []).length,
           scene_types_from_model: slateSpanStats.scene_types_from_model,
@@ -6183,8 +6201,22 @@
             // share this and differ in id, which is what tells a re-run
             // apart from a different film — the question still open on
             // whether a re-run should join the same production.
-            fingerprint: slateScriptFingerprint(extractedScriptText)
+            fingerprint: slateScriptFingerprint(extractedScriptText),
+            // ── Which model read this script ──
+            //
+            // SLATE_MODEL being one setting is what makes it safe to
+            // change, and what makes it impossible to tell, from a
+            // document in your hand, what produced it. Netlify hands a
+            // function new environment values only on a deploy, so "I
+            // changed it" and "it is running" are different facts. A
+            // setting you cannot read back is a setting you cannot trust.
+            //
+            // Recorded, never rendered. It belongs beside the run id for
+            // the same reason the id does: it answers which run produced
+            // the document, not anything about the film.
+            model: slateBreakdown.slate_model || ''
           };
+          delete slateBreakdown.slate_model;
           slateAdoptRunStamp(slateBreakdown);
 
           // ── The story day, worked out rather than read ──

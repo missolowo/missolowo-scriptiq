@@ -19,7 +19,7 @@ const { SIGNUP_FREE_CREDITS } = require('./lib/slate-pricing');
 
 const SUPABASE_URL    = 'https://ilkwsanblbsabtgipbom.supabase.co';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET_KEY;
-const { slateChatBody } = require('./lib/slate-model');
+const { slateChatBody, slateModel } = require('./lib/slate-model');
 const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 // ADMIN_EMAILS was a fifth hardcoded copy of the admin list, sitting right
 // here, while lib/slate-core.js exists BECAUSE that list had been written
@@ -613,6 +613,17 @@ RULES:
     }
 
 
+    // ── Which model actually read this script ──
+    //
+    // SLATE_MODEL is one setting now, which is what makes it safe to
+    // change — and what makes it impossible to tell, from a document in
+    // your hand, what produced it. A filmmaker who changes the setting and
+    // gets a worse breakdown has no way to confirm the change took, and
+    // Netlify only hands a function new environment values on a deploy, so
+    // "I set it" and "it is running" are different facts.
+    //
+    // Recorded, not rendered: nothing prints it, and it costs one string.
+    breakdown.slate_model = slateModel();
     return { statusCode: 200, headers, body: JSON.stringify(breakdown) };
 
   } catch (error) {
