@@ -3689,6 +3689,16 @@
         return out;
       }
 
+      // True when any day holds a montage PART — the only case where a
+      // scene's elements are charged to a day that may not need them.
+      function slateAnyMontageSplit(days) {
+        return (days || []).some(function (d) {
+          return ((d && d.scenes) || []).some(function (s) {
+            return !!(s && s.montage_setup && s.montage_setups);
+          });
+        });
+      }
+
       function slateUnnumberedNote(scenes) {
         var n = 0;
         (scenes || []).forEach(function (s) {
@@ -8470,6 +8480,22 @@
               pdf.annotation('What each department has to bring, and on which day. '
                 + 'The scene numbers beside an item say where it is needed \u2014 an item '
                 + 'on two scenes has to survive between them.', 15, 175);
+              // ── The over-booking, said out loud ──
+              //
+              // A montage's elements belong to the SCENE, and its parts shoot
+              // on different days, so every day the montage touches is
+              // charged the whole scene. THE WEAVER'S DAUGHTER asks for a
+              // delivery van on Day 1 when the van is in the compound beat,
+              // which shoots on Day 2.
+              //
+              // Slate cannot know which beat needs it: the script does not
+              // say, and guessing would leave a unit without a vehicle it
+              // was told it had. Listing it on both days is the safe error.
+              // Listing it SILENTLY is not — a silent over-book is a hire
+              // nobody questions, and this turns it into a decision.
+              if (slateAnyMontageSplit(days)) {
+                pdf.annotation('The props, vehicles and cast of a montage belong to the whole scene, so they are listed on EVERY day it shoots \u2014 the script does not say which part needs them. Confirm before booking.', 15, 175);
+              }
               pdf.gap(4);
               anyPrinted = true;
             }
@@ -8620,9 +8646,21 @@
         // all four of a day's locations inside "Location 1". Split it back
         // apart so each place gets its own cell, and prefer a real array when
         // either Production Details or the call sheet itself supplies one.
+        // ── The DAY's locations win, not the production's ──
+        //
+        // Production Details holds one set of locations for the whole film;
+        // the schedule knows where THIS day shoots. Preferring the
+        // production-wide field printed a sheet reading "Location 1: danfo
+        // park" for a day shooting at Lagos Office and Aduke's Workshop —
+        // both named in the day header a few lines above it, and in neither
+        // place a driver looks.
+        //
+        // A call sheet is a document for one day. The day-specific answer is
+        // the better one wherever both exist, and what the filmmaker typed
+        // stays as the fallback and as the printed Address above.
         var locs =
-            (pd.locations && pd.locations.length) ? pd.locations
-          : (cs.locations && cs.locations.length) ? cs.locations
+            (cs.locations && cs.locations.length) ? cs.locations
+          : (pd.locations && pd.locations.length) ? pd.locations
           : String(cs.location_address || cs.location || '')
               .split(/\s*·\s*/)
               .map(function (v) { return String(v).trim(); })
@@ -8916,6 +8954,12 @@
         var csLoad = slateDepartmentLoad(scenes);
         if (csLoad.length) {
           pdf.sectionHeader('Department Load \u2014 Today');
+          // Same caution as the schedule's, on the document a crew actually
+          // carries. Printed only when a montage is split across days.
+          if (slateAnyMontageSplit([{ scenes: scenes }])) {
+            pdf.annotation('The props, vehicles and cast of a montage belong to the whole scene, so they are listed on EVERY day it shoots \u2014 the script does not say which part needs them. Confirm before booking.', 15, 175);
+            pdf.gap(2);
+          }
           csLoad.forEach(function (dep) {
             pdf.check(10 + dep.items.length * 4);
             pdf.labelledList(dep.department, dep.items.map(function (it) {
