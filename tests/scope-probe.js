@@ -14,7 +14,12 @@
 // somewhere the caller can see (window.x = …, var x, another declaration).
 const fs = require('fs');
 const path = require('path');
-const file = process.argv[2] || path.join(__dirname, '..', 'app.html');
+const ROOT = path.join(__dirname, '..');
+const FILES = process.argv[2] ? [process.argv[2]] : [path.join(ROOT, 'app.html')].concat(
+  fs.readdirSync(path.join(ROOT, 'netlify/functions')).filter(f => f.endsWith('.js'))
+    .map(f => path.join(ROOT, 'netlify/functions', f)));
+let pass = 0, fail = 0;
+FILES.forEach(file => {
 const src = fs.readFileSync(file, 'utf8');
 
 // Blank out comments, strings and regex literals so braces inside them do
@@ -49,16 +54,19 @@ function mask(t) {
   return out.join('');
 }
 
-// Only the inline scripts.
-const masked = src.split('').fill(' ').join('').split('');
-const scriptRe = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
-let m;
-while ((m = scriptRe.exec(src))) {
-  const start = m.index + m[0].indexOf('>') + 1;
-  const body = mask(m[1]);
-  for (let k = 0; k < body.length; k++) masked[start + k] = body[k];
+// An HTML page: only its inline scripts. A .js file: all of it.
+let m, M;
+if (/\.js$/.test(file)) M = mask(src);
+else {
+  const masked = src.split('').fill(' ').join('').split('');
+  const scriptRe = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+  while ((m = scriptRe.exec(src))) {
+    const start = m.index + m[0].indexOf('>') + 1;
+    const body = mask(m[1]);
+    for (let k = 0; k < body.length; k++) masked[start + k] = body[k];
+  }
+  M = masked.join('');
 }
-const M = masked.join('');
 
 // Every { … } span, and which function header opened it.
 const stack = [], fnSpans = [];
@@ -79,7 +87,6 @@ function enclosingFn(pos) {
 }
 const lineOf = pos => src.slice(0, pos).split('\n').length;
 
-let pass = 0, fail = 0;
 const declRe = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
 const decls = {};
 while ((m = declRe.exec(M))) (decls[m[1]] = decls[m[1]] || []).push(m.index);
@@ -97,8 +104,9 @@ Object.keys(decls).forEach(name => {
     if (/function\s+$/.test(M.slice(Math.max(0, pos - 12), pos))) continue;
     const seen = scopes.some(s => s[0] < pos && pos < s[1]);
     if (seen) pass++;
-    else { fail++; console.log('  FAIL ' + name + '() called at line ' + lineOf(pos) + ', but declared inside the function at line ' + scopes.map(s => lineOf(s[0])).join(', ') + ' — it does not exist there'); }
+    else { fail++; console.log('  FAIL ' + path.basename(file) + ': ' + name + '() called at line ' + lineOf(pos) + ', but declared inside the function at line ' + scopes.map(s => lineOf(s[0])).join(', ') + ' — it does not exist there'); }
   }
+});
 });
 
 console.log('scope-probe         ' + pass + ' passed, ' + fail + ' failed');

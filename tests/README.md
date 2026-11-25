@@ -55,6 +55,7 @@ The others read source text and need nothing.
 | `funnel-probe` | The steps before a breakdown go silent again, or an event carries somebody's email address. |
 | `model-probe` | A model name creeps back into one function, or switching SLATE_MODEL sends a request the new model rejects (`max_tokens`, `temperature`) and every breakdown fails at once. |
 | `scope-probe` | A helper declared inside one function is called from another; every probe passes because probes paste functions side by side, and the browser says "is not defined" (Generate schedule, 25 Nov). |
+| `dayorder-probe` | The final step re-orders a day on a cruder rule than the packer: a DUSK exterior shot before a DAY one, or one building visited twice because a montage beat has no set of its own (THE WEAVER'S DAUGHTER, 25 Nov). |
 
 ## Things worth knowing before you change them
 
