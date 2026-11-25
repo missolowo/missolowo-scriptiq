@@ -184,8 +184,11 @@ console.log('\nThe board itself');
   ok('a day is marked with a separator row',
      /if \(row && row\.sep\) \{/.test(APP) && /slateBoardRows\.push\(\{ sep:/.test(APP),
      'a board with no day breaks is one continuous list with no shape');
-  ok('  ...drawn where the page break is already owned',
-     /if \(row && row\.sep\) \{[\s\S]{0,200}check\(12\);/.test(APP));
+  ok('  ...and a page that STARTS with one still gets its headings',
+     /if \(row && row\.sep\) \{[\s\S]{0,600}if \(y \+ 12 > 278\) \{ newPage\(\); header\(\); \}/.test(APP),
+     'check() breaks the page without redrawing the table header, so page 6 '
+     + 'of iRANTI\'s board carried no column headings and no key — found by '
+     + 'rendering all five films and noticing the board ran 2,3,4,5,7');
 }
 
 console.log('\nA strip column is a colour, not a word');
@@ -283,6 +286,83 @@ console.log('\nEvery page of the board carries its own key');
      /pdf\.table\(\n?\s*\[\{ label: 'Story Day'/.test(APP)
      || /\[\{ label: 'Story Day', width: 32, bold: true, carry: true \}/.test(APP),
      'Report 5 passes no key and must still render');
+}
+
+console.log('\nA column with nothing under it is not printed');
+{
+  const pick = new Function(block('function slateBoardColumns')
+    + '; return slateBoardColumns;')();
+  const COLS = () => [
+    { label: '', width: 6, strip: true }, { label: 'Sc', width: 16 },
+    { label: 'I/E', width: 12 }, { label: 'D/N', width: 20 },
+    { label: 'Set', width: 56 }, { label: 'Pages', width: 18 },
+    { label: 'SD', width: 12 }, { label: 'Cast', width: 40 }];
+  const row = (sd, cast) => ['INT|D', '1', 'INT', 'D', 'Workshop', '0 2/8', sd, cast];
+
+  {
+    // THE WEAVER'S DAUGHTER states no story days and none are inferred,
+    // so the board printed an SD heading over eighty blank cells. A reader
+    // does not see "this script has no story days", they see broken
+    // software — and then wonder what else on the page is wrong.
+    const rows = [{ sep: 'DAY 01' }, row('', '1, 3'), row('', '2')];
+    const cols = pick(COLS(), rows);
+    ok('the empty column is gone',
+       cols.map(c => c.label).join(',') === ',Sc,I/E,D/N,Set,Pages,Cast',
+       cols.map(c => c.label).join(','));
+    ok('  ...and the cells move with it',
+       JSON.stringify(rows[1]) === '["INT|D","1","INT","D","Workshop","0 2/8","1, 3"]',
+       JSON.stringify(rows[1]));
+    ok('  ...so the last column still holds the cast',
+       rows[1][cols.length - 1] === '1, 3', JSON.stringify(rows[1]));
+    ok('a separator row is left alone', !Array.isArray(rows[0]) && rows[0].sep === 'DAY 01');
+    ok('the widths still total 180',
+       cols.reduce((a, c) => a + c.width, 0) === 180,
+       'table() rules a fixed 180mm under every row');
+    ok('  ...the freed width going to Set',
+       cols.filter(c => c.label === 'Set')[0].width === 68);
+  }
+
+  {
+    // The bug this pair of assertions exists for: dropping the column but
+    // not the cell draws every later cell one column to the left. The
+    // story day printed under CAST and the cast was not drawn at all —
+    // a header naming one thing over a number that is another.
+    const rows = [row('2', '')];
+    const cols = pick(COLS(), rows);
+    ok('dropping the LAST column shifts nothing',
+       cols.map(c => c.label).join(',') === ',Sc,I/E,D/N,Set,Pages,SD'
+       && rows[0][cols.length - 1] === '2',
+       cols.map(c => c.label).join(',') + ' / ' + JSON.stringify(rows[0]));
+  }
+
+  {
+    const rows = [row('', '')];
+    const cols = pick(COLS(), rows);
+    ok('both empty columns go', cols.length === 6, cols.map(c => c.label).join(','));
+    ok('  ...and Set takes all of it',
+       cols.filter(c => c.label === 'Set')[0].width === 108);
+  }
+
+  {
+    const rows = [row('', ''), row('3', '')];
+    ok('one value anywhere keeps the column',
+       pick(COLS(), rows).some(c => c.label === 'SD'),
+       'a story day on one scene of a feature is still a story day');
+  }
+
+  {
+    const rows = [['', '', '', '', '', '', '', '']];
+    const cols = pick(COLS(), rows);
+    ok('the strip and the scene number always stay',
+       cols.map(c => c.label).join(',') === ',Sc',
+       cols.map(c => c.label).join(',') + ' — they are what a row IS');
+  }
+
+  [undefined, null, [], [null], [{}], [{ sep: 'x' }]].forEach(function (rows, i) {
+    let threw = '';
+    try { pick(COLS(), rows); } catch (e) { threw = e.message; }
+    ok('  rows shape ' + i + ' is survivable', !threw, threw);
+  });
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
