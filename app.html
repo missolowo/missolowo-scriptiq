@@ -3691,12 +3691,41 @@
 
       // True when any day holds a montage PART — the only case where a
       // scene's elements are charged to a day that may not need them.
-      function slateAnyMontageSplit(days) {
-        return (days || []).some(function (d) {
-          return ((d && d.scenes) || []).some(function (s) {
-            return !!(s && s.montage_setup && s.montage_setups);
+      // A row is a montage part. The schedule names it one way and the call
+      // sheet another — montage_setup on the board's rows,
+      // montage_setups_today on a call sheet's scene — so the reader takes
+      // both. Checking only the first was why the warning reached the
+      // schedule and not the call sheet, which is the document a crew
+      // actually carries.
+      function slateIsMontagePart(s) {
+        if (!s) return false;
+        if (s.montage_setup && s.montage_setups) return true;
+        return !!(s.montage_setups_today && s.montage_setups_today.length);
+      }
+
+      // For the SCHEDULE: true only when one montage's parts land on more
+      // than one day, which is the only case where a day is charged
+      // elements it may not need. On a one-day schedule every part is on
+      // that day and nothing is booked early, so there is nothing to warn
+      // about and the note stays off.
+      function slateMontageSpansDays(days) {
+        var firstDay = {}, spans = false;
+        (days || []).forEach(function (d, di) {
+          ((d && d.scenes) || []).forEach(function (s) {
+            if (!slateIsMontagePart(s)) return;
+            var k = String(s.scene_index);
+            if (firstDay[k] === undefined) firstDay[k] = di;
+            else if (firstDay[k] !== di) spans = true;
           });
         });
+        return spans;
+      }
+
+      // For the CALL SHEET: today holding a part is enough. A call sheet is
+      // one day and cannot see the others, and the whole purpose of the
+      // line is the crew checking before a hire goes out.
+      function slateAnyMontagePartToday(scenes) {
+        return (scenes || []).some(slateIsMontagePart);
       }
 
       function slateUnnumberedNote(scenes) {
@@ -8525,7 +8554,7 @@
               // was told it had. Listing it on both days is the safe error.
               // Listing it SILENTLY is not — a silent over-book is a hire
               // nobody questions, and this turns it into a decision.
-              if (slateAnyMontageSplit(days)) {
+              if (slateMontageSpansDays(days)) {
                 pdf.annotation('The props, vehicles and cast of a montage belong to the whole scene, so they are listed on EVERY day it shoots \u2014 the script does not say which part needs them. Confirm before booking.', 15, 175);
               }
               pdf.gap(4);
@@ -8988,7 +9017,7 @@
           pdf.sectionHeader('Department Load \u2014 Today');
           // Same caution as the schedule's, on the document a crew actually
           // carries. Printed only when a montage is split across days.
-          if (slateAnyMontageSplit([{ scenes: scenes }])) {
+          if (slateAnyMontagePartToday(scenes)) {
             pdf.annotation('The props, vehicles and cast of a montage belong to the whole scene, so they are listed on EVERY day it shoots \u2014 the script does not say which part needs them. Confirm before booking.', 15, 175);
             pdf.gap(2);
           }
