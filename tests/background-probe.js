@@ -152,5 +152,41 @@ console.log('\nOne day is not "1 days"');
      + 'filmmaker trying Slate sees');
 }
 
+console.log('\nThe over-book warning reaches the document a crew carries');
+{
+  // Shipped checking one field name, and the schedule uses montage_setup
+  // while a call sheet scene uses montage_setups_today. So the warning
+  // printed on the schedule and not on the call sheet — the one a crew
+  // actually holds. Found by reading a live run rather than the source.
+  const part = new Function(block('function slateIsMontagePart')
+    + '; return slateIsMontagePart;')();
+  ok('a board row counts as a part',
+     part({ scene_index: 5, montage_setup: 2, montage_setups: 4 }));
+  ok('a call sheet scene counts too',
+     part({ scene_index: 5, montage_setups_today: [{ n: 2, of: 4 }] }),
+     'the two documents name the same thing differently');
+  ok('an ordinary scene does not',
+     !part({ scene_index: 1 }) && !part({ scene_index: 1, montage_setups_today: [] }));
+  ok('nothing is not a part', !part(null) && !part(undefined));
+
+  const spans = new Function(block('function slateIsMontagePart') + '\n'
+    + block('function slateMontageSpansDays') + '; return slateMontageSpansDays;')();
+  const p5 = (n) => ({ scene_index: 5, montage_setup: n, montage_setups: 4 });
+  ok('parts on two days span days',
+     spans([{ scenes: [p5(1)] }, { scenes: [p5(2)] }]),
+     'that is the only case where a day is charged elements it may not need');
+  ok('  ...and every part on ONE day does not',
+     !spans([{ scenes: [p5(1), p5(2), p5(3), p5(4)] }]),
+     'nothing is booked early, so there is nothing to warn about');
+  ok('  ...nor does a schedule with no montage at all',
+     !spans([{ scenes: [{ scene_index: 1 }] }, { scenes: [{ scene_index: 2 }] }]));
+
+  ok('the schedule asks whether it spans days',
+     /if \(slateMontageSpansDays\(days\)\) \{/.test(APP));
+  ok('the call sheet asks only about today',
+     /if \(slateAnyMontagePartToday\(scenes\)\) \{/.test(APP),
+     'a call sheet is one day and cannot see the others');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
