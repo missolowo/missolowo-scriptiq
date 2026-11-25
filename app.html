@@ -3541,8 +3541,7 @@
           scenes: bd.scenes.map(function (s) {
             var beats = Array.isArray(s && s.montage_beats) ? s.montage_beats : [];
             if (!beats.length) return s;
-            return Object.assign({}, s, {
-              montage_setups: beats.map(function (b, i) {
+            var slateSetups = beats.map(function (b, i) {
                 var text = String(b == null ? '' : b).trim();
                 var p = slateParseHeading(text) || {};
 
@@ -3582,10 +3581,41 @@
                   int_ext: looksLikeHeading ? (p.int_ext || '') : '',
                   time_of_day: looksLikeHeading ? (p.time_of_day || '') : ''
                 };
-              })
             });
+            // Whole, when there is nothing to spread it across.
+            if (!slateSplitWorthIt(slateSetups)) return s;
+            return Object.assign({}, s, { montage_setups: slateSetups });
           })
         });
+      }
+
+      // ── A montage is only split when splitting buys something ──
+      //
+      // Every beat became its own scheduling unit, and every unit shows a
+      // part label on the board and the call sheet. That is right for THE
+      // HILLS BETWEEN US scene 63, whose ten beats are ten real places: a
+      // unit visits each, and a 1st AD needs to know which part shoots
+      // when.
+      //
+      // It is wrong for scene 30A of the same film, whose seven beats are
+      // prose — "she remembers the rain". They have no place to be
+      // scheduled to, so they always travel together, and splitting them
+      // put seven rows on the board, seven part labels, and seven lines on
+      // a call sheet for one piece of work.
+      //
+      // Elizabeth asked whether the part labels had to be there at all.
+      // They do, where a montage is genuinely spread. The fault was that
+      // it was spread when it was not.
+      //
+      // Fewer than two distinct places means there is nothing to spread,
+      // so the scene stays whole and carries no part label anywhere.
+      function slateSplitWorthIt(setups) {
+        var places = {};
+        (setups || []).forEach(function (u) {
+          var k = slateKey((u && (u.location || u.set)) || '');
+          if (k) places[k] = true;
+        });
+        return Object.keys(places).length > 1;
       }
 
       // ── Whose story day is this, ours or the writer's? ──
