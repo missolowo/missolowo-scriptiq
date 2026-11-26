@@ -69,7 +69,7 @@ different facts.
 | Variable | What it does |
 |---|---|
 | `SLATE_MODEL` | Which OpenAI model reads scripts. Currently `gpt-6-luna`. Unset means `gpt-4o-mini`. |
-| `SLATE_REASONING_EFFORT` | Optional, reasoning models only: `none`, `low`, `medium`, `high`, `xhigh`, `max`. Unset is fine. |
+| `SLATE_REASONING_EFFORT` | Optional, reasoning models only: `none`, `minimal`, `low`, `medium`, `high`. Passed to OpenAI unchecked, so a typo fails every breakdown. Unset is fine. |
 | `OPENAI_API_KEY` | Required. Without it nothing reads a script. |
 | `SUPABASE_SECRET_KEY` | Required. Productions, breakdowns, schedules, call sheets. |
 | `PAYSTACK_SECRET_KEY` | Required for payment. |
@@ -142,7 +142,7 @@ the time this month, the probe was right and the code was not.
 
 ## 6. What the probes protect
 
-There are 38. You do not need to know them all, but these are the ones that
+There are 37. You do not need to know them all, but these are the ones that
 exist because something went wrong on a real production document:
 
 - **`scope-probe`** — a function must exist where it is declared, not where a
