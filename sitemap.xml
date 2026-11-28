@@ -2,19 +2,45 @@
 <!--
   Tells search engines which pages exist and matter.
 
-  Only the homepage is listed. app.html is the Workspace: it needs an
-  account, so there is nothing there for a search result to show, and a
-  thin login page competing with the homepage helps nobody.
+  The homepage, and the three sample documents linked from it. app.html is
+  the Workspace: it needs an account, so there is nothing there for a
+  search result to show, and a thin login page competing with the homepage
+  helps nobody.
+
+  The PDFs are listed because they answer a question people actually
+  search — what a script breakdown, a shooting schedule or a call sheet
+  looks like — and they are the only Slate output readable without an
+  account. A crawler would find them by following the links anyway;
+  listing them gets them fetched sooner.
 
   lastmod is the date the page last changed in a way worth re-reading.
   Update it when the homepage changes substantially; it does not need
-  touching for a typo.
+  touching for a typo. The PDFs' lastmod is the date of the run that
+  produced them — change it only if the samples are regenerated.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://missolowo.com/</loc>
-    <lastmod>2026-10-08</lastmod>
+    <lastmod>2026-11-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://missolowo.com/docs/sample-script-breakdown.pdf</loc>
+    <lastmod>2026-11-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://missolowo.com/docs/sample-shooting-schedule.pdf</loc>
+    <lastmod>2026-11-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://missolowo.com/docs/sample-call-sheet.pdf</loc>
+    <lastmod>2026-11-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>
