@@ -473,6 +473,24 @@ a { color: inherit; }
 .docs__caption b { color: var(--paper); font-weight: 600; }
 .docs__note { color: var(--text-3); font-size: 0.9rem; margin-top: var(--s-8); max-width: 62ch; }
 
+/* The samples. A thumbnail cannot show eighths or cast numbers, and those
+   are what a production manager checks before trusting a document. These
+   wrap onto separate lines on a phone, where most of this traffic is. */
+.docs__read { margin-top: var(--s-8); color: var(--paper); font-size: 1rem; }
+.docs__files {
+  margin-top: var(--s-3); display: flex; flex-wrap: wrap; gap: var(--s-3);
+}
+.docs__files a {
+  display: inline-block; padding: 0.7rem 1.1rem;
+  border: 1px solid var(--gold); border-radius: 6px;
+  color: var(--gold); text-decoration: none;
+  font-family: var(--font-data); font-size: 0.78rem;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.docs__files a:hover, .docs__files a:focus-visible {
+  background: var(--gold); color: #121212;
+}
+
 /* ── Pricing ─────────────────────────────────────────────── */
 .price__offer {
   display: inline-flex; align-items: center; gap: var(--s-3);
@@ -1190,6 +1208,25 @@ a { color: inherit; }
         </figure>
       </div>
 
+      <!-- ── Read one, without signing up ──
+           Seven people reached this page in four hours and one reached the
+           workspace. They could look at a picture of a document and not read
+           one: the only way to see real output was to create an account. A
+           production manager judges this by checking the eighths and the cast
+           numbers, which a thumbnail cannot show. These are the full PDFs from
+           the run above, unedited. -->
+      <p class="docs__read">
+        <b>Read them in full — no account needed.</b>
+      </p>
+      <p class="docs__files">
+        <a href="/docs/sample-script-breakdown.pdf" data-sample="breakdown"
+           target="_blank" rel="noopener">Script Breakdown (PDF)</a>
+        <a href="/docs/sample-shooting-schedule.pdf" data-sample="schedule"
+           target="_blank" rel="noopener">Shooting Schedule (PDF)</a>
+        <a href="/docs/sample-call-sheet.pdf" data-sample="callsheet"
+           target="_blank" rel="noopener">Call Sheet (PDF)</a>
+      </p>
+
       <p class="docs__note">
         Documents are written in English whatever language the screenplay uses,
         so a crew drawn from anywhere can read the same call sheet.
@@ -1538,6 +1575,15 @@ a { color: inherit; }
   }, { rootMargin: '0px 0px -10% 0px', threshold: 0.05 });
   items.forEach(function (el) { io.observe(el); });
 })();
+
+/* Which document a visitor opens, and whether opening one leads anywhere.
+   Without this the samples are a guess: the page would record that somebody
+   reached it and nothing about whether reading a real document is what turns
+   a looker into a user. */
+document.addEventListener('click', function (e) {
+  var s = e.target.closest('[data-sample]');
+  if (s) siqTrack('sample_open', { document_type: s.getAttribute('data-sample') });
+});
 
 document.addEventListener('click', function (e) {
   var el = e.target.closest('[data-cta]');
