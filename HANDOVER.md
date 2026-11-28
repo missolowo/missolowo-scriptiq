@@ -134,6 +134,18 @@ node tests/homepage-browser.js    how far down the homepage people get
 node tests/pagefurniture-browser.js   page numbers are not scene numbers
 ```
 
+And the three sample PDFs on the homepage, which are not code but are a
+promise about what Slate produces:
+
+```
+python3 tools/verify-sample-pdfs.py
+```
+
+It fails if a sample's page content is not the audited document, or if one
+has lost its title. **If the samples are ever regenerated from a new run**,
+audit the new ones, re-run `python3 tools/stamp-sample-pdfs.py` to put the
+titles back, and update the recorded hashes in the verifier deliberately.
+
 **Never merge anything with a failing assertion.** If a probe fails and you
 believe the code is right, read the probe before changing it — roughly half
 the time this month, the probe was right and the code was not.
